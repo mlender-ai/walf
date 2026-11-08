@@ -140,6 +140,26 @@ def fetch_image(url: str) -> bytes | None:
 
 
 # ── 식별 ─────────────────────────────────────────────────────
+MATERIALS = ["트위드", "부클", "울", "코듀로이", "나일론", "가죽", "레더", "스웨이드", "데님", "린넨", "코튼", "플리스", "니트"]
+
+
+def photo_queries(f: dict) -> list[str]:
+    """사진 특징을 쇼핑몰 검색어로 — 색 + 소재 + (집업) + 옷 종류 + 눈에 띄는 디테일. “지퍼 포켓”처럼 옷 종류 없는 검색어는 쓰지 않는다."""
+    col = next(iter(f.get("colors") or []), "")
+    mat_text = " ".join([f.get("material") or "", f.get("texture") or ""])
+    mat = next((m for m in MATERIALS if m in mat_text), "")
+    g = f.get("garment") or ""
+    kind = "블루종" if "블루종" in g else "코트" if "코트" in g else "점퍼" if "점퍼" in g else "자켓"
+    det = " ".join(f.get("details") or [])
+    zip_up = "집업" if re.search(r"여밈[^,]*지퍼|지퍼[^,]*여밈|중앙\s*지퍼|집업", det) else ""
+    pocket = "가슴 지퍼 포켓" if re.search(r"가슴[^,]*지퍼|지퍼[^,]*포켓", det) else "가슴 포켓" if "가슴" in det and "포켓" in det else ""
+    qs = [f"{col} {mat} {zip_up} {kind}", f"{col} {mat} {kind} {pocket}", f"{col} {zip_up} {kind} {pocket}"]
+    gw = set(rules.GARMENTS["jacket"] + rules.GARMENTS["coat"])
+    qs += [k for k in (f.get("keywords_ko") or []) if any(w in k for w in gw)][:1]
+    return [re.sub(r"\s+", " ", q).strip() for q in qs if len(q.split()) >= 2]
+
+
+
 async def identify(inp: dict) -> dict:
     t0 = time.monotonic()
     v = Vision(OLLAMA, VLM, log)
@@ -159,18 +179,28 @@ async def identify(inp: dict) -> dict:
     if name:
         queries += [f"{brand} {name}".strip(), name]
     if features:
-        queries += [k for k in (features.get("keywords_ko") or [])[:3]]
-        det = " ".join(re.sub(r"^[^:：]+[:：]\s*", "", d).split("(")[0] for d in (features.get("details") or [])[:2])
-        col = " ".join((features.get("colors") or [])[:1])
-        queries.append(f"{col} {features.get('material', '').split(',')[0].replace('추정', '')} {features.get('garment', '').split('(')[0]} {det}".strip())
+        queries += photo_queries(features)
     queries = [re.sub(r"\s+", " ", q).strip()[:60] for q in dict.fromkeys(queries) if q.strip()][:4]
     targets = [d for d in domains if d in NEW_SELLERS] or domains
     plan = [(d, f"{q} site:{d}") for q in queries for d in targets]
+    if name:
+        plan.append(("*", f"{brand} {name}".strip()))  # 판매처 제한 없이 — 공식몰·다른 판매 페이지를 근거로만 쓴다
     log(f"검색 {len(plan)}회 · 검색어 {queries}")
     results = await searx.search_sites(SEARXNG, plan, delay=DELAY, log=log)
     learn_from_titles(brand, results)
     cands, per = collect(results, domains, set())
     cands = [c for c in cands if not c["wanted"]]
+    # 판매처 밖(공식몰 등) 검색 결과 중 이름이 맞는 것 — 상품 근거 주소로만 쓴다
+    refs_extra = []
+    if name:
+        for r in results:
+            for x in r["results"]:
+                if rules.seller_domain(x["url"], domains):
+                    continue
+                j = rules.judge(brand=brand, name=name, brand_aliases=aliases_for(brand, inp.get("note") or "")["brand_ko"], name_aliases=[], code=rules.codes_in(inp.get("note") or "")[0] if rules.codes_in(inp.get("note") or "") else None,
+                                text=f"{x['title']} {x['content']} {x['url']}", title=x["title"])
+                if j["match"] == "same_likely" and re.search(r"/product", x["url"]):
+                    refs_extra.append({"url": x["url"], "title": x["title"], "evidence": j["evidence"]})
     # 이름이 있으면 글자 근거로, 없으면 검색 순서대로 앞의 것을 연다
     if name:
         for c in cands:
@@ -209,9 +239,11 @@ async def identify(inp: dict) -> dict:
     identities = []
     for c in cands:
         vis = c.get("visual") or {}
+        p = c["page"]
+        if p.get("status") in ("deleted", "error", "blocked"):
+            continue  # 없는 페이지·열지 못한 페이지는 상품 근거가 될 수 없다
         if vis.get("verdict") == "different" or (not vis and not (c.get("judge") or {}).get("match") == "same_likely"):
             continue
-        p = c["page"]
         title = p.get("title") or c["title"]
         conf = "medium" if vis.get("verdict") == "same_model_likely" or (c.get("judge") or {}).get("match") == "same_likely" else "low"
         reasons = []
@@ -221,16 +253,21 @@ async def identify(inp: dict) -> dict:
         if c.get("judge"):
             reasons += c["judge"]["evidence"][:2]
         reasons.append(f"페이지 상태: {STATUS_KO.get(p.get('status'), p.get('status') or '열지 않음')}")
-        identities.append({"brand": p.get("brand") or "", "name": title, "color": "", "category": (features or {}).get("garment", ""), "confidence": conf,
-                           "reasons": reasons[:5], "refs": [c["url"]]})
+        identities.append({"brand": p.get("brand") or brand, "name": title, "color": "", "category": (features or {}).get("garment", ""), "confidence": conf,
+                           "reasons": reasons[:5], "refs": [c["url"]] + [x["url"] for x in refs_extra[:2]]})
         if len(identities) >= 3:
             break
+    if name and not identities and refs_extra:
+        # 판매처 상품 주소는 못 찾았지만 공식몰 등에서 이름·품번이 맞는 페이지를 찾았다
+        x = refs_extra[0]
+        identities.append({"brand": brand, "name": name, "color": "", "category": "", "confidence": "medium",
+                           "reasons": ["판매처 6곳에서는 상품 주소를 찾지 못했어요", f"판매처 밖 페이지에서 확인: {x['title'][:60]}", *x["evidence"][:2]], "refs": [y["url"] for y in refs_extra[:3]]})
     missing = list((features or {}).get("unknowns") or [])
     if not identities:
         missing.append("정확한 모델명을 알 수 있는 태그·케어라벨 사진이나 구매 링크")
     metrics = {
         "engine": "oss", "vlm": VLM, "features": features, "queries": [{k: r[k] for k in ("domain", "q", "status", "engines_ok", "engines_bad", "ms")} | {"n": len(r["results"])} for r in results],
-        "per_seller": per, "candidates": [{"url": c["url"], "title": c["page"].get("title") or c["title"], "page_status": c["page"].get("status"), "visual": c.get("visual"),
+        "refs_outside_sellers": refs_extra[:10], "per_seller": per, "candidates": [{"url": c["url"], "title": c["page"].get("title") or c["title"], "page_status": c["page"].get("status"), "visual": c.get("visual"),
                                             "judge": (c.get("judge") or {}).get("match")} for c in cands],
         "timing": {"total_ms": int((time.monotonic() - t0) * 1000), "vision_ms": v.ms, "vision_calls": v.calls,
                    "search_ms": sum(r["ms"] for r in results), "crawl_ms": sum(p.get("ms", 0) for p in pg.values())},
