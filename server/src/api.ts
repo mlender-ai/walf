@@ -1,0 +1,157 @@
+import express from 'express';
+import multer from 'multer';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { DB } from './db.ts';
+import * as D from './domain.ts';
+import { HttpError } from './domain.ts';
+
+type Cfg = { uploads: string; pushConfigured: boolean };
+const EXT: Record<string, string> = { 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'image/heif': '.heif', 'image/heic-sequence': '.heic', 'image/heif-sequence': '.heif' };
+// 기기가 형식을 못 정해 보낸 경우(octet-stream 등)는 파일 이름 확장자로 판단한다
+const BY_NAME: Record<string, string> = { jpg: '.jpg', jpeg: '.jpg', png: '.png', webp: '.webp', heic: '.heic', heif: '.heif' };
+const extOf = (f: Express.Multer.File) => EXT[f.mimetype] || BY_NAME[(f.originalname.split('.').pop() || '').toLowerCase()];
+
+export function uploader(dir: string) {
+  return multer({
+    storage: multer.diskStorage({ destination: dir, filename: (_q, f, cb) => cb(null, crypto.randomUUID() + (extOf(f) || '.jpg')) }),
+    limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+    fileFilter: (_q, f, cb) => extOf(f) ? cb(null, true) : cb(new HttpError(400, 'bad_image', `JPG·PNG·WEBP·HEIC 사진만 올릴 수 있어요. (받은 형식: ${f.mimetype})`)),
+  });
+}
+export const baseOf = (req: express.Request) => `${req.protocol}://${req.get('host')}`;
+const removeUpload = (dir: string, f?: Express.Multer.File) => { if (f) fs.rm(path.join(dir, f.filename), () => {}); };
+
+export function userApi(db: DB, cfg: Cfg) {
+  const r = express.Router();
+  const up = uploader(cfg.uploads);
+  r.use(express.json({ limit: '100kb' }));
+
+  const auth: express.RequestHandler = (req, res, next) => {
+    const dev = req.get('x-walf-device');
+    const u = dev ? D.userByDevice(db, dev) : undefined;
+    if (!u || u.deleted_at) return res.status(401).json({ error: 'no_session', message: '세션이 없어요. 앱을 다시 열어 주세요.' });
+    (req as any).user = u; next();
+  };
+  const uid = (req: express.Request) => (req as any).user.id as number;
+  const idp = (v: string) => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw new HttpError(404, 'not_found'); return n; };
+
+  r.get('/health', (_q, res) => res.json({ ok: true, service: 'walf', pushConfigured: cfg.pushConfigured }));
+
+  // 앱이 보낸 실패 한 줄(QA용) — 서버 로그에만 남긴다
+  r.post('/client-log', (req, res) => {
+    const b = req.body || {}; const s = (v: unknown) => String(v ?? '').replace(/[\r\n]+/g, ' ').slice(0, 300);
+    console.log(`  ⚠ 앱 실패 [${s(b.where)}] ${s(b.status)} ${s(b.code)} ${s(b.message)}${b.detail ? ' · ' + s(b.detail) : ''}${b.photo ? ' · 사진 ' + s(b.photo) : ''}`);
+    res.json({ ok: true });
+  });
+
+  r.post('/session', (req, res) => {
+    const u = D.upsertUser(db, String(req.body?.deviceId || ''), String(req.body?.platform || ''));
+    res.json({ userId: u.id });
+  });
+
+  r.get('/me', auth, (req, res) => {
+    const base = baseOf(req);
+    const open = D.openRequestOf(db, uid(req));
+    const past = db.prepare(`SELECT * FROM requests WHERE user_id=? AND status NOT IN ('submitted','needs_info','active') ORDER BY id DESC LIMIT 20`).all(uid(req)) as any[];
+    const unread = (db.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read_at IS NULL').get(uid(req)) as any).n;
+    const u = (req as any).user;
+    res.json({
+      user: { id: u.id, pushToken: !!u.push_token, pushPermission: u.push_permission || null, createdAt: u.created_at },
+      active: open ? D.requestView(db, open, base) : null,
+      past: past.map(p => ({ id: p.id, status: p.status, title: D.shortName(p), brand: p.identified_brand || p.brand, isMock: !!p.is_mock,
+        display: D.display(db, p), endedAt: p.ended_at, photoUrl: p.photo ? `${base}/uploads/${p.photo}` : null })),
+      unread, pushConfigured: cfg.pushConfigured,
+    });
+  });
+
+  r.post('/requests', auth, up.single('photo'), (req, res) => {
+    try {
+      const b = req.body || {};
+      const id = D.createRequest(db, uid(req), {
+        productName: b.productName, brand: b.brand, productUrl: b.productUrl, note: b.note, photo: req.file?.filename || null,
+        size: b.size, color: b.color, maxPrice: b.maxPrice, usedOk: b.usedOk,
+      });
+      res.status(201).json(D.requestView(db, D.getRequest(db, id), baseOf(req)));
+    } catch (e) { removeUpload(cfg.uploads, req.file); throw e; }
+  });
+
+  r.get('/requests/:id', auth, (req, res) => res.json(D.requestView(db, D.ownRequest(db, uid(req), idp(req.params.id)), baseOf(req))));
+
+  r.patch('/requests/:id/conditions', auth, (req, res) => {
+    const id = idp(req.params.id);
+    D.updateConditions(db, uid(req), id, req.body || {});
+    res.json(D.requestView(db, D.getRequest(db, id), baseOf(req)));
+  });
+
+  r.post('/requests/:id/info', auth, up.single('photo'), (req, res) => {
+    const id = idp(req.params.id);
+    const old = D.ownRequest(db, uid(req), id).photo as string | null;
+    try { D.submitInfo(db, uid(req), id, { text: req.body?.text, productUrl: req.body?.productUrl, photo: req.file?.filename || null }); }
+    catch (e) { removeUpload(cfg.uploads, req.file); throw e; }
+    if (req.file && old) fs.rm(path.join(cfg.uploads, old), () => {}); // 바뀐 사진의 이전 파일은 지운다
+    res.json(D.requestView(db, D.getRequest(db, id), baseOf(req)));
+  });
+
+  r.post('/requests/:id/wanted', auth, (req, res) => {
+    const id = idp(req.params.id), dec = req.body?.decision;
+    if (dec !== 'approve' && dec !== 'decline') throw new HttpError(400, 'bad_decision');
+    D.decideWanted(db, uid(req), id, dec === 'approve', req.body?.fields);
+    res.json(D.requestView(db, D.getRequest(db, id), baseOf(req)));
+  });
+  r.post('/requests/:id/wanted/withdraw', auth, (req, res) => {
+    const id = idp(req.params.id);
+    D.ownRequest(db, uid(req), id);
+    D.withdrawWanted(db, uid(req), id);
+    res.json(D.requestView(db, D.getRequest(db, id), baseOf(req)));
+  });
+  r.post('/requests/:id/purchase', auth, (req, res) => {
+    const id = idp(req.params.id);
+    D.confirmPurchase(db, uid(req), id, req.body?.candidateId ? Number(req.body.candidateId) : null);
+    res.json(D.requestView(db, D.getRequest(db, id), baseOf(req)));
+  });
+  r.post('/requests/:id/cancel', auth, (req, res) => {
+    const id = idp(req.params.id);
+    D.cancelRequest(db, uid(req), id);
+    res.json(D.requestView(db, D.getRequest(db, id), baseOf(req)));
+  });
+
+  r.get('/candidates/:id', auth, (req, res) => {
+    const c = db.prepare('SELECT * FROM candidates WHERE id=? AND published=1').get(idp(req.params.id)) as any;
+    if (!c) throw new HttpError(404, 'not_found');
+    const rq = D.ownRequest(db, uid(req), c.request_id);
+    res.json({ candidate: D.candidateView(db, rq, c, baseOf(req)), request: { id: rq.id, status: rq.status, title: D.shortName(rq), brand: rq.identified_brand || rq.brand, isMock: !!rq.is_mock } });
+  });
+  r.post('/candidates/:id/dismiss', auth, (req, res) => { D.dismissCandidate(db, uid(req), idp(req.params.id)); res.json({ ok: true }); });
+
+  r.get('/alerts', auth, (req, res) => {
+    const rows = db.prepare('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 100').all(uid(req)) as any[];
+    res.json(rows.map(n => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, link: n.link, read: !!n.read_at, createdAt: n.created_at, isMock: !!n.is_mock, push: n.push_status })));
+  });
+  r.post('/alerts/read', auth, (req, res) => {
+    const ids: number[] = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
+    if (ids.length) { const st = db.prepare('UPDATE notifications SET read_at=? WHERE user_id=? AND id=? AND read_at IS NULL'); ids.forEach(i => st.run(Date.now(), uid(req), i)); }
+    else db.prepare('UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL').run(Date.now(), uid(req));
+    res.json({ ok: true });
+  });
+  r.post('/push-token', auth, (req, res) => {
+    const token = req.body?.token ? String(req.body.token).slice(0, 200) : null;
+    db.prepare('UPDATE users SET push_token=?, push_permission=? WHERE id=?').run(token, String(req.body?.permission || 'unknown').slice(0, 20), uid(req));
+    res.json({ ok: true });
+  });
+  r.delete('/me', auth, (req, res) => {
+    D.deleteUser(db, uid(req)).forEach(f => fs.rm(path.join(cfg.uploads, f), () => {}));
+    res.json({ ok: true });
+  });
+  return r;
+}
+
+export const apiErrors: express.ErrorRequestHandler = (err, _req, res, _next) => {
+  if (err instanceof HttpError) { console.log(`  ↳ ${err.status} ${err.code} ${err.message !== err.code ? err.message : ''}`); return res.status(err.status).json({ error: err.code, message: err.message !== err.code ? err.message : undefined }); }
+  if (err?.code) console.log(`  ↳ ${err.code} ${err.message || ''}`);
+  if (err?.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'too_large', message: '사진은 15MB 이하로 올려 주세요.' });
+  if (err?.type === 'entity.parse.failed' || err?.type === 'entity.too.large') return res.status(400).json({ error: 'bad_body', message: '요청 형식이 올바르지 않아요.' });
+  console.error(err);
+  res.status(500).json({ error: 'server_error', message: '서버에서 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' });
+};

@@ -1,0 +1,19 @@
+{
+ "file": "official.png",
+ "prompt": "a brown boiled wool zip-up blouson jacket with a ribbed knit stand collar, ribbed cuffs and hem, two slanted welt pockets, silver metal zipper, front view, laid out neatly, minimal e-commerce product photo on a plain pure white background, soft even studio light, no person",
+ "full_prompt": "natural lifestyle photograph, a brown boiled wool zip-up blouson jacket with a ribbed knit stand collar, ribbed cuffs and hem, two slanted welt pockets, silver metal zipper, front view, laid out neatly, minimal e-commerce product photo on a plain pure white background, soft even studio light, no person, soft daylight, shallow depth of field, realistic, candid, clean background, no text, no letters, no numbers, no logos, no watermark, no signature",
+ "style": "photo",
+ "provider": "cache",
+ "seed": 4417,
+ "request": [
+  1024,
+  1024
+ ],
+ "size": [
+  1024,
+  1024
+ ],
+ "cutout": false,
+ "created": "2026-11-08 15:45:20",
+ "errors": []
+}

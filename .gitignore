@@ -1,0 +1,22 @@
+# 의존성·빌드 산출물
+node_modules/
+app/ios/
+app/android/
+app/.expo/
+app/dist/
+builds/
+__pycache__/
+*.pyc
+
+# 비밀값·로컬 설정 (예시는 .env.example 로 올린다)
+.env
+.env.*
+!.env.example
+
+# 운영 데이터 — 사용자 의뢰·사진이 들어 있다
+server/data/
+
+# 로컬 도구 설정
+.claude/settings.local.json
+.DS_Store
+*.log

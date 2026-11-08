@@ -1,0 +1,29 @@
+name: QA 버그
+description: 실사용 QA 중 발견한 문제 (WALF_QA_Checklist 07 양식)
+labels: [qa]
+body:
+  - type: input
+    id: scenario
+    attributes: { label: 시나리오, description: "체크리스트 번호 (예: G-2)" }
+    validations: { required: true }
+  - type: input
+    id: device
+    attributes: { label: 기기 · OS, description: "예: iPhone 13 mini · iOS 27.2 / 시뮬레이터 iPhone 17 Pro" }
+    validations: { required: true }
+  - type: input
+    id: request
+    attributes: { label: 의뢰 번호, description: "어드민 #번호 · 모의 여부" }
+  - type: textarea
+    id: steps
+    attributes: { label: 한 일, placeholder: "1) …\n2) …" }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: 기대, description: 체크리스트 문장 }
+  - type: textarea
+    id: actual
+    attributes: { label: 실제, description: "화면에 보인 것 — 스크린샷을 끌어다 놓으세요" }
+    validations: { required: true }
+  - type: textarea
+    id: server
+    attributes: { label: 서버 로그 · 어드민 상태 문장, description: "walf server 탭의 해당 줄, 의뢰 상세 오른쪽 “사용자 앱에 지금 보이는 문장”", render: text }
