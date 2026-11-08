@@ -349,7 +349,7 @@ async def search(inp: dict) -> dict:
     metrics = {
         "engine": "oss", "vlm": VLM, "day": inp.get("day"), "aliases": al, "code": code, "sources": src.available(), "queries_text": queries,
         "queries": [{k: r.get(k) for k in ("source", "q", "status", "ms", "error", "cost")} | {"n": len(r["results"])} for r in raw],
-        "funnel": res["funnel"], "drops": res["drops"][:300], "domains": res["domains"], "outside_sellers": outside[:30],
+        "funnel": res["funnel"], "drops": res["drops"][:300], "leads": res["leads"][:50], "domains": res["domains"], "outside_sellers": outside[:30],
         "seller_status": {n["seller"]: n["status"] for n in notes},
         "counts": {"queries": sum(1 for r in raw if r["status"] not in ("no_key", "skipped")), "listings": len(listings), "outside": len(outside),
                    "same_likely": sum(1 for x in listings if x["match"] == "same_likely"), "new_urls": sum(f.get("unique", 0) for f in res["funnel"].values()),

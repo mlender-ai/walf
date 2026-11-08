@@ -1,0 +1,31 @@
+# 검색엔진(Googlebot, Yeti, bingbot 등)은 아래 * 규칙 적용 — 검색 노출 유지
+# AI 학습 크롤러 / SEO 분석 업체 봇 / 국내 미사용 검색엔진 차단 (트래픽·로그 비용 절감)
+User-agent: ClaudeBot
+User-agent: GPTBot
+User-agent: CCBot
+User-agent: Bytespider
+User-agent: Amazonbot
+User-agent: meta-externalagent
+User-agent: AhrefsBot
+User-agent: SemrushBot
+User-agent: DataForSeoBot
+User-agent: AwarioBot
+User-agent: YandexBot
+User-agent: Baiduspider
+Disallow: /
+
+User-agent: *
+Allow: /
+Allow: /trade/detail/
+Allow: /search/product/list
+Allow: /faq
+Disallow: /black_box
+Disallow: /drop_store
+Disallow: /market
+Disallow: /bulk_bid/
+Disallow: /my
+Disallow: /my/
+Disallow: /member/
+Disallow: /trade/order/
+
+Sitemap: https://www.soldout.co.kr/sitemap.xml

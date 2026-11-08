@@ -140,18 +140,21 @@ async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, b
     # 6~8 단계: 수집 정책 · 페이지 확인 · 추출
     for it in items.values():
         it["judge0"] = rules.judge(brand=brand, name=model, brand_aliases=brand_ko, name_aliases=name_ko, code=code, text=f"{it['title']} {it['snippet']}", title=it["title"])
-        it["robots"] = pages.robots_ok(it["url"])
+        tos = pages.tos_block(it["url"])
+        it["robots"] = (False, tos) if tos else pages.robots_ok(it["url"])
+        it["tos"] = bool(tos)
     order = sorted(items.values(), key=lambda it: {"same_likely": 0, "similar": 1}.get(it["judge0"]["match"], 2))
     to_open = [it for it in order if it["robots"][0] and it["judge0"]["match"] != "unknown"][:max_crawl]
     opened = {p["url"]: p for p in await pages.crawl([it["url"] for it in to_open], log=log)}
-    cands = []
+    cands, leads = [], []
     for it in items.values():
         srcs = sorted(it["sources"])
         if not it["robots"][0]:
             for s in srcs:
                 f(s)["robots"] += 1
-            drop(",".join(srcs), it["url"], "수집 정책", it["robots"][1] + " — 검색 결과로만 판정")
-            p = {"status": "robots"}
+            drop(",".join(srcs), it["url"], "수집 정책", it["robots"][1] + " — 열지 않음, 수동 확인 단서로만")
+            leads.append({"url": it["url"], "seller": it["seller"], "title": it["title"], "why": it["robots"][1], "sources": srcs})
+            continue
         else:
             p = opened.get(it["url"]) or {"status": "not_crawled"}
             if p["status"] in ("deleted", "error", "blocked", "login"):
@@ -162,6 +165,10 @@ async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, b
             if p["status"] in ("ok", "stock_unknown", "sold", "partial") and p.get("title"):
                 for s in srcs:
                     f(s)["extracted"] += 1
+            if p["status"] == "not_crawled":
+                # 오늘 한도로 열지 않은 것도 제목만으로는 매물로 보지 않는다
+                leads.append({"url": it["url"], "seller": it["seller"], "title": it["title"], "why": "오늘 페이지 확인 한도로 열지 않음", "sources": srcs})
+                continue
         generic_titles = ("번개장터", "중고나라", "후루츠패밀리", "[w concept]", "모든 취향 곁에, 29cm")
         page_title = p.get("title") if p.get("title") and rules.norm(p.get("title")) not in generic_titles else ""
         slug = slug_text(it["url"])
@@ -203,4 +210,4 @@ async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, b
                       "color_match": cm, "size_match": sm, "stock": stock})
     domains = {h: {"kind": d["kind"], "name": d["name"], "sources": sorted(d["sources"]), "urls": d["urls"], "robots": pages.robots_ok(f"https://{h}/")[1] if d["kind"] != "overseas" else "-"}
                for h, d in domain_seen.items() if d["kind"] in ("seller", "platform", "official", "shop", "cafe") or h.endswith(".kr")}
-    return {"funnel": funnel, "drops": drops, "candidates": cands, "domains": domains, "opened": opened}
+    return {"funnel": funnel, "drops": drops, "candidates": cands, "leads": leads, "domains": domains, "opened": opened}

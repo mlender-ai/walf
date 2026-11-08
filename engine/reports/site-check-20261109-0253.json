@@ -1,0 +1,600 @@
+{
+ "at": "2026-11-09 02:51",
+ "product": {
+  "brand": "BADBLOOD",
+  "name": "Mystic Nylon Track Jacket",
+  "brand_aliases": [
+   "배드블러드"
+  ],
+  "name_aliases": [
+   "미스틱 나일론 트랙 자켓",
+   "미스틱 트랙 자켓",
+   "미스틱 트랙자켓"
+  ],
+  "code": "W-JKT26-055",
+  "color": "네이비",
+  "size": "M"
+ },
+ "sites": {
+  "배드블러드 공식몰": {
+   "method": "공식몰 자체 검색(product/search.html) + 상품 페이지 옵션 재고",
+   "robots": "robots.txt: 일반 수집기(*) 허용",
+   "searches": [
+    {
+     "q": "W-JKT26-055",
+     "http": 200,
+     "ms": 6800,
+     "links": [
+      "/product/w-jkt26-055-미스틱-나일론-트랙-자켓-네이비/14555/category/1771/display/1/"
+     ]
+    },
+    {
+     "q": "미스틱 나일론 트랙 자켓",
+     "http": 200,
+     "ms": 6670,
+     "links": [
+      "/product/w-jkt26-055-미스틱-나일론-트랙-자켓-네이비/14555/category/1771/display/1/",
+      "/product/w-jkt26-054-미스틱-나일론-트랙-자켓-블루그레이/14554/category/1771/display/1/"
+     ]
+    }
+   ],
+   "pages": [
+    {
+     "url": "https://badblood.co.kr/product/w-jkt26-055-미스틱-나일론-트랙-자켓-네이비/14555/category/1771/display/1/",
+     "path": "/product/w-jkt26-055-미스틱-나일론-트랙-자켓-네이비/14555/category/1771/display/1/",
+     "match": "unknown",
+     "color": "match",
+     "options": [
+      {
+       "code": "P0000VNV000A",
+       "option": "네이비-S",
+       "stock": 0,
+       "selling": true,
+       "use_soldout": "T"
+      },
+      {
+       "code": "P0000VNV000B",
+       "option": "네이비-M",
+       "stock": 0,
+       "selling": true,
+       "use_soldout": "T"
+      },
+      {
+       "code": "P0000VNV000C",
+       "option": "네이비-L",
+       "stock": 0,
+       "selling": true,
+       "use_soldout": "T"
+      }
+     ],
+     "navy_m": {
+      "code": "P0000VNV000B",
+      "option": "네이비-M",
+      "stock": 0,
+      "selling": true,
+      "use_soldout": "T"
+     },
+     "http": 200
+    },
+    {
+     "url": "https://badblood.co.kr/product/w-jkt26-054-미스틱-나일론-트랙-자켓-블루그레이/14554/category/1771/display/1/",
+     "path": "/product/w-jkt26-054-미스틱-나일론-트랙-자켓-블루그레이/14554/category/1771/display/1/",
+     "match": "unknown",
+     "color": "mismatch",
+     "options": [
+      {
+       "code": "P0000VNU000A",
+       "option": "블루그레이-S",
+       "stock": 0,
+       "selling": true,
+       "use_soldout": "T"
+      },
+      {
+       "code": "P0000VNU000B",
+       "option": "블루그레이-M",
+       "stock": 0,
+       "selling": true,
+       "use_soldout": "T"
+      },
+      {
+       "code": "P0000VNU000C",
+       "option": "블루그레이-L",
+       "stock": 0,
+       "selling": true,
+       "use_soldout": "T"
+      }
+     ],
+     "navy_m": null,
+     "http": 200
+    }
+   ]
+  },
+  "중고나라": {
+   "method": "중고나라 자체 검색(/search/{검색어})",
+   "robots": "robots.txt: 일반 수집기(*) 허용",
+   "searches": [
+    {
+     "q": "배드블러드",
+     "http": 200,
+     "ms": 7160,
+     "total": null,
+     "on_page": 50
+    },
+    {
+     "q": "배드블러드 트랙 자켓",
+     "http": 200,
+     "ms": 7211,
+     "total": null,
+     "on_page": 1
+    },
+    {
+     "q": "배드블러드 미스틱",
+     "http": 200,
+     "ms": 7153,
+     "total": null,
+     "on_page": 1
+    },
+    {
+     "q": "배드블러드 트랙자켓",
+     "http": 200,
+     "ms": 6986,
+     "total": null,
+     "on_page": 1
+    }
+   ],
+   "listings": {
+    "https://web.joongna.com/product/233625189": {
+     "title": "배드블러드 맨투맨 M 데일리 스웨터 자수 공용 스트릿 아메카지 19,900 원 7시간 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233895685": {
+     "title": "서적 배드블러드 3,000 원 14시간 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/201321504": {
+     "title": "배드블러드 BADBLOOD 조거팬츠 58,000 원 찜 3 채팅 2 1일 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/201321247": {
+     "title": "배드블러드 헤비웨이트 부클 니트 팬츠 화이트 M 50,000 원 찜 1 1일 전",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "match",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/202480343": {
+     "title": "배드블러드 댄스클래스 크롭 후드 집업 블랙 80,000 원 1일 전",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233869430": {
+     "title": "[새상품] 배드블러드 엘립스 심볼 체인 지갑_오닉스 메탈 100,000 원 1일 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233540481": {
+     "title": "S) 배드블러드 아치 로고 플리스 숏 맨투맨 기모 오버핏 스웻셔츠 버건디 29,000 원 2일 전",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "mismatch",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233746613": {
+     "title": "배드블러드, 락케이크 티셔츠 2장 17,000 원 2일 전 문앞택배 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233264622": {
+     "title": "{한정판 무신사 배드블러드 클래식 체크 후드 집업 레드 musinsa badblood check hoodzip-up 159,000 원 채팅 1 5일 전",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/225066678": {
+     "title": "배드블러드 청자켓 100,000 원 찜 2 채팅 1 5일 전 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/222079011": {
+     "title": "배드블러드 크롭후드 50,000 원 찜 1 14일 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/224635464": {
+     "title": "배드블러드 모헤어가디건 48,000 원 14일 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/223994066": {
+     "title": "배드블러드 부츠컷스웻팬츠 40,000 원 14일 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232361549": {
+     "title": "[새제품] 배드블러드 헤리티지 엠블렘 헤비웨이트 후드 - 블랙 55,000 원 17일 전 무료배송",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233407472": {
+     "title": "인증셀러 (새상품) 배드블러드 23SS 플뢰르 글리터 미니 스커트 44,000 원 18일 전 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233387668": {
+     "title": "배드블러드 엠블럼 나일론 크롭 집업 37,000 원 19일 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233098089": {
+     "title": "배드블러드 맨투맨 M 데일리 스웨터 자수 공용 스트릿 아메카지 28,000 원 19일 전",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/233360351": {
+     "title": "배드블러드 라인 패널 데님 팬츠 라지핏 - 블루/화이트 S 80,000 원 20일 전 무료배송",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "mismatch",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232901944": {
+     "title": "배드블러드 레더 블레이저 150,000 원 문앞택배 셀프검수 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/229959285": {
+     "title": "배드블러드 데님 브라렛 S 33,000 원",
+     "match": "similar",
+     "color": "unknown",
+     "size": "mismatch",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/226957084": {
+     "title": "[Badblood] (새상품) 배드블러드 더스티 후드집업 90,000 원 찜 5 채팅 2",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/226728374": {
+     "title": "[Badblood] (새상품) 배드블러드 더스티 후드티 85,000 원 찜 4",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/226957149": {
+     "title": "[새상품] (Badblood) 배드블러드 트레이닝 팬츠 80,000 원 찜 4 채팅 1",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232787506": {
+     "title": "배드블러드 보니 데님 카고 미니 스커트 워시드 블랙 S 70,000 원 문앞택배 무료배송",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "mismatch",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/218142108": {
+     "title": "배드블러드 엘립스 심볼 아코디언 지갑 100,000 원",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232678495": {
+     "title": "배드블러드 데이토나 하이넥 스트랩 봄버 자켓 210,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232661085": {
+     "title": "인증셀러 (새상품) 배드블러드 B로고 오버핏 스트링 후드티 후디 51,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/226957478": {
+     "title": "[Badblood] 배드블러드 선 페이디드2 조거 블랙 75,000 원 채팅 1",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232298312": {
+     "title": "90 배드블러드 BADBLOOD 자켓 -5330 55,000 원 문앞택배 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232291006": {
+     "title": "새상품)배드블러드 커브드 데님팬츠 113,000 원 찜 1 문앞택배 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232178509": {
+     "title": "(F) 배드 블러드 후드집업 비욘드 캐시 소프트 절개 89,000 원 문앞택배 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232124258": {
+     "title": "인증셀러 배드블러드 24SS 플러피 트레이닝 조거 팬츠 36,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/232029217": {
+     "title": "인증셀러 배드블러드 21SS 로고 자수 크롭 반팔 티셔츠 19,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/231921599": {
+     "title": "인증셀러 배드블러드 24SS 비욘드 소프트 돌핀 쇼츠 숏팬츠 33,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/231912276": {
+     "title": "배드블러드 트라이벌 로고 벨루아 집업 자켓 s 사이즈 29,000 원 찜 1",
+     "match": "similar",
+     "color": "unknown",
+     "size": "mismatch",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/231722347": {
+     "title": "W(S-M) 배드블러드 반팔 티셔츠 나그랑 크롭 블랙 25,000 원 무료배송",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "match",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/207914591": {
+     "title": "배드블러드 크롭티 38,000 원 찜 1",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/231354220": {
+     "title": "W(XS-S) 배드 블러드 반팔 티셔츠 새상품 레터링 16,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "mismatch",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/230738770": {
+     "title": "Bad blood 배드블러드 블랙 바람막이 프린트 나일론 트랙 경량 집업 자켓 블랙 90,000 원 채팅 1 셀프검수 무료배송",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드 트랙자켓"
+    },
+    "https://web.joongna.com/product/230699974": {
+     "title": "(새상품) 배드블러드 새깅 쇼츠 H.B.B. 레이스 트리밍 복서 민트 38,000 원",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/230678097": {
+     "title": "배드블러드 스포츠클럽 트랙 져지반팔 m 오버핏 33,500 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/230565963": {
+     "title": "배드블러드 슬림핏 티셔츠 화이트 33,000 원 찜 2 채팅 1 셀프검수",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/208969513": {
+     "title": "배드블러드 링비키니 탑 브라운 M 새상품 12,000 원 찜 6",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/230410481": {
+     "title": "배드블러드 라이온 패치 워시드 배럴 팬츠 블루데님체크 130,000 원",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/230248585": {
+     "title": "인증셀러 배드블러드 23FW 파라슈트 집업 카고 롱 스커트 47,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/221149542": {
+     "title": "배드블러드 미스틱 나일론 리플렉티브 후드 집업 챠콜도트 95,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드 미스틱"
+    },
+    "https://web.joongna.com/product/224718352": {
+     "title": "배드블러드 바디슈트 새거팔아요 39,000 원 찜 2",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/229816435": {
+     "title": "인증셀러 (새상품) 배드블러드 22SS 댄스 클래스 1/2 슬리브 바디수트 핑크 36,000 원 찜 1 무료배송",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/229816433": {
+     "title": "인증셀러 (새상품) 배드블러드 22SS 로렐 클래식 베이비 티 반팔 티셔츠 26,000 원 무료배송",
+     "match": "similar",
+     "color": "unknown",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    },
+    "https://web.joongna.com/product/229785195": {
+     "title": "인증셀러 (새상품) 배드블러드 21SS 레이저 져지 쇼츠 핫핑크 26,000 원 찜 1 무료배송",
+     "match": "similar",
+     "color": "mismatch",
+     "size": "unknown",
+     "wanted": false,
+     "sold": false,
+     "q": "배드블러드"
+    }
+   }
+  }
+ },
+ "total_ms": 84446
+}

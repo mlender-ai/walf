@@ -49,6 +49,20 @@ def _snapshot(netloc: str, why: str):
     return (rp, f"robots.txt 저장본(자동 읽기 {why})")
 
 
+# 이용약관이 자동화 도구의 수집을 명시적으로 금지한 판매처 — robots.txt 가 허용해도 열지 않는다(2026-11-09 확인)
+TOS_BLOCK = {
+    "bunjang.co.kr": "번개장터 이용약관 제39조 제7항 제1호(2026-08-05 시행): 자동화된 도구로 데이터 수집 금지",
+    "soldout.co.kr": "무신사 이용약관 제11조 제2항 제9호(2026-10-28 시행, 솔드아웃 포함): 크롤러 등 자동화 수단으로 수집 금지",
+    "musinsa.com": "무신사 이용약관 제11조 제2항 제9호 + robots.txt 일반 수집기 금지",
+    "kream.co.kr": "robots.txt 를 읽지 못함(HTTP 500) · 약관 확인 못 함 — 확인 전까지 열지 않음",
+}
+
+
+def tos_block(url: str) -> str | None:
+    h = (urlsplit(url).hostname or "").lower()
+    return next((why for d, why in TOS_BLOCK.items() if h == d or h.endswith("." + d)), None)
+
+
 def robots_ok(url: str) -> tuple[bool, str]:
     """(열어도 되는지, 사유). 일반 수집기(*) 규칙을 따른다. robots.txt 를 읽지 못하면 열지 않는다(404 는 제한 없음)."""
     u = urlsplit(url)
@@ -188,6 +202,11 @@ async def crawl(urls: list[str], *, log=print, timeout_ms: int = 30000, pause: f
     opened = 0
     async with AsyncWebCrawler(config=BrowserConfig(headless=True, verbose=False, user_agent=UA)) as crawler:
         for url in urls:
+            tos = tos_block(url)
+            if tos:
+                out.append({"url": url, "status": "tos", "error": tos, "ms": 0})
+                log(f"  페이지 [tos] {url} · {tos} — 열지 않음")
+                continue
             ok, why = robots_ok(url)
             if not ok:
                 out.append({"url": url, "status": "robots", "error": why, "ms": 0})
