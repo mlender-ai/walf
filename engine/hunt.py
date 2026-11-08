@@ -166,6 +166,8 @@ async def identify(inp: dict) -> dict:
     sellers = inp["sellers"]
     domains = [s["domain"] for s in sellers]
     name, brand = (inp.get("productName") or "").strip(), (inp.get("brand") or "").strip()
+    if brand and name.lower().startswith(brand.lower()):
+        name = name[len(brand):].strip()  # “BADBLOOD BADBLOOD …” 처럼 브랜드가 두 번 들어가지 않게
     features = None
     if inp.get("photo"):
         log("사진 분석(로컬)", VLM)
@@ -195,11 +197,13 @@ async def identify(inp: dict) -> dict:
     if name:
         for r in results:
             for x in r["results"]:
-                if rules.seller_domain(x["url"], domains):
-                    continue
+                host = (re.match(r"https?://([^/]+)", x["url"]) or [None, ""])[1].lower()
+                if rules.seller_domain(x["url"], domains) or any(host == h or host.endswith("." + h) for h in rules.OVERSEAS_HOSTS):
+                    continue  # 판매처 6곳은 위에서 따로 보고, 해외 판매용 사이트는 근거로도 쓰지 않는다
+                cm = rules.color_match(inp.get("color"), x["title"])
                 j = rules.judge(brand=brand, name=name, brand_aliases=aliases_for(brand, inp.get("note") or "")["brand_ko"], name_aliases=[], code=rules.codes_in(inp.get("note") or "")[0] if rules.codes_in(inp.get("note") or "") else None,
                                 text=f"{x['title']} {x['content']} {x['url']}", title=x["title"])
-                if j["match"] == "same_likely" and re.search(r"/product", x["url"]):
+                if j["match"] == "same_likely" and re.search(r"/product", x["url"]) and cm != "mismatch" and x["url"] not in {y["url"] for y in refs_extra}:
                     refs_extra.append({"url": x["url"], "title": x["title"], "evidence": j["evidence"]})
     # 이름이 있으면 글자 근거로, 없으면 검색 순서대로 앞의 것을 연다
     if name:
