@@ -1,5 +1,5 @@
-// BADBLOOD Mystic Nylon Track Jacket Navy / M 으로 등록 → 운영자 검수 → 추적 → 수배 → 결과 알림 → 종료를 HTTP로 끝까지 확인한다.
-// 임시 DB에서 돌고 끝나면 지운다. 운영자가 입력하는 탐색·후보·게시 데이터는 모두 “모의(mock)”로 표시한다.
+// BADBLOOD Mystic Nylon Track Jacket Navy / M 으로 등록 → AI가 먼저 식별·탐색 → 운영자 검수 → 추적 → 수배 → 결과 알림 → 종료를 HTTP로 끝까지 확인한다.
+// 임시 DB에서 돌고 끝나면 지운다. AI는 모의 제공자(실제 API 호출 없음)이고, AI·운영자가 만든 탐색·후보·게시 데이터는 모두 “모의(mock)”로 표시한다.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,7 +10,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'walf-e2e-'));
 const PORT = 4390 + Math.floor(Math.random() * 50);
 const B = `http://127.0.0.1:${PORT}`;
-const srv = spawn(process.execPath, ['src/index.ts'], { cwd: root, env: { ...process.env, WALF_PORT: String(PORT), WALF_DB: path.join(tmp, 'e2e.db'), WALF_UPLOADS: path.join(tmp, 'up'), WALF_ADMIN_PASSWORD: 'e2e-pass', WALF_QA_TOOLS: '1', WALF_PUSH_DISABLED: '1', WALF_TICK_MS: '600000' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn(process.execPath, ['src/index.ts'], { cwd: root, env: { ...process.env, WALF_PORT: String(PORT), WALF_DB: path.join(tmp, 'e2e.db'), WALF_UPLOADS: path.join(tmp, 'up'), WALF_ADMIN_PASSWORD: 'e2e-pass', WALF_QA_TOOLS: '1', WALF_PUSH_DISABLED: '1', WALF_TICK_MS: '600000', WALF_AI_PROVIDER: 'mock', WALF_AI_POLL_MS: '100' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvLog = ''; srv.stdout.on('data', d => srvLog += d); srv.stderr.on('data', d => srvLog += d);
 
 const steps: string[] = [];
@@ -29,6 +29,15 @@ async function admin(p: string, form?: Record<string, string>) {
   return { status: r.status, loc, html: await r.text() };
 }
 const me = async () => (await api('GET', '/me')).j;
+/** 어드민 상세에 AI 작업이 끝났다는 표시가 뜰 때까지 기다린다 */
+async function waitAi(id: number, marker: string) {
+  for (let i = 0; i < 80; i++) { const h = (await admin(`/requests/${id}`)).html; if (h.includes(`data-ai="${marker}"`)) return h; await new Promise(r => setTimeout(r, 100)); }
+  throw new Error('AI 작업이 끝나지 않음: ' + marker);
+}
+async function post(p: string, form: Record<string, string>) {
+  const r = await fetch(B + '/admin' + p + `?_csrf=${csrf}`, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form) });
+  return decodeURIComponent((r.headers.get('location') || '').split('e=')[1] || '');
+}
 const key = async () => (await me()).active?.display.key;
 const sellers = ['1', '2', '3', '4', '5', '6'];
 
@@ -60,20 +69,31 @@ async function main() {
   const nocsrf = await fetch(B + `/admin/requests/${created.j.id}/activate`, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: 'name=x' });
   assert.equal(nocsrf.status, 403);
   ok('어드민 POST는 CSRF 토큰 없으면 403');
-  await admin(`/requests/${id}/activate`, { brand: 'BADBLOOD', name: 'BADBLOOD Mystic Nylon Track Jacket Navy', note: '브랜드 공식 상품명 기준' });
+  // AI가 먼저 식별 → 운영자는 제안을 고쳐 확정
+  const idHtml = await waitAi(id, 'identify:done');
+  const idAccept = /action="\/admin\/ai\/identities\/(\d+)\/accept/.exec(idHtml)![1];
+  assert.ok(idHtml.includes('AI 제안 · 검수 전') && idHtml.includes('모의'));
+  assert.equal((await me()).active.display.key, 'identification_pending', 'AI 제안만으로는 7일이 시작되지 않는다');
+  ok('접수 즉시 AI(모의)가 먼저 식별 → 어드민에 “AI 제안 · 검수 전” 후보 · 앱은 아직 “상품 확인 중”');
+  await admin(`/ai/identities/${idAccept}/accept`, { brand: 'BADBLOOD', name: 'BADBLOOD Mystic Nylon Track Jacket Navy' });
   let m = await me();
   assert.equal(m.active.display.key, 'first_search_pending');
   assert.equal(m.active.schedule.expiresAt - m.active.schedule.activatedAt, 168 * 3600_000);
-  ok(`운영자 확인 → 7일 시작 · 앱 “${m.active.display.title}” · ${m.active.schedule.endsLabel}`);
-  const detail = await admin(`/requests/${id}`);
+  ok(`운영자가 AI 제안을 고쳐 확정 → 7일 시작 · 앱 “${m.active.display.title}” · ${m.active.schedule.endsLabel}`);
+  const detail = { html: await waitAi(id, 'search:done') };
   assert.ok(detail.html.includes(m.active.display.title), '어드민이 앱과 같은 문장을 보여줘야 함');
   ok('어드민 “사용자 앱에 지금 보이는 문장” = 앱 상태 문장');
 
-  // 3. 첫 탐색 기록(모의) → 수배 제안
+  // 3. AI가 먼저 1일차 탐색 → 운영자 검수 → 탐색 기록(모의) → 수배 제안
   const run1 = /action="\/admin\/runs\/(\d+)\/complete/.exec(detail.html)![1];
+  assert.ok(detail.html.includes('AI 결과로 미리 골라 뒀어요'));
+  const find1 = /action="\/admin\/ai\/finds\/(\d+)\/reject/.exec(detail.html)![1];
   const runForm: Record<string, string> = { outcome: 'no_match', summary: 'E2E 모의 탐색', mock: '1' };
   sellers.forEach(s => { runForm[`st_${s}`] = 'checked'; runForm[`rs_${s}`] = 'none'; runForm[`nt_${s}`] = ''; });
   runForm.st_1 = 'checked'; runForm.rs_1 = 'same'; runForm.nt_1 = '동일 상품 · L만 있음';
+  assert.match(await post(`/runs/${run1}/complete`, runForm), /AI가 찾은 매물 1건을 먼저 검수/);
+  ok('AI가 찾은 매물을 검수하기 전에는 탐색 기록 저장 거부');
+  await admin(`/ai/finds/${find1}/reject`, { reason: '조건과 너무 다름', note: 'E2E 모의 매물' });
   await admin(`/runs/${run1}/complete`, runForm);
   m = await me();
   assert.equal(m.active.display.key, 'awaiting_consent');
@@ -100,9 +120,12 @@ async function main() {
 
   // 5. QA: 다음 날로 → 2일차 탐색 생성 · 기록
   await admin(`/requests/${id}/qa/shift`, {});
-  const d2 = await admin(`/requests/${id}`);
+  const d2 = { html: await waitAi(id, 'search:done') };
   const run2 = /action="\/admin\/runs\/(\d+)\/complete/.exec(d2.html)![1];
   assert.notEqual(run2, run1);
+  const find2 = /action="\/admin\/ai\/finds\/(\d+)\/reject/.exec(d2.html)![1];
+  await admin(`/ai/finds/${find2}/reject`, { reason: '기타', note: 'E2E 모의 매물' });
+  ok('DAY 02도 AI(모의)가 먼저 탐색 → 운영자가 결과 검수');
   const f2 = { ...runForm, outcome: 'nothing_new' }; f2.rs_1 = 'none'; f2.nt_1 = '';
   await admin(`/runs/${run2}/complete`, f2);
   m = await me();

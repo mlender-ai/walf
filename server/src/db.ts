@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS requests(
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sellers(
-  id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, kind TEXT NOT NULL, sort INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1
+  id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, kind TEXT NOT NULL, sort INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+  domain TEXT                           -- AI 탐색이 검색할 수 있는 유일한 사이트(해외 판매처 제외)
 );
 CREATE TABLE IF NOT EXISTS search_runs(
   id INTEGER PRIMARY KEY,
@@ -102,14 +103,56 @@ CREATE TABLE IF NOT EXISTS notifications(
   push_status TEXT NOT NULL,            -- no_token | sending | sent | failed | disabled
   push_detail TEXT
 );
+-- AI 보조(PRD: AI는 후보 식별·검색의 보조 수단, 최종 판단은 왈프 팀). 결과는 운영자가 검수하기 전까지 사용자에게 보이지 않는다.
+CREATE TABLE IF NOT EXISTS ai_jobs(
+  id INTEGER PRIMARY KEY,
+  request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  run_id INTEGER REFERENCES search_runs(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,                   -- identify(상품 식별) | search(국내 판매처 탐색)
+  status TEXT NOT NULL,                 -- queued | running | done | failed | cancelled
+  provider TEXT NOT NULL,               -- claude | mock
+  model TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+  summary TEXT, detail TEXT, error TEXT,  -- detail: 판매처별 결과 등(JSON)
+  input_tokens INTEGER, output_tokens INTEGER, searches INTEGER,
+  requested_by TEXT,                    -- 운영자가 다시 실행했으면 그 이름, 자동이면 NULL
+  is_mock INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS ai_identities(
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES ai_jobs(id) ON DELETE CASCADE,
+  request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  rank INTEGER NOT NULL, brand TEXT, name TEXT NOT NULL, color TEXT, category TEXT,
+  confidence TEXT NOT NULL,             -- high | medium | low
+  reasons TEXT, refs TEXT,              -- JSON 문자열 배열
+  status TEXT NOT NULL DEFAULT 'proposed', -- proposed | accepted | passed
+  is_mock INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS ai_finds(
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES ai_jobs(id) ON DELETE CASCADE,
+  request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  run_id INTEGER REFERENCES search_runs(id) ON DELETE CASCADE,
+  seller_id INTEGER REFERENCES sellers(id),
+  url TEXT, url_seen INTEGER,           -- 1: 검색·열람 결과에 있던 주소, 0: 없던 주소, NULL: 알 수 없음
+  title TEXT, price INTEGER, size TEXT, condition TEXT,
+  match_guess TEXT NOT NULL,            -- same_likely | similar | unknown (AI 추정)
+  stock_guess TEXT NOT NULL,            -- listed | sold_out | unknown (AI 추정)
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'proposed', -- proposed | accepted | rejected
+  candidate_id INTEGER, decided_by TEXT, decided_at INTEGER, reject_reason TEXT,
+  is_mock INTEGER NOT NULL DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS ix_req_user ON requests(user_id, status);
+CREATE INDEX IF NOT EXISTS ix_ai_job ON ai_jobs(status, id);
+CREATE INDEX IF NOT EXISTS ix_ai_find ON ai_finds(request_id, status);
 CREATE INDEX IF NOT EXISTS ix_act_req ON activity(request_id, at);
 CREATE INDEX IF NOT EXISTS ix_noti_user ON notifications(user_id, created_at);
 `;
 
-export const SELLERS: [string, string][] = [
-  ['무신사', 'new'], ['29CM', 'new'], ['W컨셉', 'new'],
-  ['번개장터', 'used'], ['중고나라', 'used'], ['후루츠패밀리', 'used'],
+export const SELLERS: [string, string, string][] = [
+  ['무신사', 'new', 'musinsa.com'], ['29CM', 'new', '29cm.co.kr'], ['W컨셉', 'new', 'wconcept.co.kr'],
+  ['번개장터', 'used', 'bunjang.co.kr'], ['중고나라', 'used', 'joongna.com'], ['후루츠패밀리', 'used', 'fruitsfamily.com'],
 ];
 export const WANTED_CHANNELS = ['번개장터', '중고나라', '후루츠패밀리'];
 
@@ -125,8 +168,10 @@ export function openDb(file: string): DB {
   add('candidates', 'needs_recheck', 'INTEGER NOT NULL DEFAULT 0');
   add('wanted', 'is_mock', 'INTEGER NOT NULL DEFAULT 0');
   add('users', 'deleted_at', 'INTEGER');
+  add('sellers', 'domain', 'TEXT');
   const ins = db.prepare('INSERT OR IGNORE INTO sellers(name, kind, sort) VALUES (?, ?, ?)');
-  SELLERS.forEach(([n, k], i) => ins.run(n, k, i));
+  const dom = db.prepare('UPDATE sellers SET domain=? WHERE name=? AND domain IS NULL');
+  SELLERS.forEach(([n, k, d], i) => { ins.run(n, k, i); dom.run(d, n); });
   return db;
 }
 

@@ -99,7 +99,7 @@ export function sendTestPush(db: DB, requestId: number, operator: string) {
 export type NewRequest = { productName?: string; brand?: string; productUrl?: string; photo?: string | null; note?: string; size?: string; color?: string; maxPrice?: number | null; usedOk?: boolean };
 
 /** 받침에 맞는 목적격 조사(을/를) */
-const eul = (w: string) => { const c = w.charCodeAt(w.length - 1); return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? '을' : '를'; };
+export const eul = (w: string) => { const c = w.charCodeAt(w.length - 1); return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? '을' : '를'; };
 const clean = (s: unknown, max: number) => {
   if (s == null) return null;
   const v = String(s).trim();
@@ -164,7 +164,7 @@ export function submitInfo(db: DB, userId: number, id: number, input: { text?: s
   });
 }
 
-export function activate(db: DB, id: number, data: { brand?: string; name?: string; note?: string }, operator: string) {
+export function activate(db: DB, id: number, data: { brand?: string; name?: string; note?: string }, operator: string, opts: { isMock?: boolean } = {}) {
   const r = getRequest(db, id);
   if (!['submitted', 'needs_info'].includes(r.status)) throw new HttpError(409, 'bad_state', '이미 시작했거나 끝난 의뢰예요.');
   const name = clean(data.name, 120) || r.product_name;
@@ -173,7 +173,8 @@ export function activate(db: DB, id: number, data: { brand?: string; name?: stri
   tx(db, () => {
     run(db, `UPDATE requests SET status='active', identified_brand=?, identified_name=?, identified_note=?, info_request=NULL,
       activated_at=?, expires_at=?, updated_at=? WHERE id=?`, clean(data.brand, 60) || r.brand, name, clean(data.note, 300), t, t + HUNT_MS, t, id);
-    log(db, id, 'team', 'activated', '의뢰 시작', '상품 확인 완료 · 7일 탐색 시작', { operator, isMock: !!r.is_mock, at: t });
+    log(db, id, 'team', 'activated', '의뢰 시작', '상품 확인 완료 · 7일 탐색 시작', { operator, isMock: !!r.is_mock || !!opts.isMock, at: t });
+    run(db, `UPDATE ai_identities SET status='passed' WHERE request_id=? AND status='proposed'`, id); // 남은 AI 제안은 고르지 않은 것으로
     ensureRuns(db, t, id);
   });
 }
@@ -226,6 +227,8 @@ export function completeRun(db: DB, runId: number, input: { checks: CheckInput[]
   const unreachable = input.checks.filter(c => c.status === 'unreachable').length;
   const same = checked.filter(c => c.result === 'same').length;
   if ((input.outcome === 'offer' || input.outcome === 'leads') && !same) throw new HttpError(400, 'outcome_mismatch', '후보가 있다면 그 판매처 결과를 “동일 상품 있음”으로 골라 주세요.');
+  const unreviewed = one(db, `SELECT COUNT(*) n FROM ai_finds WHERE run_id=? AND status='proposed'`, runId)!.n;
+  if (unreviewed) throw new HttpError(409, 'ai_unreviewed', `AI가 찾은 매물 ${unreviewed}건을 먼저 검수해 주세요(후보로 등록하거나 제외).`);
   const isMock = !!input.isMock || !!r.is_mock;
   tx(db, () => {
     const ins = db.prepare('INSERT INTO seller_checks(run_id, seller_id, status, result, note) VALUES (?,?,?,?,?)');

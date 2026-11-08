@@ -7,6 +7,8 @@ import { openDb } from './db.ts';
 import { userApi, apiErrors } from './api.ts';
 import { adminRouter } from './admin.ts';
 import { tick } from './domain.ts';
+import { aiFromEnv } from './ai.ts';
+import { createAiWorker, recoverAiJobs, ensureAiJobs } from './aijobs.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 // .env (있으면) — 이미 설정된 환경변수가 우선
@@ -23,6 +25,8 @@ if (!password) { console.error('WALF_ADMIN_PASSWORD 가 없어요. server/.env.e
 
 if (password === 'change-me' || password.length < 12) console.warn('⚠ 어드민 비밀번호가 예시 값이거나 너무 짧아요. 같은 네트워크에 공개하기 전에 server/.env 의 WALF_ADMIN_PASSWORD 를 12자 이상으로 바꾸세요.');
 const db = openDb(dbFile);
+// AI 보조: 키가 있으면 접수 즉시 AI가 먼저 식별·탐색하고 왈프 팀이 검수한다. 없으면 운영자가 직접 확인한다.
+const ai = aiFromEnv();
 const app = express();
 app.set('trust proxy', process.env.WALF_TRUST_PROXY === '1');
 app.disable('x-powered-by');
@@ -35,15 +39,22 @@ app.use((req, res, next) => {
 });
 app.use('/uploads', express.static(uploads, { maxAge: '7d', immutable: true, fallthrough: false }));
 app.use('/api', userApi(db, { uploads, pushConfigured: process.env.WALF_PUSH_DISABLED !== '1' }), apiErrors);
-app.use('/admin', adminRouter(db, { uploads, password, secret: process.env.WALF_SECRET || crypto.randomBytes(32).toString('hex'), qaTools: process.env.WALF_QA_TOOLS === '1' }));
+app.use('/admin', adminRouter(db, { uploads, password, secret: process.env.WALF_SECRET || crypto.randomBytes(32).toString('hex'), qaTools: process.env.WALF_QA_TOOLS === '1', ai }));
 app.get('/', (_q, res) => res.redirect('/admin'));
 
 const every = Number(process.env.WALF_TICK_MS || 30_000);
 const doTick = () => { try { const r = tick(db); if (r.runs || r.missed || r.expired) console.log(new Date().toISOString(), 'tick', r); } catch (e) { console.error('tick 실패', e); } };
 doTick(); setInterval(doTick, every);
+if (ai) {
+  const back = recoverAiJobs(db);
+  ensureAiJobs(db, ai);
+  createAiWorker(db, ai, uploads).start(Number(process.env.WALF_AI_POLL_MS || 5000));
+  if (back) console.log(`AI 작업 ${back}건을 다시 대기열에 넣었어요(서버 재시작).`);
+}
 
 app.listen(PORT, '0.0.0.0', () => {
   const lan = Object.values(os.networkInterfaces()).flat().find(i => i && i.family === 'IPv4' && !i.internal)?.address;
   console.log(`WALF server  http://localhost:${PORT}  (LAN http://${lan}:${PORT})`);
   console.log(`  admin  http://localhost:${PORT}/admin   db ${path.relative(root, dbFile)}   QA도구 ${process.env.WALF_QA_TOOLS === '1' ? '켜짐' : '꺼짐'}`);
+  console.log(`  AI     ${ai ? ai.label : '꺼짐 — server/.env 에 ANTHROPIC_API_KEY 가 없어 운영자가 직접 확인해요'}`);
 });

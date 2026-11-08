@@ -5,8 +5,10 @@ import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { uploader, baseOf } from './api.ts';
 import { now, kDate, kTime, kWhen, HOUR, DAY } from './time.ts';
+import type { AiProvider } from './ai.ts';
+import * as A from './aijobs.ts';
 
-type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean };
+type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const MOCK = '<span class="mk">모의</span>';
 
@@ -36,6 +38,10 @@ textarea{min-height:64px}label{display:block;font-size:12.5px;font-weight:700;ma
 .n{font-size:30px;font-weight:800;letter-spacing:-.04em}.log li{display:grid;grid-template-columns:150px 70px 1fr;gap:10px;padding:7px 0;border-bottom:1px solid var(--sf)}
 ul{list-style:none;margin:0;padding:0}details summary{cursor:pointer;font-weight:700;padding:6px 0}.warn{border:2px dashed #111}
 :focus-visible{outline:2px solid #111;outline-offset:2px}
+.ai{border:1.5px solid #111;border-radius:12px;padding:14px 16px;margin:10px 0;background:var(--cv)}.ai h3 .sub{font-weight:600}
+.ai .id{background:#fff;border:1px solid var(--g3);border-radius:10px;padding:12px 14px;margin:10px 0}.ai .id ul{list-style:disc;padding-left:18px;margin:6px 0}
+.ai .id ul li{margin:2px 0}.tg.aip{border:1.2px dashed #111;background:#fff}.fd{border-top:1px solid var(--g3);padding:12px 0}.fd:first-of-type{border-top:0}
+.aibar{display:flex;gap:10px;align-items:center;padding:10px 14px;border-radius:10px;background:var(--sf);margin-bottom:14px}
 `;
 const FONT = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">';
 
@@ -95,11 +101,18 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const t = now();
     const q = (sql: string, ...p: any[]) => db.prepare(sql).all(...p) as any[];
     const link = (rq: any, extra = '') => `<div class="q"><a href="/admin/requests/${rq.id}"><b>#${rq.id} ${esc(D.shortName(rq))}</b>${rq.is_mock ? MOCK : ''}</a><span class="sub">${extra}</span></div>`;
+    const aiJob = (sql: string, id: number) => db.prepare(sql).get(id) as any;
+    const aiText = (j: any, proposed = 0) => !j ? (cfg.ai ? ' · AI 대기' : '') : j.status === 'queued' ? ' · AI 대기' : j.status === 'running' ? ' · <b>AI가 살펴보는 중</b>'
+      : j.status === 'failed' ? ' · <b>AI 실패 — 직접 확인</b>' : j.status === 'done' ? (proposed ? ` · <b>AI 제안 ${proposed}개 확인 필요</b>` : ' · AI 완료') : '';
     const sections: [string, string, string][] = [
-      ['상품 확인 대기', '접수 후 7일이 아직 시작되지 않았어요', q(`SELECT * FROM requests WHERE status='submitted' ORDER BY created_at`).map(x => link(x, `접수 ${kWhen(x.created_at, t)}`)).join('')],
+      ['상품 확인 대기', 'AI가 먼저 후보를 추리고, 왈프 팀이 확정하면 7일이 시작돼요', q(`SELECT * FROM requests WHERE status='submitted' ORDER BY created_at`).map(x => link(x, `접수 ${kWhen(x.created_at, t)}${aiText(
+        aiJob(`SELECT * FROM ai_jobs WHERE request_id=? AND kind='identify' ORDER BY id DESC LIMIT 1`, x.id), (db.prepare(`SELECT COUNT(*) n FROM ai_identities WHERE request_id=? AND status='proposed'`).get(x.id) as any).n)}`)).join('')],
       ['정보 보완 대기', '사용자 답을 기다려요', q(`SELECT * FROM requests WHERE status='needs_info' ORDER BY updated_at`).map(x => link(x, esc(x.info_request))).join('')],
       ['오늘 할 탐색', '창이 닫히면 “하지 못함”으로 기록돼요', q(`SELECT s.*, r.product_name, r.identified_name, r.product_url, r.is_mock, r.id rid FROM search_runs s JOIN requests r ON r.id=s.request_id WHERE s.status='pending' ORDER BY s.window_end`)
-        .map(s => link({ ...s, id: s.rid }, `DAY ${s.day} · 마감 ${kWhen(s.window_end, t)}`)).join('')],
+        .map(s => link({ ...s, id: s.rid }, `DAY ${s.day} · 마감 ${kWhen(s.window_end, t)}${aiText(aiJob(`SELECT * FROM ai_jobs WHERE run_id=? ORDER BY id DESC LIMIT 1`, s.id))}`)).join('')],
+      ['AI가 찾은 매물 검수', '검수(후보 등록·제외) 전에는 사용자에게 보이지 않아요', q(`SELECT f.request_id id, COUNT(*) n, GROUP_CONCAT(DISTINCT s.name) sellers, r.product_name, r.identified_name, r.product_url, r.is_mock
+        FROM ai_finds f JOIN requests r ON r.id=f.request_id LEFT JOIN sellers s ON s.id=f.seller_id WHERE f.status='proposed' AND r.status='active' GROUP BY f.request_id ORDER BY MIN(f.id)`)
+        .map(x => link(x, `${x.n}건 · ${esc(x.sellers || '')}`)).join('')],
       ['검수 대기 후보', '아직 사용자에게 보이지 않거나 재고 미확인', q(`SELECT c.*, r.product_name, r.identified_name, r.product_url FROM candidates c JOIN requests r ON r.id=c.request_id WHERE r.status='active' AND c.user_dismissed=0 AND (c.published=0 OR c.needs_recheck=1 OR c.availability='listed_unverified' OR c.match_grade='same_likely') ORDER BY c.created_at`)
         .map(c => link({ ...c, id: c.request_id }, `${esc(c.seller)} · ${c.source === 'report' ? '제보' : '탐색'} · ${c.needs_recheck ? '조건 변경 재확인' : c.published ? '공개됨' : '비공개'}`)).join('')],
       ['수배 게시 대기', '게시 주소를 남겨야 완료로 보여요', q(`SELECT p.*, w.request_id, r.product_name, r.identified_name, r.product_url, r.is_mock FROM wanted_posts p JOIN wanted w ON w.id=p.wanted_id JOIN requests r ON r.id=w.request_id WHERE p.status='queued'`)
@@ -109,8 +122,11 @@ export function adminRouter(db: DB, cfg: Cfg) {
       ['24시간 안에 7일 종료', '종료 보고가 자동으로 발송돼요', q(`SELECT * FROM requests WHERE status='active' AND expires_at<=?`, t + DAY).map(x => link(x, `${kWhen(x.expires_at, t)} 종료`)).join('')],
     ];
     const counts = (db.prepare(`SELECT status, COUNT(*) n FROM requests GROUP BY status`).all() as any[]).reduce((m, x) => (m[x.status] = x.n, m), {} as any);
+    const jc = (db.prepare(`SELECT status, COUNT(*) n FROM ai_jobs WHERE created_at>? GROUP BY status`).all(t - DAY) as any[]).reduce((m, x) => (m[x.status] = x.n, m), {} as any);
+    const aibar = `<div class="aibar">${cfg.ai ? `<b>AI 보조 켜짐</b><span>${esc(cfg.ai.label)}</span><span class="sub">최근 24시간 · 대기 ${jc.queued || 0} · 진행 ${jc.running || 0} · 완료 ${jc.done || 0} · 실패 ${jc.failed || 0}</span>`
+      : '<b>AI 보조 꺼짐</b><span class="sub">server/.env 에 ANTHROPIC_API_KEY 를 넣고 서버를 다시 켜면, 접수 즉시 AI가 먼저 상품을 식별하고 국내 판매처를 찾아봐요. 지금은 운영자가 직접 확인해요.</span>'}</div>`;
     send(req, res, page('대기열', `<h1>오늘의 대기열</h1><p class="sub">${kDate(t)} ${kTime(t)} 기준 · 활성 ${counts.active || 0} · 접수 ${counts.submitted || 0} · 보완 ${counts.needs_info || 0} · 종료 ${(counts.completed || 0) + (counts.expired || 0) + (counts.cancelled || 0)}</p>
-      <div class="grid">${sections.map(([h, s, body]) => `<section><h2>${h}</h2><p class="sub" style="margin:-8px 0 8px">${s}</p>${body || '<p class="empty">없음</p>'}</section>`).join('')}</div>`, OP(req), 'home'));
+      ${aibar}<div class="grid">${sections.map(([h, s, body]) => `<section><h2>${h}</h2><p class="sub" style="margin:-8px 0 8px">${s}</p>${body || '<p class="empty">없음</p>'}</section>`).join('')}</div>`, OP(req), 'home'));
   });
 
   r.get('/requests', (req, res) => {
@@ -146,33 +162,111 @@ export function adminRouter(db: DB, cfg: Cfg) {
       <div style="flex:3"><p class="sub">의뢰 #${rq.id} · 접수 ${kWhen(rq.created_at, t)}${rq.is_mock ? MOCK : ''}</p><h1>${esc(v.product.title)}</h1>
       <dl class="kv"><dt>사용자가 쓴 이름</dt><dd>${esc(rq.product_name) || '—'}</dd><dt>브랜드</dt><dd>${esc(rq.brand) || '—'}</dd>
       <dt>링크</dt><dd>${rq.product_url ? `<a href="${esc(rq.product_url)}" target="_blank" rel="noopener noreferrer">${esc(rq.product_url)}</a>` : '—'}</dd><dt>메모</dt><dd style="white-space:pre-wrap">${esc(rq.note) || '—'}</dd>
-      <dt>구매 조건</dt><dd>${esc(v.conditions.label) || '나중에 입력'}</dd><dt>기간</dt><dd>${rq.activated_at ? `DAY ${D.dayOf(rq, t)} · ${esc(v.schedule.startedLabel)} → ${esc(v.schedule.endsLabel)}` : '7일 시작 전'}</dd>${pushRow}</dl></div>
+      <dt>구매 조건</dt><dd>${esc(v.conditions.label) || '나중에 입력'}</dd><dt>기간</dt><dd>${rq.activated_at ? `DAY ${D.dayOf(rq, t)} · ${esc(v.schedule.startedLabel)} → ${esc(v.schedule.endsLabel)}` : '7일 시작 전'}</dd>${pushRow}
+      <dt>AI 보조</dt><dd>${cfg.ai ? esc(cfg.ai.label) : '꺼짐 — 운영자가 직접 확인'}</dd></dl></div>
       <div style="flex:2"><p class="sub" style="margin:0 0 6px">사용자 앱에 지금 보이는 문장 (서버 계산값 그대로)</p><div class="app"><small>${esc(v.display.eyebrow)}</small><b>${esc(v.display.title)}</b><span>${esc(v.display.desc)}</span>
       <p style="margin:8px 0 0"><span class="st">${esc(v.display.label)}</span> <span class="sub">${esc(v.display.key)}</span></p></div></div></div>`;
 
+    // AI가 먼저 살펴본 결과 — 운영자는 채택·수정·직접 확인 중에서 고른다
+    const av = A.aiView(db, rq.id);
+    const jobState = (j: any) => !j ? '아직 없음' : j.status === 'queued' ? '대기 중' : j.status === 'running' ? `살펴보는 중 · ${kWhen(j.started_at, t)} 시작`
+      : j.status === 'done' ? `완료 ${kWhen(j.finished_at, t)}` : j.status === 'failed' ? `실패 ${kWhen(j.finished_at, t)}` : '실행 안 함(의뢰 상태 바뀜)';
+    const usage = (j: any) => j?.status === 'done' && j.provider !== 'mock' ? ` · 검색 ${j.searches ?? 0}회 · 토큰 ${((j.input_tokens || 0) + (j.output_tokens || 0)).toLocaleString()}` : '';
+    const busy = (j: any) => !!j && ['queued', 'running'].includes(j.status);
+    const host = (u: string) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return u; } };
+    const ids = av.identities.filter((x: any) => x.status === 'proposed');
+    const missing: string[] = av.identifyDone?.detail?.missing || [];
+    const idCard = (x: any) => `<form method="post" action="/admin/ai/identities/${x.id}/accept" class="id">
+      <p style="margin:0 0 6px"><b>${x.rank}순위</b> <span class="tg aip">AI 제안 · 검수 전</span> <span class="tg ${x.confidence === 'high' ? 'o' : 'x'}">신뢰도 ${A.CONF_LABEL[x.confidence]}</span>${x.category ? ` <span class="sub">${esc(x.category)}</span>` : ''}${x.is_mock ? MOCK : ''}</p>
+      <div class="row"><div><label>브랜드</label><input type="text" name="brand" value="${esc(x.brand || '')}"></div><div style="flex:2"><label>상품명(모델·색상) — 고쳐서 확정할 수 있어요</label><input type="text" name="name" required maxlength="120" value="${esc(A.identityLabel(x))}"></div></div>
+      ${x.reasons.length ? `<ul>${x.reasons.map((r: string) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+      ${x.refs.length ? `<p class="sub" style="margin:4px 0 8px">AI가 확인한 페이지: ${x.refs.map((u: string) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(host(u))}</a>`).join(' · ')}</p>` : ''}
+      <button class="btn sm">이 상품으로 확정 → 7일 탐색 시작</button></form>`;
+    const idJob = av.identify;
+    const aiId = !cfg.ai && !idJob ? '<div class="ai" data-ai="identify:off"><h3>AI 식별 꺼짐</h3><p class="sub" style="margin:0">server/.env 에 ANTHROPIC_API_KEY 가 없어서 AI가 먼저 살펴보지 못했어요. 아래에서 직접 확인하세요.</p></div>'
+      : `<div class="ai" data-ai="identify:${idJob?.status || 'none'}"><h3>AI가 먼저 살펴본 결과 <span class="sub">· ${esc(jobState(idJob))}${usage(av.identifyDone)}</span>${idJob?.is_mock ? MOCK : ''}</h3>
+      ${busy(idJob) ? '<p class="sub">사진·링크를 보고 브랜드 공식몰과 국내 판매처에서 같은 상품을 찾는 중이에요. 보통 1~3분 걸려요. <a href="">새로고침</a></p>' : ''}
+      ${idJob?.status === 'failed' ? `<p><b>AI 식별 실패</b> — ${esc(idJob.error)}</p>` : ''}
+      ${av.identifyDone?.summary ? `<p style="margin:6px 0">${esc(av.identifyDone.summary)}</p>` : ''}${ids.map(idCard).join('')}
+      ${av.identifyDone && !ids.length && !busy(idJob) ? '<p class="sub">AI가 고를 만한 후보를 내지 못했어요. 아래에서 직접 확인하거나 보완을 요청하세요.</p>' : ''}
+      ${missing.length ? `<p class="sub">AI가 더 필요하다고 본 정보: ${missing.map(esc).join(' · ')}</p>` : ''}
+      ${cfg.ai && rq.status === 'submitted' && !busy(idJob) ? `<form method="post" action="/admin/requests/${rq.id}/ai/identify"><button class="btn s sm">AI 다시 살펴보기</button></form>` : ''}</div>`;
     let ident = '';
-    if (['submitted', 'needs_info'].includes(rq.status)) ident = `<section class="warn"><h2>1 · 상품 확인</h2><p class="sub">확인하면 지금부터 168시간(7일) 탐색이 시작되고 1일차 탐색 작업이 생겨요.${rq.status === 'needs_info' ? ` 현재 보완 요청: “${esc(rq.info_request)}”` : ''}</p>
-      <div class="grid"><form method="post" action="/admin/requests/${rq.id}/activate"><label>확인한 브랜드</label><input type="text" name="brand" value="${esc(rq.identified_brand || rq.brand || '')}">
+    if (['submitted', 'needs_info'].includes(rq.status)) ident = `<section class="warn"><h2>1 · 상품 확인</h2><p class="sub">AI가 먼저 후보를 추리고 왈프 팀이 확정해요. 확정하면 지금부터 168시간(7일) 탐색이 시작되고, 1일차 탐색도 AI가 먼저 해요.${rq.status === 'needs_info' ? ` 현재 보완 요청: “${esc(rq.info_request)}”` : ''}</p>
+      ${aiId}
+      <div class="grid"><details ${ids.length || busy(idJob) ? '' : 'open'}><summary>직접 확인해서 시작(AI 제안이 틀렸거나 AI 없이)</summary><form method="post" action="/admin/requests/${rq.id}/activate"><label>확인한 브랜드</label><input type="text" name="brand" value="${esc(rq.identified_brand || rq.brand || '')}">
       <label>확인한 상품명(모델·색상)</label><input type="text" name="name" required value="${esc(rq.identified_name || rq.product_name || '')}"><label>근거 메모(내부)</label><input type="text" name="note" value="${esc(rq.identified_note || '')}">
-      <p><button class="btn">상품 확인 → 7일 탐색 시작</button></p></form>
-      <form method="post" action="/admin/requests/${rq.id}/info-request"><label>정보 보완 요청(사용자에게 그대로 보여요)</label><textarea name="message" required maxlength="300" placeholder="예: 정확한 모델을 확인할 수 있게 태그 사진이나 구매 링크를 보내주세요."></textarea>
+      <p><button class="btn">상품 확인 → 7일 탐색 시작</button></p></form></details>
+      <form method="post" action="/admin/requests/${rq.id}/info-request"><label>정보 보완 요청(사용자에게 그대로 보여요)</label><textarea name="message" required maxlength="300" placeholder="${esc(missing.length ? `예: ${missing[0]}${D.eul(missing[0])} 보내주세요.` : '예: 정확한 모델을 확인할 수 있게 태그 사진이나 구매 링크를 보내주세요.')}"></textarea>
       <p><button class="btn s">보완 요청 보내기</button></p></form></div></section>`;
 
+    const MATCH: Record<string, string> = { same_likely: '같은 상품으로 보임', similar: '비슷한 상품', unknown: '판단 못 함' };
+    const STOCK: Record<string, string> = { listed: '판매글 있음', sold_out: '판매 종료로 보임', unknown: '판매 상태 모름' };
+    const COND: Record<string, string> = { new: '새 상품', used: '중고', unknown: '상태 모름' };
+    const REJECT = ['다른 상품', '판매 종료·품절', '해외 판매처', '이미 등록한 매물', '링크가 열리지 않음', '조건과 너무 다름', '기타'];
+    const sel2 = (name: string, opts: [string, string][], v?: string) => `<select name="${name}">${opts.map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    const findCard = (f: any) => `<div class="fd" id="find-${f.id}"><p style="margin:0 0 4px"><b>${esc(f.seller || '판매처 미상')}</b> <span class="sub">DAY ${f.day ?? '?'}</span> <span class="tg aip">AI 제안 · 검수 전</span> <span class="tg x">${MATCH[f.match_guess]}</span> <span class="tg p">${STOCK[f.stock_guess]}</span>${f.is_mock ? MOCK : ''}</p>
+      <p style="margin:0">${f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(f.title || f.url)}</b></a>` : `<b>${esc(f.title || '(주소 없음)')}</b>`} · ${f.price != null ? f.price.toLocaleString() + '원' : '가격 미확인'} · ${esc(f.size || '사이즈 미확인')} · ${COND[f.condition] || '상태 모름'}</p>
+      ${f.url_seen === 0 ? '<p><b>⚠ 검색 결과에 없던 주소예요.</b> AI가 잘못 적었을 수 있으니 직접 열어 확인하세요.</p>' : ''}${f.reason ? `<p class="sub" style="margin:4px 0">AI 메모: ${esc(f.reason)}</p>` : ''}
+      ${rq.status === 'active' ? `<details><summary>열어서 확인했어요 → 후보로 등록</summary><form method="post" action="/admin/ai/finds/${f.id}/accept"><p class="sub">판매처·주소는 AI가 찾은 그대로 저장돼요. 나머지는 직접 확인한 값으로 고치세요.</p>
+        <div class="g3"><div><label>매물 제목</label><input type="text" name="title" value="${esc(f.title || '')}"></div><div><label>사이즈</label><input type="text" name="size" value="${esc(f.size || '')}"></div>
+        <div><label>판매가(원)</label><input type="number" name="price" min="0" value="${f.price ?? ''}"></div><div><label>배송비(원)</label><input type="number" name="shipping" min="0" value="0"></div>
+        <div><label>상태</label>${sel2('condition', [['used', '중고'], ['new', '새 상품']], f.condition === 'new' ? 'new' : 'used')}</div><div><label>상태 메모</label><input type="text" name="conditionNote" placeholder="예: 사용감 적음(판매자 기재)"></div>
+        <div><label>상품 일치 등급</label>${sel2('matchGrade', [['same_likely', '동일 상품 유력'], ['same_confirmed', '동일 상품 확인'], ['similar', '유사 상품(사용자 비공개)'], ['unknown', '식별 불가']], f.match_guess)}</div>
+        <div><label>구매 가능 상태</label>${sel2('availability', [['listed_unverified', '판매글 존재·재고 미확인'], ['purchasable', '구매 가능 확인'], ['option_mismatch', '옵션 불일치'], ['sold_out', '판매 종료·품절']], f.stock_guess === 'sold_out' ? 'sold_out' : 'listed_unverified')}</div>
+        <div><label class="in" style="margin-top:28px"><input type="checkbox" name="checkedNow" value="1">지금 직접 확인함(확인 시각 기록)</label><label class="in"><input type="checkbox" name="colorOk" value="1" checked>색상 일치</label></div></div>
+        <div class="grid"><div><label>확인한 근거(한 줄에 하나 · 사용자에게 보임)</label><textarea name="evidence" placeholder="같은 옷이에요 | 판매글 사진의 로고 자수가 공식 상품과 같아요"></textarea></div>
+        <div><label>아직 확인 중인 것(한 줄에 하나)</label><textarea name="pending" placeholder="사이즈 | M 택 사진을 요청했어요"></textarea></div></div>
+        <p><label class="in"><input type="checkbox" name="publish" value="1">저장하면서 사용자에게 공개</label>${mockBox(!!f.is_mock)}</p><p><button class="btn sm">후보로 등록</button></p></form></details>
+      <form method="post" action="/admin/ai/finds/${f.id}/reject" class="row" style="margin-top:8px;max-width:640px"><select name="reason" required><option value="" selected disabled>제외 사유</option>${REJECT.map(x => `<option>${x}</option>`).join('')}</select><input type="text" name="note" maxlength="150" placeholder="메모(선택)"><button class="btn s sm" style="flex:none">제외</button></form>` : ''}</div>`;
+    const openFinds = av.finds.filter((f: any) => f.status === 'proposed');
+    const doneFinds = av.finds.filter((f: any) => f.status !== 'proposed');
+    const findsHtml = !av.finds.length ? `<p class="empty">${cfg.ai ? '아직 AI가 찾은 매물이 없어요.' : 'AI 탐색 꺼짐'}</p>`
+      : `${openFinds.map(findCard).join('') || '<p class="empty">검수할 매물이 없어요.</p>'}
+      ${doneFinds.length ? `<details><summary>검수한 AI 매물 ${doneFinds.length}건</summary><table><tbody>${doneFinds.map((f: any) => `<tr><td>DAY ${f.day ?? '?'}</td><td><b>${esc(f.seller || '')}</b> ${esc(f.title || '')}${f.is_mock ? MOCK : ''}</td>
+        <td>${f.status === 'accepted' ? `후보 #${f.candidate_id}로 등록` : `제외 · ${esc(f.reject_reason)}`}</td><td class="sub">${esc(f.decided_by || '')} ${f.decided_at ? kWhen(f.decided_at, t) : ''}</td></tr>`).join('')}</tbody></table></details>` : ''}`;
+
+    const lastPending = [...runs].reverse().find(x => x.status === 'pending');
+    const hasPending = !!lastPending;
+    const findsBox = av.finds.length ? `<div ${openFinds.length ? 'class="warn" style="border-radius:12px;padding:14px 16px;margin:10px 0"' : 'style="margin:10px 0"'}><h3>AI가 찾은 매물 · 검수 ${openFinds.length ? `<span class="sub">${openFinds.length}건 대기</span>` : ''}</h3>
+      <p class="sub">AI 추정은 점선 표시예요. 검수해서 후보로 올린 것만 “3 · 후보와 매물”에 들어가고, 공개한 것만 사용자에게 보여요.</p>${findsHtml}</div>` : '';
     const runsHtml = runs.map(s => {
       if (s.status !== 'pending') {
         const ks = db.prepare('SELECT k.*, se.name FROM seller_checks k JOIN sellers se ON se.id=k.seller_id WHERE run_id=? ORDER BY se.sort').all(s.id) as any[];
         return `<details><summary>DAY ${s.day} · ${s.status === 'done' ? `완료 ${kWhen(s.completed_at, t)} · ${esc(s.operator)} · 결과 ${esc(s.outcome)}` : s.status === 'missed' ? '하지 못함(창 마감)' : '취소'}${s.is_mock ? MOCK : ''}</summary>
           ${ks.length ? `<table><tbody>${ks.map(k => `<tr><td>${esc(k.name)}</td><td>${esc(k.status)}</td><td>${esc(k.result || '')}</td><td>${esc(k.note || '')}</td></tr>`).join('')}</tbody></table>` : ''}${s.summary ? `<p>${esc(s.summary)}</p>` : ''}</details>`;
       }
-      return `<form method="post" action="/admin/runs/${s.id}/complete" class="warn" style="border-radius:12px;padding:14px 16px;margin:10px 0"><h3>DAY ${s.day} 탐색 기록 · 마감 ${kWhen(s.window_end, t)}</h3>
-        <p class="sub">실제로 가격·재고를 확인한 곳만 “확인함”으로 고르세요. 접속이 안 되면 “접속 실패”로 남겨야 사용자에게 매물 없음으로 보이지 않아요.</p>
-        <table><thead><tr><th>판매처</th><th>확인</th><th>결과</th><th>메모(사용자에게 보임)</th></tr></thead><tbody>${sellers.map(se => `<tr><td><b>${esc(se.name)}</b></td>
-        <td><select name="st_${se.id}" required><option value="" selected disabled>선택</option><option value="checked">확인함</option><option value="unreachable">접속 실패</option><option value="skipped">확인 안 함</option></select></td>
-        <td><select name="rs_${se.id}"><option value="none">매물 없음</option><option value="same">동일 상품 있음</option><option value="similar">유사 상품만</option></select></td>
-        <td><input type="text" name="nt_${se.id}" maxlength="200" placeholder="예: M 품절, 동일 상품 1건 · 사이즈 L"></td></tr>`).join('')}</tbody></table>
-        <div class="row"><div><label>결과</label><select name="outcome" required><option value="" selected disabled>선택</option>${s.day === 1 ? '<option value="no_match">조건에 맞는 매물 없음 → 수배 제안</option>' : '<option value="nothing_new">새 소식 없음</option><option value="no_match">조건에 맞는 매물 없음</option>'}
-        <option value="leads">유력 후보 있음(아래에서 후보 등록)</option><option value="offer">구매 가능 매물 있음(아래에서 후보 등록)</option></select></div><div><label>내부 메모</label><input type="text" name="summary" maxlength="300"></div></div>
-        <p>${mockBox()}</p><p><button class="btn">탐색 기록 저장</button></p></form>`;
+      // AI가 먼저 찾아본 결과 → 판매처별 확인·결과를 미리 골라 둔다(운영자가 근거를 보고 저장해야 기록된다)
+      const sj = av.searchOf(s.id);
+      const sjDone = sj?.status === 'done';
+      const notes: any[] = sjDone ? sj.detail.sellers || [] : [];
+      const accepted = db.prepare(`SELECT f.seller_id, c.match_grade FROM ai_finds f JOIN candidates c ON c.id=f.candidate_id WHERE f.run_id=? AND f.status='accepted'`).all(s.id) as any[];
+      const pendingFinds = av.finds.filter((f: any) => f.run_id === s.id && f.status === 'proposed').length;
+      const rsOf = (sid: number) => { const g = accepted.filter(a => a.seller_id === sid).map(a => a.match_grade); return g.some(x => x.startsWith('same')) ? 'same' : g.includes('similar') ? 'similar' : 'none'; };
+      const anySame = accepted.some(a => a.match_grade.startsWith('same'));
+      const outDefault = !sjDone ? '' : anySame ? 'leads' : s.day === 1 ? 'no_match' : 'nothing_new';
+      const o = (v: string, label: string, cur: string) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${label}</option>`;
+      const det = sj?.detail || {};
+      const aiRun = !cfg.ai && !sj ? '<p class="sub">AI 탐색 꺼짐 — 판매처를 직접 확인해 기록하세요.</p>'
+        : `<div class="ai" data-ai="search:${sj?.status || 'none'}"><h3>AI가 먼저 찾아본 결과 <span class="sub">· ${esc(jobState(sj))}${usage(sj)}</span>${sj?.is_mock ? MOCK : ''}</h3>
+        ${busy(sj) ? '<p class="sub">국내 판매처 6곳에서 확정한 상품을 찾는 중이에요. <a href="">새로고침</a></p>' : ''}
+        ${sj?.status === 'failed' ? `<p><b>AI 탐색 실패</b> — ${esc(sj.error)}</p>` : ''}${sjDone && sj.summary ? `<p style="margin:6px 0">${esc(sj.summary)}</p>` : ''}
+        ${sjDone ? `<p class="sub" style="margin:4px 0">새로 찾은 매물 ${det.added ?? 0}건${det.duplicates ? ` · 이미 본 주소 ${det.duplicates}건 제외` : ''}${det.dropped ? ` · 판매처 밖 주소 ${det.dropped}건 버림` : ''}${det.blocked?.length ? ` · AI 검색 불가: ${esc(det.blocked.join(', '))}` : ''}</p>` : ''}
+        ${pendingFinds ? `<p><b>검수할 매물 ${pendingFinds}건</b> — 바로 아래에서 후보로 등록하거나 제외해야 이 탐색을 저장할 수 있어요.</p>` : ''}
+        ${cfg.ai && !busy(sj) ? `<form method="post" action="/admin/requests/${rq.id}/ai/search"><button class="btn s sm">AI 다시 찾아보기</button></form>` : ''}</div>`;
+      return `${aiRun}${s.id === lastPending?.id ? findsBox : ''}<form method="post" action="/admin/runs/${s.id}/complete" class="warn" style="border-radius:12px;padding:14px 16px;margin:10px 0"><h3>DAY ${s.day} 탐색 기록 · 마감 ${kWhen(s.window_end, t)}</h3>
+        <p class="sub">${sjDone ? '<b>AI 결과로 미리 골라 뒀어요.</b> 판매처별 AI 메모와 검수한 매물을 보고 맞는지 확인한 뒤 저장하세요. ' : ''}실제로 확인한 곳만 “확인함”으로 고르세요. 접속이 안 되면 “접속 실패”로 남겨야 사용자에게 매물 없음으로 보이지 않아요.</p>
+        <table><thead><tr><th>판매처</th><th>AI가 본 것(내부)</th><th>확인</th><th>결과</th><th>메모(사용자에게 보임)</th></tr></thead><tbody>${sellers.map(se => {
+          const n = notes.find(x => x.sellerId === se.id);
+          const st = n?.searched ? 'checked' : '';
+          return `<tr><td><b>${esc(se.name)}</b></td><td class="sub">${n ? `${n.searched ? '검색함' : '<b>검색 못 함</b>'}${n.note ? ' · ' + esc(n.note) : ''}` : '—'}</td>
+        <td><select name="st_${se.id}" required><option value="" ${st ? '' : 'selected'} disabled>선택</option>${o('checked', '확인함', st)}${o('unreachable', '접속 실패', st)}${o('skipped', '확인 안 함', st)}</select></td>
+        <td><select name="rs_${se.id}">${o('none', '매물 없음', rsOf(se.id))}${o('same', '동일 상품 있음', rsOf(se.id))}${o('similar', '유사 상품만', rsOf(se.id))}</select></td>
+        <td><input type="text" name="nt_${se.id}" maxlength="200" placeholder="예: M 품절, 동일 상품 1건 · 사이즈 L"></td></tr>`;
+        }).join('')}</tbody></table>
+        <div class="row"><div><label>결과</label><select name="outcome" required><option value="" ${outDefault ? '' : 'selected'} disabled>선택</option>${s.day === 1 ? o('no_match', '조건에 맞는 매물 없음 → 수배 제안', outDefault) : o('nothing_new', '새 소식 없음', outDefault) + o('no_match', '조건에 맞는 매물 없음', outDefault)}
+        ${o('leads', '유력 후보 있음(아래에서 후보 등록)', outDefault)}${o('offer', '구매 가능 매물 있음(아래에서 후보 등록)', outDefault)}</select></div><div><label>내부 메모</label><input type="text" name="summary" maxlength="300"></div></div>
+        <p>${mockBox(!!sj?.is_mock)}</p><p><button class="btn">탐색 기록 저장</button></p></form>`;
     }).join('') || '<p class="empty">상품 확인 후 탐색 작업이 생겨요.</p>';
 
     const tagOf = (c: any) => { const cv = D.candidateView(db, rq, c, base); return cv.tags.map(x => `<span class="tg ${x.kind}">${esc(x.text)}</span>`).join(' ') + ` <span class="st">${cv.kind}</span>`; };
@@ -212,7 +306,8 @@ export function adminRouter(db: DB, cfg: Cfg) {
       : qaPush ? `<section class="warn"><h2>QA 도구 <span class="mk">QA</span></h2><div class="row">${qaPush}</div></section>` : '';
 
     const body = `${head}${ident}
-      <section><h2>2 · 탐색 작업</h2>${runsHtml}</section>
+      <section><h2>2 · 탐색 작업</h2><p class="sub">AI가 매일 국내 판매처를 먼저 찾아보고, 왈프 팀이 검수해서 기록해요.</p>${runsHtml}</section>
+      ${findsBox && !hasPending ? `<section>${findsBox}</section>` : ''}
       <section><h2>3 · 후보와 매물 ${cands.length ? `<span class="sub">${cands.length}</span>` : ''}</h2><p class="sub">공개한 후보만 사용자에게 보여요. 판매자 제보는 “구매 가능 확인” 전까지 푸시를 보내지 않아요(PRD).</p>
         ${candsHtml}<details ${cands.length ? '' : 'open'}><summary>새 후보 등록</summary>${rq.status === 'active' ? candForm() : '<p class="empty">진행 중인 의뢰에만 등록할 수 있어요.</p>'}</details>
         <datalist id="sellers">${sellers.map(s => `<option value="${esc(s.name)}">`).join('')}</datalist></section>
@@ -274,6 +369,28 @@ export function adminRouter(db: DB, cfg: Cfg) {
     (req as any).rid = c.request_id;
     act(rq => { D.publishCandidate(db, c.id, OP(rq), rq.body.on === '1'); return [c.request_id, rq.body.on === '1' ? '사용자에게 공개했어요.' : '사용자 화면에서 내렸어요.']; })(req, res, next);
   });
+  r.post('/requests/:id/ai/identify', act(req => { const id = Number(req.params.id); A.rerunAi(db, cfg.ai ?? null, id, 'identify', OP(req)); return [id, 'AI가 다시 살펴보기 시작해요. 1~3분 뒤 새로고침하세요.']; }));
+  r.post('/requests/:id/ai/search', act(req => { const id = Number(req.params.id); A.rerunAi(db, cfg.ai ?? null, id, 'search', OP(req)); return [id, 'AI가 다시 찾아보기 시작해요. 몇 분 뒤 새로고침하세요.']; }));
+  const withRow = (sql: string, fn: (row: any, req: express.Request) => [number, string]): express.RequestHandler => (req, res, next) => {
+    const row = db.prepare(sql).get(Number(req.params.id)) as any;
+    if (!row) return next(new HttpError(404, 'not_found'));
+    (req as any).rid = row.request_id;
+    act(rq => fn(row, rq))(req, res, next);
+  };
+  r.post('/ai/identities/:id/accept', withRow('SELECT * FROM ai_identities WHERE id=?', (it, req) => {
+    A.acceptIdentity(db, it.id, { brand: req.body.brand, name: req.body.name }, OP(req));
+    return [it.request_id, 'AI 제안으로 상품을 확정했어요. 7일 탐색이 시작됐고, 1일차 탐색도 AI가 먼저 해요.'];
+  }));
+  r.post('/ai/finds/:id/accept', withRow('SELECT * FROM ai_finds WHERE id=?', (f, req) => {
+    const ci = candInput(req);
+    const cid = A.acceptFind(db, f.id, { matchGrade: ci.matchGrade, availability: ci.availability, title: ci.title, size: ci.size, price: ci.price, shipping: ci.shipping, condition: ci.condition,
+      conditionNote: ci.conditionNote, colorOk: ci.colorOk, evidence: ci.evidence, pending: ci.pending, checkedAt: ci.checkedAt, publish: req.body.publish === '1', isMock: ci.isMock }, OP(req));
+    return [f.request_id, `AI가 찾은 매물을 후보 #${cid}로 등록했어요${req.body.publish === '1' ? ' · 사용자에게 공개' : ''}.`];
+  }));
+  r.post('/ai/finds/:id/reject', withRow('SELECT * FROM ai_finds WHERE id=?', (f, req) => {
+    A.rejectFind(db, f.id, [req.body.reason, req.body.note].map(x => String(x || '').trim()).filter(Boolean).join(' · '), OP(req));
+    return [f.request_id, 'AI가 찾은 매물을 제외했어요.'];
+  }));
   r.post('/requests/:id/wanted/propose', act(req => { const id = Number(req.params.id); D.proposeWanted(db, id, OP(req)); return [id, '수배를 제안했어요.']; }));
   r.post('/posts/:id', (req, res, next) => {
     const p = db.prepare('SELECT p.*, w.request_id FROM wanted_posts p JOIN wanted w ON w.id=p.wanted_id WHERE p.id=?').get(Number(req.params.id)) as any;
