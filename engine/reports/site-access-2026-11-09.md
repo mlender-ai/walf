@@ -115,7 +115,7 @@
 
 ## 근거 자료
 
-- `site-check-20261109-0251.*` · `site-check-20261109-0253.*` (공식몰 검색·옵션 재고, 중고나라 검색 원본 JSON)
+- `site-check-20261109-0253.*` · `site-check-20261109-0254.*` (공식몰 검색·옵션 재고, 중고나라 검색 원본 JSON — 보고서의 02:51은 첫 실행 시작 시각)
 - `compare-testb-*.json` (SearXNG 보조 검색 결과)
 - 약관 확인 경로
   - 번개장터: https://terms.bunjang.co.kr/terms/service.html
