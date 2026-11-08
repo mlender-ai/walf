@@ -61,6 +61,10 @@ DAY n 탐색 작업 생성 ─▶ AI 탐색: 무신사·29CM·W컨셉·번개장
 - Claude API 웹 검색은 **조직 Console 설정에서 웹 검색이 켜져 있어야** 한다. 판매처 사이트가 Anthropic 검색 크롤러를 막으면 그 판매처만 빼고 다시 시도하고 “AI 검색 불가”로 표시한다.
 - 비용은 모델·검색 횟수에 따라 달라진다(식별 1회 웹 검색 최대 6회, 하루 탐색 1회 최대 12회 + 페이지 열람 8회). 실제 키로 몇 건 돌려 어드민의 “검색 n회 · 토큰”을 보고 `WALF_AI_EFFORT`를 정한다.
 
+## 1-2. 7일 실험 — 오픈소스 탐색 엔진 (`experiment/opensource-hunt-7d`)
+
+유료 API 없이 SearXNG·Crawl4AI·Ollama(Qwen3-VL)로 식별·국내 탐색을 하는 실험 엔진. 기본 꺼짐, `WALF_AI_PROVIDER=oss` 로 켠다. 설치·원칙·기록 위치는 [engine/README.md](engine/README.md), 결과는 어드민 **7일 실험 리포트**.
+
 ## 2. 앱
 
 ```bash

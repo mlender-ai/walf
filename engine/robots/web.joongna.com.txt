@@ -1,0 +1,14 @@
+User-agent: *
+Disallow: /my-account
+Disallow: /naver-pay-result
+Disallow: /product/form
+Disallow: /*?openChat=true
+Disallow: /*%3FopenChat%3Dtrue
+Disallow: /signin
+Allow: /
+
+Sitemap: https://web.joongna.com/sitemap-keyword.xml.gz
+Sitemap: https://web.joongna.com/sitemap-category.xml.gz
+Sitemap: https://web.joongna.com/sitemap-product-index.xml.gz
+
+#DaumWebMasterTool:c4af0b6c25873acddff6cd29865577ff26c4b4cebee53e9d6f2219580f4ebc76:Z1sDHiFp/naRimWdsgS5Tg==

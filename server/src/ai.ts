@@ -2,18 +2,23 @@
 // 결과는 언제나 “AI 제안 · 검수 전”이다. 왈프 팀이 확인하기 전에는 사용자에게 보이지 않고, 구매 가능으로 표시하지 않는다.
 import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
+import { ossFromEnv } from './oss.ts';
 
 export type Seller = { id: number; name: string; domain: string };
-export type IdentifyInput = { productName?: string | null; brand?: string | null; productUrl?: string | null; note?: string | null; size?: string | null; color?: string | null; photoPath?: string | null };
+export type IdentifyInput = { productName?: string | null; brand?: string | null; productUrl?: string | null; note?: string | null; size?: string | null; color?: string | null; photoPath?: string | null; sellers?: Seller[] };
 export type Identity = { brand: string; name: string; color: string; category: string; confidence: 'high' | 'medium' | 'low'; reasons: string[]; refs: string[] };
-export type IdentifyResult = { identities: Identity[]; missing: string[]; summary: string };
-export type SearchInput = { brand: string; name: string; color?: string | null; size?: string | null; maxPrice?: number | null; usedOk: boolean; day: number; sellers: Seller[]; known: string[] };
-export type Listing = { seller: string; url: string; title: string; price: number | null; size: string; condition: 'new' | 'used' | 'unknown'; match: 'same_likely' | 'similar' | 'unknown'; stock: 'listed' | 'sold_out' | 'unknown'; reason: string; urlSeen: boolean | null };
+export type IdentifyResult = { identities: Identity[]; missing: string[]; summary: string; features?: unknown; metrics?: unknown };
+export type SearchInput = { brand: string; name: string; color?: string | null; size?: string | null; maxPrice?: number | null; usedOk: boolean; day: number; sellers: Seller[]; known: string[];
+  // 오픈소스 엔진이 쓰는 것(다른 공급자는 무시): 운영자 메모(품번·한글 표기), 의뢰 사진·접수 때 본 특징, 다시 확인할 주소
+  note?: string | null; photoPath?: string | null; features?: unknown; recheck?: { url: string; price: number | null }[] };
+export type Listing = { seller: string; url: string; title: string; price: number | null; size: string; condition: 'new' | 'used' | 'unknown'; match: 'same_likely' | 'similar' | 'unknown'; stock: 'listed' | 'sold_out' | 'unknown'; reason: string; urlSeen: boolean | null;
+  // 오픈소스 엔진이 덧붙이는 근거(없으면 비어 있다)
+  extra?: { pageStatus?: string; colorMatch?: string; sizeMatch?: string; image?: string; snippet?: string; evidence?: string[]; query?: string; visual?: unknown; reserved?: boolean } };
 export type SellerNote = { seller: string; searched: boolean; note: string };
-export type SearchResult = { sellers: SellerNote[]; listings: Listing[]; summary: string; dropped: number; blocked: string[] };
+export type SearchResult = { sellers: SellerNote[]; listings: Listing[]; summary: string; dropped: number; blocked: string[]; metrics?: unknown };
 export type Usage = { model: string; inputTokens: number; outputTokens: number; searches: number };
 export interface AiProvider {
-  kind: 'claude' | 'mock';
+  kind: 'claude' | 'mock' | 'oss';
   label: string;
   identify(input: IdentifyInput): Promise<{ data: IdentifyResult; usage: Usage }>;
   search(input: SearchInput): Promise<{ data: SearchResult; usage: Usage }>;
@@ -28,6 +33,8 @@ export class AiError extends Error {
 export function aiFromEnv(env = process.env): AiProvider | null {
   if (env.WALF_AI_PROVIDER === 'off') return null;
   if (env.WALF_AI_PROVIDER === 'mock') return mockProvider();
+  // 7일 실험: 유료 API 없이 로컬 오픈소스 엔진(SearXNG·Crawl4AI·Ollama). 켜야만 쓴다(기본 꺼짐).
+  if (env.WALF_AI_PROVIDER === 'oss') return ossFromEnv(env);
   if (env.WALF_AI_PROVIDER === 'claude' || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return claudeProvider({ model: env.WALF_AI_MODEL, effort: env.WALF_AI_EFFORT });
   return null;
 }
@@ -39,7 +46,11 @@ const isHttp = (u: string) => { try { return /^https?:$/.test(new URL(u).protoco
 const pick = <T extends string>(v: unknown, ok: readonly T[], dflt: T): T => (ok as readonly string[]).includes(String(v)) ? v as T : dflt;
 /** 같은 페이지인지 비교할 때 쓰는 열쇠(프로토콜·www·m·끝 슬래시·#은 무시) */
 export const urlKey = (u: string) => { try { const x = new URL(u); return x.host.toLowerCase().replace(/^(www|m)\./, '') + x.pathname.replace(/\/+$/, '') + x.search; } catch { return u; } };
-const onDomain = (u: string, domain: string) => { try { const h = new URL(u).host.toLowerCase(); return h === domain || h.endsWith('.' + domain); } catch { return false; } };
+// 같은 회사의 해외 판매용 사이트는 국내 판매처가 아니다(해외 탐색 제외)
+const OVERSEAS_HOSTS = ['global.musinsa.com', 'en.29cm.co.kr', 'global.wconcept.co.kr'];
+const onDomain = (u: string, domain: string) => {
+  try { const h = new URL(u).host.toLowerCase(); return (h === domain || h.endsWith('.' + domain)) && !OVERSEAS_HOSTS.some(o => h === o || h.endsWith('.' + o)); } catch { return false; }
+};
 
 export function cleanIdentify(raw: any): IdentifyResult {
   const identities = (Array.isArray(raw?.identities) ? raw.identities : []).map((x: any): Identity => ({
@@ -68,6 +79,10 @@ export function cleanSearch(raw: any, sellers: Seller[], seen: Set<string> | nul
       condition: pick(x?.condition, ['new', 'used', 'unknown'] as const, 'unknown'), match: pick(x?.match, ['same_likely', 'similar', 'unknown'] as const, 'unknown'),
       stock: pick(x?.stock, ['listed', 'sold_out', 'unknown'] as const, 'unknown'), reason: str(x?.reason, 300),
       urlSeen: !url || !seen || !seen.size ? null : seen.has(urlKey(url)),
+      ...(x?.pageStatus || x?.evidence ? { extra: {
+        pageStatus: str(x.pageStatus, 20), colorMatch: str(x.colorMatch, 10), sizeMatch: str(x.sizeMatch, 10), image: isHttp(str(x.image, 1000)) ? str(x.image, 1000) : '',
+        snippet: str(x.snippet, 300), evidence: strs(x.evidence, 6, 200), query: str(x.query, 120), visual: x.visual ?? null, reserved: x.reserved === true,
+      } } : {}),
     });
   }
   return { sellers: notes, listings: listings.slice(0, 20), summary: str(raw?.summary, 300), dropped, blocked };

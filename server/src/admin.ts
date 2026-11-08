@@ -7,6 +7,7 @@ import { uploader, baseOf } from './api.ts';
 import { now, kDate, kTime, kWhen, HOUR, DAY } from './time.ts';
 import type { AiProvider } from './ai.ts';
 import * as A from './aijobs.ts';
+import { reportHtml } from './report.ts';
 
 type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -46,7 +47,7 @@ ul{list-style:none;margin:0;padding:0}details summary{cursor:pointer;font-weight
 const FONT = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">';
 
 function page(title: string, body: string, op?: string, tab = '') {
-  const nav = op ? `<nav><a href="/admin" class="${tab === 'home' ? 'on' : ''}">대기열</a><a href="/admin/requests" class="${tab === 'list' ? 'on' : ''}">전체 의뢰</a></nav><span class="sp"></span><small>운영자 ${esc(op)}</small><form method="post" action="/admin/logout"><button class="btn s sm">로그아웃</button></form>` : '';
+  const nav = op ? `<nav><a href="/admin" class="${tab === 'home' ? 'on' : ''}">대기열</a><a href="/admin/requests" class="${tab === 'list' ? 'on' : ''}">전체 의뢰</a><a href="/admin/report" class="${tab === 'report' ? 'on' : ''}">7일 실험 리포트</a></nav><span class="sp"></span><small>운영자 ${esc(op)}</small><form method="post" action="/admin/logout"><button class="btn s sm">로그아웃</button></form>` : '';
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · WALF OPS</title>${FONT}<style>${CSS}</style></head>
 <body><header class="t"><b>WALF.</b><small>OPS</small>${nav}</header><main>${body}</main></body></html>`;
 }
@@ -138,6 +139,8 @@ export function adminRouter(db: DB, cfg: Cfg) {
     }).join('') || '<tr><td colspan="6" class="empty">아직 의뢰가 없어요.</td></tr>'}</tbody></table></section>`, OP(req), 'list'));
   });
 
+  r.get('/report', (req, res) => send(req, res, page('7일 실험 리포트', reportHtml(db, cfg), OP(req), 'report')));
+
   // ── 의뢰 상세 ──
   r.get('/requests/:id', (req, res) => {
     const rq = D.getRequest(db, Number(req.params.id));
@@ -175,6 +178,10 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const busy = (j: any) => !!j && ['queued', 'running'].includes(j.status);
     const host = (u: string) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return u; } };
     const ids = av.identities.filter((x: any) => x.status === 'proposed');
+    // 오픈소스 엔진: 접수 사진에서 로컬 모델이 본 특징(정기 탐색 때 다시 분석하지 않는다)
+    const featuresHtml = (f: any) => !f ? '' : `<details style="margin:6px 0"><summary>사진에서 본 특징(로컬 모델 · 추정)</summary><dl class="kv"><dt>종류</dt><dd>${esc(f.garment)}</dd><dt>색</dt><dd>${esc((f.colors || []).join(', '))}</dd>
+      <dt>소재·질감</dt><dd>${esc(f.material)} · ${esc(f.texture)}</dd><dt>실루엣</dt><dd>${esc(f.silhouette)}</dd><dt>디테일</dt><dd>${(f.details || []).map(esc).join('<br>')}</dd>
+      <dt>로고·브랜드</dt><dd>${f.logo_visible ? esc(f.logo_text) : '보이지 않음'} · 추정 ${esc(f.brand_guess || '없음')}(${esc(f.brand_confidence)})</dd><dt>사진으로 모르는 것</dt><dd>${esc((f.unknowns || []).join(', '))}</dd></dl></details>`;
     const missing: string[] = av.identifyDone?.detail?.missing || [];
     const idCard = (x: any) => `<form method="post" action="/admin/ai/identities/${x.id}/accept" class="id">
       <p style="margin:0 0 6px"><b>${x.rank}순위</b> <span class="tg aip">AI 제안 · 검수 전</span> <span class="tg ${x.confidence === 'high' ? 'o' : 'x'}">신뢰도 ${A.CONF_LABEL[x.confidence]}</span>${x.category ? ` <span class="sub">${esc(x.category)}</span>` : ''}${x.is_mock ? MOCK : ''}</p>
@@ -187,7 +194,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
       : `<div class="ai" data-ai="identify:${idJob?.status || 'none'}"><h3>AI가 먼저 살펴본 결과 <span class="sub">· ${esc(jobState(idJob))}${usage(av.identifyDone)}</span>${idJob?.is_mock ? MOCK : ''}</h3>
       ${busy(idJob) ? '<p class="sub">사진·링크를 보고 브랜드 공식몰과 국내 판매처에서 같은 상품을 찾는 중이에요. 보통 1~3분 걸려요. <a href="">새로고침</a></p>' : ''}
       ${idJob?.status === 'failed' ? `<p><b>AI 식별 실패</b> — ${esc(idJob.error)}</p>` : ''}
-      ${av.identifyDone?.summary ? `<p style="margin:6px 0">${esc(av.identifyDone.summary)}</p>` : ''}${ids.map(idCard).join('')}
+      ${av.identifyDone?.summary ? `<p style="margin:6px 0">${esc(av.identifyDone.summary)}</p>` : ''}${featuresHtml(av.identifyDone?.detail?.features)}${ids.map(idCard).join('')}
       ${av.identifyDone && !ids.length && !busy(idJob) ? '<p class="sub">AI가 고를 만한 후보를 내지 못했어요. 아래에서 직접 확인하거나 보완을 요청하세요.</p>' : ''}
       ${missing.length ? `<p class="sub">AI가 더 필요하다고 본 정보: ${missing.map(esc).join(' · ')}</p>` : ''}
       ${cfg.ai && rq.status === 'submitted' && !busy(idJob) ? `<form method="post" action="/admin/requests/${rq.id}/ai/identify"><button class="btn s sm">AI 다시 살펴보기</button></form>` : ''}</div>`;
@@ -205,9 +212,21 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const COND: Record<string, string> = { new: '새 상품', used: '중고', unknown: '상태 모름' };
     const REJECT = ['다른 상품', '판매 종료·품절', '해외 판매처', '이미 등록한 매물', '링크가 열리지 않음', '조건과 너무 다름', '기타'];
     const sel2 = (name: string, opts: [string, string][], v?: string) => `<select name="${name}">${opts.map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    const PAGE: Record<string, string> = { ok: '페이지 확인 완료', stock_unknown: '재고 확인 불가', partial: '상품 정보 일부만 확인', sold: '판매 완료', login: '로그인 필요', blocked: '접근 제한',
+      robots: '수집 금지(robots.txt) — 검색 결과만', deleted: '삭제된 페이지', error: '열지 못함', not_crawled: '열지 않음(오늘 한도)' };
+    const MATCHK: Record<string, string> = { match: '일치', mismatch: '다름', unknown: '표기 없음', any: '조건 없음' };
+    const extraHtml = (f: any) => {
+      const ev = (() => { try { return JSON.parse(f.evidence || '[]'); } catch { return []; } })();
+      const vis = (() => { try { return f.visual ? JSON.parse(f.visual) : null; } catch { return null; } })();
+      return `<div class="row" style="align-items:flex-start;gap:12px;margin:6px 0">${f.image_url ? `<img src="${esc(f.image_url)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:84px;height:84px;object-fit:cover;border-radius:8px;flex:none;background:var(--cv)">` : ''}
+        <div style="flex:1"><p style="margin:0"><span class="tg p">${esc(PAGE[f.page_status] || f.page_status)}</span> <span class="tg ${f.color_match === 'mismatch' ? 'x' : 'o'}">색상 ${MATCHK[f.color_match] || '-'}</span> <span class="tg ${f.size_match === 'mismatch' ? 'x' : 'o'}">사이즈 ${MATCHK[f.size_match] || '-'}</span>${f.reserved ? ' <span class="tg x">예약 중</span>' : ''}</p>
+        ${ev.length ? `<ul style="list-style:disc;padding-left:18px;margin:6px 0">${ev.map((x: string) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${vis ? `<p class="sub" style="margin:2px 0">사진 비교(로컬 모델): ${esc(vis.verdict)} · 같음 ${esc((vis.matching || []).slice(0, 3).join(', '))} · 다름 ${esc((vis.differing || []).slice(0, 3).join(', '))}</p>` : ''}
+        ${f.snippet ? `<p class="sub" style="margin:2px 0">검색 설명: ${esc(f.snippet)}</p>` : ''}<p class="sub" style="margin:2px 0">검색어: ${esc(f.query || '')}</p></div></div>`;
+    };
     const findCard = (f: any) => `<div class="fd" id="find-${f.id}"><p style="margin:0 0 4px"><b>${esc(f.seller || '판매처 미상')}</b> <span class="sub">DAY ${f.day ?? '?'}</span> <span class="tg aip">AI 제안 · 검수 전</span> <span class="tg x">${MATCH[f.match_guess]}</span> <span class="tg p">${STOCK[f.stock_guess]}</span>${f.is_mock ? MOCK : ''}</p>
       <p style="margin:0">${f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(f.title || f.url)}</b></a>` : `<b>${esc(f.title || '(주소 없음)')}</b>`} · ${f.price != null ? f.price.toLocaleString() + '원' : '가격 미확인'} · ${esc(f.size || '사이즈 미확인')} · ${COND[f.condition] || '상태 모름'}</p>
-      ${f.url_seen === 0 ? '<p><b>⚠ 검색 결과에 없던 주소예요.</b> AI가 잘못 적었을 수 있으니 직접 열어 확인하세요.</p>' : ''}${f.reason ? `<p class="sub" style="margin:4px 0">AI 메모: ${esc(f.reason)}</p>` : ''}
+      ${f.url_seen === 0 ? '<p><b>⚠ 검색 결과에 없던 주소예요.</b> AI가 잘못 적었을 수 있으니 직접 열어 확인하세요.</p>' : ''}${f.page_status ? extraHtml(f) : f.reason ? `<p class="sub" style="margin:4px 0">AI 메모: ${esc(f.reason)}</p>` : ''}
       ${rq.status === 'active' ? `<details><summary>열어서 확인했어요 → 후보로 등록</summary><form method="post" action="/admin/ai/finds/${f.id}/accept"><p class="sub">판매처·주소는 AI가 찾은 그대로 저장돼요. 나머지는 직접 확인한 값으로 고치세요.</p>
         <div class="g3"><div><label>매물 제목</label><input type="text" name="title" value="${esc(f.title || '')}"></div><div><label>사이즈</label><input type="text" name="size" value="${esc(f.size || '')}"></div>
         <div><label>판매가(원)</label><input type="number" name="price" min="0" value="${f.price ?? ''}"></div><div><label>배송비(원)</label><input type="number" name="shipping" min="0" value="0"></div>
@@ -265,7 +284,8 @@ export function adminRouter(db: DB, cfg: Cfg) {
         <td><input type="text" name="nt_${se.id}" maxlength="200" placeholder="예: M 품절, 동일 상품 1건 · 사이즈 L"></td></tr>`;
         }).join('')}</tbody></table>
         <div class="row"><div><label>결과</label><select name="outcome" required><option value="" ${outDefault ? '' : 'selected'} disabled>선택</option>${s.day === 1 ? o('no_match', '조건에 맞는 매물 없음 → 수배 제안', outDefault) : o('nothing_new', '새 소식 없음', outDefault) + o('no_match', '조건에 맞는 매물 없음', outDefault)}
-        ${o('leads', '유력 후보 있음(아래에서 후보 등록)', outDefault)}${o('offer', '구매 가능 매물 있음(아래에서 후보 등록)', outDefault)}</select></div><div><label>내부 메모</label><input type="text" name="summary" maxlength="300"></div></div>
+        ${o('leads', '유력 후보 있음(아래에서 후보 등록)', outDefault)}${o('offer', '구매 가능 매물 있음(아래에서 후보 등록)', outDefault)}</select></div><div><label>내부 메모</label><input type="text" name="summary" maxlength="300"></div>
+        <div style="flex:.5"><label>검수에 쓴 시간(분 · 선택)</label><input type="number" name="review_min" min="0" max="600" placeholder="예: 8"></div></div>
         <p>${mockBox(!!sj?.is_mock)}</p><p><button class="btn">탐색 기록 저장</button></p></form>`;
     }).join('') || '<p class="empty">상품 확인 후 탐색 작업이 생겨요.</p>';
 
@@ -335,7 +355,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
     (req as any).rid = s.request_id;
     const sellers = db.prepare('SELECT * FROM sellers WHERE active=1').all() as any[];
     act(rq => {
-      D.completeRun(db, s.id, { outcome: rq.body.outcome, summary: rq.body.summary, isMock: rq.body.mock === '1',
+      D.completeRun(db, s.id, { outcome: rq.body.outcome, summary: rq.body.summary, isMock: rq.body.mock === '1', reviewMinutes: rq.body.review_min === '' || rq.body.review_min == null ? null : Number(rq.body.review_min),
         checks: sellers.map(se => ({ sellerId: se.id, status: rq.body[`st_${se.id}`], result: rq.body[`rs_${se.id}`], note: rq.body[`nt_${se.id}`] })) }, OP(rq));
       return [s.request_id, `DAY ${s.day} 탐색을 기록했어요.`];
     })(req, res, next);

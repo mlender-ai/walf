@@ -209,7 +209,7 @@ export function markMissed(db: DB, t = now()) {
 }
 
 export type CheckInput = { sellerId: number; status: 'checked' | 'unreachable' | 'skipped'; result?: 'none' | 'same' | 'similar'; note?: string };
-export function completeRun(db: DB, runId: number, input: { checks: CheckInput[]; outcome: string; summary?: string; isMock?: boolean }, operator: string) {
+export function completeRun(db: DB, runId: number, input: { checks: CheckInput[]; outcome: string; summary?: string; isMock?: boolean; reviewMinutes?: number | null }, operator: string) {
   const s = one(db, 'SELECT * FROM search_runs WHERE id=?', runId);
   if (!s) throw new HttpError(404, 'not_found');
   if (s.status !== 'pending') throw new HttpError(409, 'bad_state', '이미 처리된 탐색이에요.');
@@ -233,8 +233,9 @@ export function completeRun(db: DB, runId: number, input: { checks: CheckInput[]
   tx(db, () => {
     const ins = db.prepare('INSERT INTO seller_checks(run_id, seller_id, status, result, note) VALUES (?,?,?,?,?)');
     for (const c of input.checks) ins.run(runId, c.sellerId, c.status, c.status === 'checked' ? (c.result || 'none') : null, clean(c.note, 200));
-    run(db, `UPDATE search_runs SET status='done', outcome=?, completed_at=?, operator=?, summary=?, is_mock=? WHERE id=?`,
-      input.outcome, now(), operator, clean(input.summary, 300), isMock ? 1 : 0, runId);
+    const mins = input.reviewMinutes == null || String(input.reviewMinutes) === '' ? null : Math.max(0, Math.min(600, Math.round(Number(input.reviewMinutes))));
+    run(db, `UPDATE search_runs SET status='done', outcome=?, completed_at=?, operator=?, summary=?, is_mock=?, review_minutes=? WHERE id=?`,
+      input.outcome, now(), operator, clean(input.summary, 300), isMock ? 1 : 0, Number.isFinite(mins) ? mins : null, runId);
     const parts = [`${checked.length}곳 확인`, same ? `동일 상품 ${same}건` : '새 매물 없음'];
     if (input.outcome === 'no_match' && same) parts.push('조건 불일치');
     if (unreachable) parts.push(`${unreachable}곳 접속 실패`);

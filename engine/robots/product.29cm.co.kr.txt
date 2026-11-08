@@ -1,0 +1,6 @@
+User-agent: Baiduspider
+User-agent: Baiduspider-render
+Disallow: /
+
+User-agent: *
+Allow: /

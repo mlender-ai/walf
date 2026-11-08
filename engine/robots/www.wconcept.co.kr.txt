@@ -1,0 +1,203 @@
+###############################################
+# W Concept robots.txt (Whitelist Only)
+# - 지정된 User-Agent만 Allow
+# - 그 외 모든 UA는 Disallow
+###############################################
+
+###############################################
+# 1) 검색 엔진 크롤러 (Search Engines)
+###############################################
+User-agent: Googlebot
+User-agent: Googlebot-Image
+User-agent: GoogleOther
+User-agent: Bingbot
+User-agent: Yeti
+User-agent: NaverBot
+User-agent: Daum
+User-agent: Daumoa
+User-agent: Applebot
+User-agent: ZumBot
+User-agent: DuckDuckBot
+User-agent: Slurp
+User-agent: Yandexbot
+Allow: /
+Disallow: /EDM_TEMPLATE/
+Disallow: /App_Code/
+Disallow: /App_Data/
+Disallow: /include/
+Disallow: /Errors/
+Disallow: /makehtml/
+Disallow: /test/
+Disallow: /MyPage/
+Disallow: /Member/
+Disallow: /Basket/
+Disallow: /Order/
+Disallow: /Popup/
+Disallow: /js/
+Disallow: /Draw/
+Disallow: /Event/BlackFriday
+Disallow: *previewYn=Y*
+Disallow: *tempYN=Y*
+Disallow: /Ajax/ProductQAList
+Disallow: /MemberBenefit
+
+###############################################
+# 2) 광고/쇼핑 크롤러 (Ads / Commerce)
+###############################################
+User-agent: AdsBot-Google
+User-agent: Storebot-Google
+User-agent: Mediapartners-Google
+User-agent: Meta-ExternalAgent
+User-agent: FacebookCatalog
+User-agent: Pinterestbot
+Allow: /
+Disallow: /EDM_TEMPLATE/
+Disallow: /App_Code/
+Disallow: /App_Data/
+Disallow: /include/
+Disallow: /Errors/
+Disallow: /makehtml/
+Disallow: /test/
+Disallow: /MyPage/
+Disallow: /Member/
+Disallow: /Basket/
+Disallow: /Order/
+Disallow: /Popup/
+Disallow: /js/
+Disallow: /Draw/
+Disallow: /Event/BlackFriday
+Disallow: *previewYn=Y*
+Disallow: *tempYN=Y*
+Disallow: /Ajax/ProductQAList
+Disallow: /MemberBenefit
+
+###############################################
+# 3) SNS / OG 미리보기 (SNS Preview)
+###############################################
+User-agent: facebookexternalhit
+User-agent: Facebot
+User-agent: Twitterbot
+Allow: /
+Disallow: /EDM_TEMPLATE/
+Disallow: /App_Code/
+Disallow: /App_Data/
+Disallow: /include/
+Disallow: /Errors/
+Disallow: /makehtml/
+Disallow: /test/
+Disallow: /MyPage/
+Disallow: /Member/
+Disallow: /Basket/
+Disallow: /Order/
+Disallow: /Popup/
+Disallow: /js/
+Disallow: /Draw/
+Disallow: /Event/BlackFriday
+Disallow: *previewYn=Y*
+Disallow: *tempYN=Y*
+Disallow: /Ajax/ProductQAList
+Disallow: /MemberBenefit
+
+###############################################
+# 4) AI / LLM Crawlers
+###############################################
+User-agent: Google-Extended
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: OAI-SearchBot
+User-agent: PerplexityBot
+User-agent: Amazonbot
+User-agent: CCBot
+Allow: /
+Disallow: /EDM_TEMPLATE/
+Disallow: /App_Code/
+Disallow: /App_Data/
+Disallow: /include/
+Disallow: /Errors/
+Disallow: /makehtml/
+Disallow: /test/
+Disallow: /MyPage/
+Disallow: /Member/
+Disallow: /Basket/
+Disallow: /Order/
+Disallow: /Popup/
+Disallow: /js/
+Disallow: /Draw/
+Disallow: /Event/BlackFriday
+Disallow: *previewYn=Y*
+Disallow: *tempYN=Y*
+Disallow: /Ajax/ProductQAList
+Disallow: /MemberBenefit
+
+###############################################
+# 5) 정상 서비스/운영 UA (Infra / Service)
+###############################################
+User-agent: GoogleAssociationService
+User-agent: GoogleSafety
+User-agent: Google-adstxt
+User-agent: Google-NotebookLM
+User-agent: Daum (compatible)
+User-agent: PetalBot
+User-agent: Baiduspider
+Allow: /
+Disallow: /EDM_TEMPLATE/
+Disallow: /App_Code/
+Disallow: /App_Data/
+Disallow: /include/
+Disallow: /Errors/
+Disallow: /makehtml/
+Disallow: /test/
+Disallow: /MyPage/
+Disallow: /Member/
+Disallow: /Basket/
+Disallow: /Order/
+Disallow: /Popup/
+Disallow: /js/
+Disallow: /Draw/
+Disallow: /Event/BlackFriday
+Disallow: *previewYn=Y*
+Disallow: *tempYN=Y*
+Disallow: /Ajax/ProductQAList
+Disallow: /MemberBenefit
+
+###############################################
+# 6) 기타/브라우저 기반 UA
+###############################################
+User-agent: ChatGPT-User
+User-agent: Claude-User
+User-agent: Perplexity-User
+User-agent: Meta-WebIndexer
+Allow: /
+Disallow: /EDM_TEMPLATE/
+Disallow: /App_Code/
+Disallow: /App_Data/
+Disallow: /include/
+Disallow: /Errors/
+Disallow: /makehtml/
+Disallow: /test/
+Disallow: /MyPage/
+Disallow: /Member/
+Disallow: /Basket/
+Disallow: /Order/
+Disallow: /Popup/
+Disallow: /js/
+Disallow: /Draw/
+Disallow: /Event/BlackFriday
+Disallow: *previewYn=Y*
+Disallow: *tempYN=Y*
+Disallow: /Ajax/ProductQAList
+Disallow: /MemberBenefit
+
+###############################################
+# 7) 나열되지 않은 UA는 모두 차단 (Strict Whitelist)
+###############################################
+User-agent: *
+Disallow: /
+
+###############################################
+# 8) Sitemap
+###############################################
+Sitemap: https://sitemap.wconcept.co.kr/site_index_pc.xml
+
+#DaumWebMasterTool:d399623a1bbd1359f9a4a3a174f18b4e6d52f1d1d4d19a5e4fbd7f28c4fec6a1:g7CsvqqZbuCnpCgwX1ZFZw==

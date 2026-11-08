@@ -39,3 +39,13 @@ jobs:
       # react-dom 피어 버전 충돌(Expo SDK 58 템플릿) 때문에 legacy-peer-deps 로 설치한다
       - run: npm ci --legacy-peer-deps
       - run: npx tsc --noEmit
+
+  engine:
+    name: 오픈소스 엔진 판정 규칙(7일 실험)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python3 -m unittest discover -s engine/tests -v

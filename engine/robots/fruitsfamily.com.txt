@@ -1,0 +1,31 @@
+User-agent: *
+Disallow: /my
+Disallow: /checkout/
+Disallow: /upload
+Disallow: /product/*/edit
+Disallow: /login
+Disallow: /signUp
+Disallow: /signUpSns
+Disallow: /auth/
+
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: anthropic-ai
+User-agent: Claude-Web
+User-agent: Applebot-Extended
+User-agent: Meta-ExternalAgent
+User-agent: Amazonbot
+User-agent: CCBot
+User-agent: Bytespider
+User-agent: Diffbot
+User-agent: img2dataset
+Allow: /llms.txt
+Allow: /sell$
+Allow: /sell/
+Allow: /brand-ranking
+Allow: /brand-radar/
+Allow: /vintage-shops$
+Allow: /download
+Disallow: /
+
+Sitemap: https://fruitsfamily.com/sitemap.xml

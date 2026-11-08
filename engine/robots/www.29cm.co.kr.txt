@@ -1,0 +1,14 @@
+User-agent: Baiduspider
+User-agent: Baiduspider-render
+Disallow: /
+
+User-agent: *
+Allow: /
+Disallow: /embed/
+Disallow: /home/embed/
+Disallow: /my-page/
+Disallow: /order/
+Disallow: /auth/
+Disallow: /inbox/
+Disallow: /content/post/preview
+Sitemap: https://www.29cm.co.kr/sitemap/sitemap-root.xml

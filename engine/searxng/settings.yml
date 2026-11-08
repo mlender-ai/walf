@@ -1,0 +1,31 @@
+# WALF 7일 실험용 SearXNG 설정 — 이 맥(127.0.0.1)에서만 쓴다.
+# secret_key 는 컨테이너 환경변수 SEARXNG_SECRET 로 넣는다(저장소에 두지 않는다).
+use_default_settings:
+  engines:
+    # 국내 판매처 페이지가 잘 잡히는 일반 검색 엔진만 남긴다. 엔진별 응답·실패는 매 검색마다 기록한다.
+    # google(access denied)·duckduckgo(CAPTCHA)는 2026-11-09 첫 시험에서 자동 검색을 막았다 — 우회하지 않고 뺀다.
+    keep_only: [naver, bing, brave]
+
+general:
+  instance_name: "walf-hunt"
+
+search:
+  safe_search: 0
+  default_lang: "ko-KR"
+  formats: [html, json]
+
+server:
+  bind_address: "0.0.0.0"
+  limiter: false          # 외부에 열지 않는 개인용이라 자체 요청 제한은 끈다(대상 검색 엔진의 제한은 그대로 받는다)
+  image_proxy: false
+  public_instance: false
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
+
+engines:
+  - name: naver
+    disabled: false
+  - name: bing
+    disabled: false

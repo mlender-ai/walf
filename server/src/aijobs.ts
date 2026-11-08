@@ -12,6 +12,7 @@ const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as R
 const all = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).all(...p) as Row[];
 const run = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).run(...p);
 const json = (v: unknown) => JSON.stringify(v);
+const parse = (s: string | null, d: any) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 export const CONF_LABEL: Record<string, string> = { high: '높음', medium: '보통', low: '낮음' };
 /** 확정할 때 쓰는 상품명 — 모델명에 색상이 없으면 붙인다 */
 export const identityLabel = (x: Row) => x.color && !String(x.name).includes(x.color) ? `${x.name} ${x.color}` : x.name;
@@ -36,8 +37,9 @@ export function ensureAiJobs(db: DB, provider: AiProvider) {
   return n;
 }
 
-/** 서버가 꺼지며 끊긴 작업은 다시 대기열로 */
+/** 서버가 꺼지며 끊긴 작업은 다시 대기열로 — 두 번 끊긴 작업은 무한 재시도하지 않고 실패로 남긴다 */
 export function recoverAiJobs(db: DB) {
+  run(db, `UPDATE ai_jobs SET status='failed', error='서버가 꺼지며 두 번 끊겨 다시 하지 않아요(운영자가 다시 실행)', finished_at=? WHERE status='running' AND attempts>=2`, now());
   return Number(run(db, `UPDATE ai_jobs SET status='queued', started_at=NULL WHERE status='running'`).changes);
 }
 
@@ -81,12 +83,18 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
       }
       try {
         if (j.kind === 'identify') {
-          const out = await provider.identify({ productName: r.product_name, brand: r.brand, productUrl: r.product_url, note: r.note, size: r.size, color: r.color, photoPath: r.photo ? path.join(uploads, r.photo) : null });
+          const sellers = all(db, 'SELECT id, name, domain FROM sellers WHERE active=1 ORDER BY sort') as any[];
+          const out = await provider.identify({ productName: r.product_name, brand: r.brand, productUrl: r.product_url, note: r.note, size: r.size, color: r.color, photoPath: r.photo ? path.join(uploads, r.photo) : null, sellers });
           saveIdentify(db, j, r, out.data, out.usage);
         } else {
           const sellers = all(db, 'SELECT id, name, domain FROM sellers WHERE active=1 ORDER BY sort') as any[];
           const known = [...all(db, 'SELECT url FROM candidates WHERE request_id=? AND url IS NOT NULL', r.id), ...all(db, `SELECT url FROM ai_finds WHERE request_id=? AND url IS NOT NULL AND url<>''`, r.id)].map(x => x.url);
-          const out = await provider.search({ brand: r.identified_brand || r.brand || '', name: r.identified_name || r.product_name || '', color: r.color, size: r.size, maxPrice: r.max_price, usedOk: !!r.used_ok, day: s!.day, sellers, known });
+          // 접수 때 본 사진 특징은 다시 분석하지 않고 넘긴다. 지난번에 찾은 같은 상품 매물은 다시 열어 가격·판매 상태를 본다.
+          const idDone = one(db, `SELECT detail FROM ai_jobs WHERE request_id=? AND kind='identify' AND status='done' ORDER BY id DESC LIMIT 1`, r.id);
+          const recheck = all(db, `SELECT f.url, COALESCE((SELECT o.price FROM hunt_observations o WHERE o.request_id=f.request_id AND o.url=f.url ORDER BY o.id DESC LIMIT 1), f.price) price
+            FROM ai_finds f WHERE f.request_id=? AND f.url IS NOT NULL AND f.match_guess='same_likely' AND f.status IN ('proposed','accepted') ORDER BY f.id DESC LIMIT 10`, r.id) as any[];
+          const out = await provider.search({ brand: r.identified_brand || r.brand || '', name: r.identified_name || r.product_name || '', color: r.color, size: r.size, maxPrice: r.max_price, usedOk: !!r.used_ok, day: s!.day, sellers, known,
+            note: r.identified_note || r.note, photoPath: r.photo ? path.join(uploads, r.photo) : null, features: parse(idDone?.detail ?? null, {})?.features ?? null, recheck });
           saveSearch(db, j, r, s!, sellers, known, out.data, out.usage);
         }
       } catch (e) {
@@ -108,7 +116,7 @@ function saveIdentify(db: DB, j: Row, r: Row, data: import('./ai.ts').IdentifyRe
   tx(db, () => {
     const ins = db.prepare('INSERT INTO ai_identities(job_id, request_id, rank, brand, name, color, category, confidence, reasons, refs, is_mock) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     data.identities.forEach((x, i) => ins.run(j.id, r.id, i + 1, x.brand || null, x.name, x.color || null, x.category || null, x.confidence, json(x.reasons), json(x.refs), mock ? 1 : 0));
-    finish(db, j.id, 'done', { summary: data.summary || null, detail: { missing: data.missing }, usage });
+    finish(db, j.id, 'done', { summary: data.summary || null, detail: { missing: data.missing, features: data.features ?? null, metrics: data.metrics ?? null }, usage });
     // 사용자 일지에는 “왈프가 먼저 살펴봤고, 팀이 확인 중”이라는 사실만 남긴다(후보 내용은 검수 전이라 보이지 않는다)
     const parts = [r.photo && '사진', r.product_url && '링크', r.product_name && '상품명'].filter(Boolean) as string[];
     D.log(db, r.id, 'walf', 'ai_identify', '왈프가 먼저 살펴봤어요', data.identities.length
@@ -123,16 +131,22 @@ function saveSearch(db: DB, j: Row, r: Row, s: Row, sellers: Row[], known: strin
   const knownKeys = new Set(known.map(urlKey));
   let dup = 0;
   tx(db, () => {
-    const ins = db.prepare(`INSERT INTO ai_finds(job_id, request_id, run_id, seller_id, url, url_seen, title, price, size, condition, match_guess, stock_guess, reason, is_mock) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const ins = db.prepare(`INSERT INTO ai_finds(job_id, request_id, run_id, seller_id, url, url_seen, title, price, size, condition, match_guess, stock_guess, reason, is_mock,
+      page_status, color_match, size_match, image_url, snippet, evidence, query, visual, reserved) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const obs = db.prepare('INSERT INTO hunt_observations(request_id, run_id, job_id, url, price, page_status, stock, at) VALUES (?,?,?,?,?,?,?,?)');
     for (const x of data.listings) {
       if (x.url && knownKeys.has(urlKey(x.url))) { dup++; continue; }
       if (x.url) knownKeys.add(urlKey(x.url));
+      const e = x.extra || {};
       ins.run(j.id, r.id, s.id, sid.get(x.seller) ?? null, x.url || null, x.urlSeen == null ? null : x.urlSeen ? 1 : 0, x.title || null, x.price, x.size ? x.size.toUpperCase() : null,
-        x.condition, x.match, x.stock, x.reason || null, mock ? 1 : 0);
+        x.condition, x.match, x.stock, x.reason || null, mock ? 1 : 0,
+        e.pageStatus || null, e.colorMatch || null, e.sizeMatch || null, e.image || null, e.snippet || null, e.evidence ? json(e.evidence) : null, e.query || null, e.visual ? json(e.visual) : null, e.reserved ? 1 : 0);
+      if (x.url && e.pageStatus) obs.run(r.id, s.id, j.id, x.url, x.price, e.pageStatus, x.stock, now());
     }
+    for (const c of ((data.metrics as any)?.rechecks || []) as any[]) if (c?.url) obs.run(r.id, s.id, j.id, String(c.url), c.price ?? null, c.status ?? null, c.stock ?? null, now());
     const added = data.listings.length - dup;
     finish(db, j.id, 'done', { summary: data.summary || null, usage,
-      detail: { sellers: data.sellers.map(n => ({ ...n, sellerId: sid.get(n.seller) })), dropped: data.dropped, duplicates: dup, blocked: data.blocked, added } });
+      detail: { sellers: data.sellers.map(n => ({ ...n, sellerId: sid.get(n.seller) })), dropped: data.dropped, duplicates: dup, blocked: data.blocked, added, metrics: data.metrics ?? null } });
     const searched = data.sellers.filter(n => n.searched).length;
     D.log(db, r.id, 'walf', 'ai_search', '국내 판매처를 먼저 살펴봤어요', searched
       ? `${searched}곳을 검색했어요 · 결과는 왈프 팀이 확인한 뒤 알려 드려요`
@@ -185,7 +199,6 @@ export function rejectFind(db: DB, findId: number, reason: string, operator: str
 }
 
 // ── 어드민 화면용 ─────────────────────────────────────────────
-const parse = (s: string | null, d: any) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 export function aiView(db: DB, requestId: number) {
   const identify = one(db, `SELECT * FROM ai_jobs WHERE request_id=? AND kind='identify' ORDER BY id DESC LIMIT 1`, requestId);
   const lastDone = one(db, `SELECT * FROM ai_jobs WHERE request_id=? AND kind='identify' AND status='done' ORDER BY id DESC LIMIT 1`, requestId);

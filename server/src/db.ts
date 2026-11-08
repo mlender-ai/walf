@@ -143,7 +143,16 @@ CREATE TABLE IF NOT EXISTS ai_finds(
   candidate_id INTEGER, decided_by TEXT, decided_at INTEGER, reject_reason TEXT,
   is_mock INTEGER NOT NULL DEFAULT 0
 );
+-- 7일 실험: 다시 확인한 매물의 가격·판매 상태(가격 변화·판매 완료 감지)
+CREATE TABLE IF NOT EXISTS hunt_observations(
+  id INTEGER PRIMARY KEY,
+  request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  run_id INTEGER, job_id INTEGER,
+  url TEXT NOT NULL, price INTEGER, page_status TEXT, stock TEXT,
+  at INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS ix_req_user ON requests(user_id, status);
+CREATE INDEX IF NOT EXISTS ix_obs_url ON hunt_observations(request_id, url);
 CREATE INDEX IF NOT EXISTS ix_ai_job ON ai_jobs(status, id);
 CREATE INDEX IF NOT EXISTS ix_ai_find ON ai_finds(request_id, status);
 CREATE INDEX IF NOT EXISTS ix_act_req ON activity(request_id, at);
@@ -169,6 +178,9 @@ export function openDb(file: string): DB {
   add('wanted', 'is_mock', 'INTEGER NOT NULL DEFAULT 0');
   add('users', 'deleted_at', 'INTEGER');
   add('sellers', 'domain', 'TEXT');
+  // 오픈소스 엔진이 남기는 근거(다른 공급자는 비워 둔다)
+  for (const [c, d] of [['page_status', 'TEXT'], ['color_match', 'TEXT'], ['size_match', 'TEXT'], ['image_url', 'TEXT'], ['snippet', 'TEXT'], ['evidence', 'TEXT'], ['query', 'TEXT'], ['visual', 'TEXT'], ['reserved', 'INTEGER NOT NULL DEFAULT 0']]) add('ai_finds', c, d);
+  add('search_runs', 'review_minutes', 'INTEGER'); // 운영자가 적은 검수 시간(선택)
   const ins = db.prepare('INSERT OR IGNORE INTO sellers(name, kind, sort) VALUES (?, ?, ?)');
   const dom = db.prepare('UPDATE sellers SET domain=? WHERE name=? AND domain IS NULL');
   SELLERS.forEach(([n, k, d], i) => { ins.run(n, k, i); dom.run(d, n); });
