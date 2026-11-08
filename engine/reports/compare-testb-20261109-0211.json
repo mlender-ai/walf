@@ -1,0 +1,648 @@
+{
+ "test": "B",
+ "product": {
+  "brand": "BADBLOOD",
+  "model": "Mystic Nylon Track Jacket",
+  "brand_ko": [
+   "배드블러드"
+  ],
+  "name_ko": [
+   "미스틱 나일론 트랙 자켓"
+  ],
+  "code": "W-JKT26-055",
+  "color": "네이비",
+  "size": "M"
+ },
+ "queries": [
+  "BADBLOOD Mystic Nylon Track Jacket",
+  "배드블러드 미스틱 나일론 트랙 자켓",
+  "BADBLOOD W-JKT26-055",
+  "배드블러드 미스틱 나일론 트랙 자켓 네이비 M"
+ ],
+ "available": {
+  "naver_web": "키 없음(~/.walf-oss/keys.env 의 WALF_NAVER_HUB_ID·WALF_NAVER_HUB_SECRET)",
+  "naver_cafe": "키 없음(~/.walf-oss/keys.env 의 WALF_NAVER_HUB_ID·WALF_NAVER_HUB_SECRET)",
+  "tavily": "키 없음(~/.walf-oss/keys.env 의 WALF_TAVILY_KEY)",
+  "searxng": "ready"
+ },
+ "total_ms": 49566,
+ "per_source": {
+  "naver_web": {
+   "status": "실행 안 함 — 키 없음(~/.walf-oss/keys.env 의 WALF_NAVER_HUB_ID·WALF_NAVER_HUB_SECRET)",
+   "search_ms": 0,
+   "calls": 0,
+   "cost": 0,
+   "funnel": {
+    "raw": 0,
+    "unique": 0,
+    "out_of_scope": 0,
+    "non_product": 0,
+    "known": 0,
+    "robots": 0,
+    "page_error": 0,
+    "extracted": 0,
+    "same": 0,
+    "similar": 0,
+    "color_mismatch": 0,
+    "size_mismatch": 0,
+    "wanted_post": 0,
+    "sold": 0,
+    "reviewable": 0
+   },
+   "known_found": [],
+   "same_pages": [],
+   "wrong": [],
+   "buyable_m": []
+  },
+  "naver_cafe": {
+   "status": "실행 안 함 — 키 없음(~/.walf-oss/keys.env 의 WALF_NAVER_HUB_ID·WALF_NAVER_HUB_SECRET)",
+   "search_ms": 0,
+   "calls": 0,
+   "cost": 0,
+   "funnel": {
+    "raw": 0,
+    "unique": 0,
+    "out_of_scope": 0,
+    "non_product": 0,
+    "known": 0,
+    "robots": 0,
+    "page_error": 0,
+    "extracted": 0,
+    "same": 0,
+    "similar": 0,
+    "color_mismatch": 0,
+    "size_mismatch": 0,
+    "wanted_post": 0,
+    "sold": 0,
+    "reviewable": 0
+   },
+   "known_found": [],
+   "same_pages": [],
+   "wrong": [],
+   "buyable_m": []
+  },
+  "tavily": {
+   "status": "실행 안 함 — 키 없음(~/.walf-oss/keys.env 의 WALF_TAVILY_KEY)",
+   "search_ms": 0,
+   "calls": 0,
+   "cost": 0,
+   "funnel": {
+    "raw": 0,
+    "unique": 0,
+    "out_of_scope": 0,
+    "non_product": 0,
+    "known": 0,
+    "robots": 0,
+    "page_error": 0,
+    "extracted": 0,
+    "same": 0,
+    "similar": 0,
+    "color_mismatch": 0,
+    "size_mismatch": 0,
+    "wanted_post": 0,
+    "sold": 0,
+    "reviewable": 0
+   },
+   "known_found": [],
+   "same_pages": [],
+   "wrong": [],
+   "buyable_m": []
+  },
+  "searxng": {
+   "status": "ok 4 · 오류: bing:HTTP connection error; brave:Suspended: too many requests; bing:Suspended: HTTP connection error; brave:Suspended: too many requests; bing:Suspended: HTTP ",
+   "search_ms": 2334,
+   "calls": 4,
+   "cost": 0,
+   "funnel": {
+    "raw": 53,
+    "unique": 53,
+    "out_of_scope": 24,
+    "non_product": 23,
+    "known": 0,
+    "robots": 0,
+    "page_error": 0,
+    "extracted": 3,
+    "same": 2,
+    "similar": 1,
+    "color_mismatch": 1,
+    "size_mismatch": 0,
+    "wanted_post": 0,
+    "sold": 0,
+    "reviewable": 3
+   },
+   "known_found": [
+    "배드블러드 공식몰 W-JKT26-055",
+    "배드블러드 스토어 W-JKT26-055"
+   ],
+   "same_pages": [
+    {
+     "url": "https://badblood.co.kr/product/w-jkt26-055-%EB%AF%B8%EC%8A%A4%ED%8B%B1-%EB%82%98%EC%9D%BC%EB%A1%A0-%ED%8A%B8%EB%9E%99-%EC%9E%90%EC%BC%93-%EB%84%A4%EC%9D%B4%EB%B9%84/14555/",
+     "where": "badblood.co.kr",
+     "title": "w jkt26 055 미스틱 나일론 트랙 자켓 네이비",
+     "page": "stock_unknown",
+     "size": "unknown",
+     "stock": "unknown"
+    }
+   ],
+   "wrong": [
+    {
+     "url": "https://badbloodstores.com/product/w-jkt26-054-%EB%AF%B8%EC%8A%A4%ED%8B%B1-%EB%82%98%EC%9D%BC%EB%A1%A0-%ED%8A%B8%EB%9E%99-%EC%9E%90%EC%BC%93-%EB%B8%94%EB%A3%A8%EA%B7%B8%EB%A0%88%EC%9D%B4/14554/category/1776/display/1/",
+     "why": "색상 불일치",
+     "title": "w jkt26 054 미스틱 나일론 트랙 자켓 블루그레이"
+    }
+   ],
+   "buyable_m": []
+  }
+ },
+ "domains": {
+  "www.soldout.co.kr": {
+   "kind": "platform",
+   "name": "솔드아웃",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 4,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "kream.co.kr": {
+   "kind": "platform",
+   "name": "KREAM",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 3,
+   "robots": "robots.txt 를 읽지 못함(ReadTimeout)"
+  },
+  "m.bunjang.co.kr": {
+   "kind": "seller",
+   "name": "번개장터",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 3,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "www.musinsa.com": {
+   "kind": "seller",
+   "name": "무신사",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 4,
+   "robots": "robots.txt 저장본(자동 읽기 HTTP 403): 일반 수집기(*)를 막음"
+  },
+  "munbang.kr": {
+   "kind": "other",
+   "name": "munbang.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 1,
+   "robots": "robots.txt 를 읽지 못함(ConnectError)"
+  },
+  "badbloodstores.com": {
+   "kind": "official",
+   "name": "badbloodstores.com",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 3,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "www.badblood.co.kr": {
+   "kind": "official",
+   "name": "www.badblood.co.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 2,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "fruitsfamily.com": {
+   "kind": "seller",
+   "name": "후루츠패밀리",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 1,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "www.gmarket.co.kr": {
+   "kind": "other",
+   "name": "www.gmarket.co.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 2,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "stores.auction.co.kr": {
+   "kind": "other",
+   "name": "stores.auction.co.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 2,
+   "robots": "robots.txt: 일반 수집기(*)를 막음"
+  },
+  "badblood.co.kr": {
+   "kind": "official",
+   "name": "badblood.co.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 1,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "static.plaync.co.kr": {
+   "kind": "other",
+   "name": "static.plaync.co.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 1,
+   "robots": "robots.txt 를 읽지 못함(ConnectError)"
+  },
+  "secondsold.kr": {
+   "kind": "other",
+   "name": "secondsold.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 1,
+   "robots": "robots.txt: 일반 수집기(*) 허용"
+  },
+  "m.11st.co.kr": {
+   "kind": "other",
+   "name": "m.11st.co.kr",
+   "sources": [
+    "searxng"
+   ],
+   "urls": 1,
+   "robots": "robots.txt: 일반 수집기(*)를 막음"
+  }
+ },
+ "drops": [
+  {
+   "source": "searxng",
+   "url": "https://global.musinsa.com/choose-location",
+   "stage": "범위",
+   "reason": "해외 판매용 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.soldout.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "솔드아웃 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://shop.app/products/10166387441962/track-jacket-black",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://shoppy.mn/products/w-jkt25-025-dark-billy-nylon-track-jacket-charcoal-brown-s",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://kream.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "KREAM 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://m.bunjang.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "번개장터 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.t3.com/news/should-i-buy-the-samsung-galaxy-watch-3",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.musinsa.com/main/musinsa/recommend",
+   "stage": "상품 페이지 아님",
+   "reason": "무신사 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://bbgshophk.com/collections/badblood-skirts",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "http://www.oldchesterpa.com/reunions/chs_72_reunion_chg_20100210.htm",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://accuraterip.com/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "http://munbang.kr/bbs/view.php?id=community1&no=7",
+   "stage": "상품 페이지 아님",
+   "reason": "munbang.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://gist.github.com/Glench/296688696d8c79d7b893",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://sceneflac.blogspot.com/2026/10/labels-flac-2026-part27.html",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.buyma.com/r/-B13299544/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.musinsa.com/main/musinsa/recommend",
+   "stage": "상품 페이지 아님",
+   "reason": "무신사 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.soldout.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "솔드아웃 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://kr.poizon.com/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://fruitsfamily.com/",
+   "stage": "상품 페이지 아님",
+   "reason": "후루츠패밀리 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://kream.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "KREAM 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.gmarket.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "www.gmarket.co.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://stores.auction.co.kr/33shop494/List?Category=13000000",
+   "stage": "상품 페이지 아님",
+   "reason": "stores.auction.co.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.danawa.com/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://m.bunjang.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "번개장터 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.soldout.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "솔드아웃 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.musinsa.com/main/musinsa/recommend",
+   "stage": "상품 페이지 아님",
+   "reason": "무신사 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://docs.house.gov/billsthisweek/20160516/CPRT-114-HPRT-RU00-HR4909.pdf",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://repositories.lib.utexas.edu/server/api/core/bitstreams/d26d21b5-1b1e-45d5-ae00-eef682ea5934/content",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.govinfo.gov/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://appropriations.house.gov/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://wstatic-prod-boc.krafton.com/common/news/20230816/E9vA0ud9.pdf",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.ietf.org/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://hgdownload.soe.ucsc.edu/hubs/BRC/asmStats.html",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "http://static.plaync.co.kr/gaiaupload/GpEvent/bbs/201205/1536720120509185729.html",
+   "stage": "상품 페이지 아님",
+   "reason": "static.plaync.co.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://hgdownload.gi.ucsc.edu/hubs/BRC/index.html",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.myfloridalegal.com/sites/default/files/2024-04/states-petition-for-review.pdf",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.soldout.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "솔드아웃 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.musinsa.com/main/musinsa/recommend",
+   "stage": "상품 페이지 아님",
+   "reason": "무신사 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://secondsold.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "secondsold.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://fleamarket.naver.com/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://samuel.healthblog99.com/tag/%EB%88%88-%EC%8B%A4%ED%95%8F%EC%A4%84-%EC%88%98%EC%88%A0/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://kr.poizon.com/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "http://m.11st.co.kr/page/main/home",
+   "stage": "상품 페이지 아님",
+   "reason": "m.11st.co.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://kream.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "KREAM 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://m.bunjang.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "번개장터 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.gmarket.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "www.gmarket.co.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://stores.auction.co.kr/33shop494/List?Category=13000000",
+   "stage": "상품 페이지 아님",
+   "reason": "stores.auction.co.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://badbloodstores.com/product/w-jkt26-054-%EB%AF%B8%EC%8A%A4%ED%8B%B1-%EB%82%98%EC%9D%BC%EB%A1%A0-%ED%8A%B8%EB%9E%99-%EC%9E%90%EC%BC%93-%EB%B8%94%EB%A3%A8%EA%B7%B8%EB%A0%88%EC%9D%B4/14554/category/1776/display/1/",
+   "stage": "판정(후보로 남김)",
+   "reason": "색상 불일치: blue, grey"
+  }
+ ],
+ "candidates": [
+  {
+   "url": "https://badbloodstores.com/product/w-jkt26-054-%EB%AF%B8%EC%8A%A4%ED%8B%B1-%EB%82%98%EC%9D%BC%EB%A1%A0-%ED%8A%B8%EB%9E%99-%EC%9E%90%EC%BC%93-%EB%B8%94%EB%A3%A8%EA%B7%B8%EB%A0%88%EC%9D%B4/14554/category/1776/display/1/",
+   "kind": "official",
+   "seller": "badbloodstores.com",
+   "title": "w jkt26 054 미스틱 나일론 트랙 자켓 블루그레이",
+   "snippet": "MORE IN THIS COLOR : [w-jkt26-055] 미스틱 나일론 트랙 자켓 - 네이비 · 170,100 won, REVIEW : WRITE, Q&A : WRITE",
+   "sources": [
+    "searxng"
+   ],
+   "queries": [
+    "BADBLOOD W-JKT26-055",
+    "배드블러드 미스틱 나일론 트랙 자켓",
+    "배드블러드 미스틱 나일론 트랙 자켓 네이비 M"
+   ],
+   "match": "same_likely",
+   "evidence": [
+    "품번 W-JKT26-055 표기가 있어요",
+    "브랜드명이 같아요",
+    "모델명 단어가 겹쳐요: 미스틱"
+   ],
+   "color_match": "mismatch",
+   "size_match": "unknown",
+   "stock": "unknown",
+   "page_status": "stock_unknown"
+  },
+  {
+   "url": "https://www.badblood.co.kr/product/list.html?cate_no=1784",
+   "kind": "official",
+   "seller": "www.badblood.co.kr",
+   "title": "list.html",
+   "snippet": "[w-jkt26-064] 미스틱 레이스 트랙 집업 - 블랙 ; [w-jkt26-063] 미스틱 레이스 트랙 집업 - 화이트 ; [w-jkt26-062] 앰버서더 26 라이트웨이트 나일론 후드 자켓 - 블랙",
+   "sources": [
+    "searxng"
+   ],
+   "queries": [
+    "BADBLOOD W-JKT26-055",
+    "배드블러드 미스틱 나일론 트랙 자켓"
+   ],
+   "match": "similar",
+   "evidence": [
+    "브랜드명이 같아요",
+    "모델명 단어가 겹쳐요: 미스틱"
+   ],
+   "color_match": "unknown",
+   "size_match": "unknown",
+   "stock": "unknown",
+   "page_status": "partial"
+  },
+  {
+   "url": "https://badblood.co.kr/product/w-jkt26-055-%EB%AF%B8%EC%8A%A4%ED%8B%B1-%EB%82%98%EC%9D%BC%EB%A1%A0-%ED%8A%B8%EB%9E%99-%EC%9E%90%EC%BC%93-%EB%84%A4%EC%9D%B4%EB%B9%84/14555/",
+   "kind": "official",
+   "seller": "badblood.co.kr",
+   "title": "w jkt26 055 미스틱 나일론 트랙 자켓 네이비",
+   "snippet": "MORE IN THIS COLOR : [w-jkt26-054] 미스틱 나일론 트랙 자켓 - 블루그레이 · 170,100 won, REVIEW : WRITE, Q&A : WRITE",
+   "sources": [
+    "searxng"
+   ],
+   "queries": [
+    "BADBLOOD W-JKT26-055"
+   ],
+   "match": "same_likely",
+   "evidence": [
+    "품번 W-JKT26-055 표기가 있어요",
+    "브랜드명이 같아요",
+    "모델명 단어가 겹쳐요: 미스틱"
+   ],
+   "color_match": "match",
+   "size_match": "unknown",
+   "stock": "unknown",
+   "page_status": "stock_unknown"
+  }
+ ]
+}

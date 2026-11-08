@@ -18,8 +18,10 @@ import time
 import httpx
 
 import pages
+import pipeline
 import rules
 import searx
+from sources import Sources
 from vision import Vision
 
 SEARXNG = os.environ.get("WALF_SEARXNG_URL", "http://localhost:8888")
@@ -288,139 +290,80 @@ STATUS_KO = {"ok": "확인 완료", "stock_unknown": "재고 확인 불가", "pa
 
 # ── 정기 탐색 ─────────────────────────────────────────────────
 async def search(inp: dict) -> dict:
+    """정기 탐색 — 검색 소스(WALF_OSS_SOURCES)로 같은 검색어를 돌리고, pipeline 의 단계별 진단을 그대로 남긴다."""
     t0 = time.monotonic()
     v = Vision(OLLAMA, VLM, log)
     sellers = inp["sellers"]
-    domains = [s["domain"] for s in sellers]
-    name_of = {s["domain"]: s["name"] for s in sellers}
     brand, name = (inp.get("brand") or "").strip(), (inp.get("name") or "").strip()
     note = inp.get("note") or ""
-    # 상품명에 섞인 색·사이즈는 모델명 단어에서 뺀다
     model = " ".join(w for w in name.split() if not rules.colors_in(w) and w.lower() != brand.lower())
     color, size = inp.get("color") or "", (inp.get("size") or "").upper()
     code = next(iter(rules.codes_in(note) + rules.codes_in(name)), None)
     color_word = {"navy": "네이비", "black": "블랙", "brown": "브라운", "grey": "그레이", "white": "화이트", "beige": "베이지", "blue": "블루", "green": "그린", "ivory": "아이보리"}.get(rules.color_of(color) or "", color)
-    # 1단계 영문 이름 → 결과 제목에서 한글 표기를 배운 뒤 → 2단계 한글 표기. 판매처당 3회 안쪽.
-    plan1: list[tuple[str, str]] = []
-    for d in domains:
-        plan1.append((d, f"{brand} {model} site:{d}".strip()))
-        if code and d in NEW_SELLERS:
-            plan1.append((d, f"{brand} {code} site:{d}"))
-    log(f"DAY {inp.get('day')} 탐색 · {brand} {model} · 색 {color or '-'} · 사이즈 {size or '-'} · 품번 {code or '-'}")
-    results = await searx.search_sites(SEARXNG, plan1, delay=DELAY, log=log)
-    learn_from_titles(brand, results)
     al = aliases_for(brand, note)
-    plan2: list[tuple[str, str]] = []
-    if al["brand_ko"]:
-        ko = f"{al['brand_ko'][0]} {(al['name_ko'] or [model])[0]}"
-        for d in domains:
-            plan2.append((d, f"{ko} site:{d}"))
-            if size and d not in NEW_SELLERS:
-                plan2.append((d, f"{ko} {size} site:{d}"))
-    log(f"  한글 표기 {al} · 2단계 검색 {len(plan2)}회")
-    if plan2:
-        await asyncio.sleep(DELAY)
-        results += await searx.search_sites(SEARXNG, plan2, delay=DELAY, log=log)
+    ko = f"{al['brand_ko'][0]} {(al['name_ko'] or [model])[0]}" if al["brand_ko"] else ""
+    queries = [q for q in dict.fromkeys([f"{brand} {model}".strip(), ko, f"{brand} {code}" if code else "", f"{ko} {color_word} {size}".strip() if ko else ""]) if q]
+    enabled = [x.strip() for x in os.environ.get("WALF_OSS_SOURCES", "naver_web,naver_cafe,tavily,searxng").split(",") if x.strip()]
+    src = Sources(enabled, SEARXNG, log)
+    log(f"DAY {inp.get('day')} 탐색 · {brand} {model} · 색 {color or '-'} · 사이즈 {size or '-'} · 품번 {code or '-'} · 소스 {src.available()} · 검색어 {queries}")
+    raw = []
+    for s_ in enabled:
+        for q in queries:
+            r = src.search(s_, q)
+            raw.append(r)
+            if r["status"] not in ("no_key", "skipped", "quota"):
+                await asyncio.sleep(DELAY if s_ == "searxng" else 0.3)
+    learn_from_titles(brand, raw)
     known = {rules.url_key(u) for u in inp.get("known") or []}
-    cands, per = collect(results, domains, known)
-    wanted = [c for c in cands if c["wanted"]]
-    cands = [c for c in cands if not c["wanted"]]
-    for c in cands:
-        c["judge"] = rules.judge(brand=brand, name=model, brand_aliases=al["brand_ko"], name_aliases=al["name_ko"], code=code, text=f"{c['title']} {c['snippet']}", title=c["title"])
-        c["robots"] = pages.robots_ok(c["url"])
-    cands.sort(key=lambda c: ({"same_likely": 0, "similar": 1}.get(c["judge"]["match"], 2), c["domain"] in NEW_SELLERS))
-    # robots.txt 가 막은 판매처(무신사·W컨셉)는 열지 않고 검색 결과만 쓴다 — 열 수 있는 곳에 한도를 쓴다
-    blocked = {c["url"]: {"url": c["url"], "status": "robots", "error": c["robots"][1], "ms": 0} for c in cands if not c["robots"][0]}
-    to_open = [c for c in cands if c["judge"]["match"] != "unknown" and c["robots"][0]][:MAX_CRAWL]
-    pg = {p["url"]: p for p in await pages.crawl([c["url"] for c in to_open], log=log)} | blocked
-    # 지난번에 찾은 매물을 다시 열어 가격·판매 상태 변화를 본다
+    res = await pipeline.run(raw=raw, sellers=sellers, brand=brand, model=model, brand_ko=al["brand_ko"], name_ko=al["name_ko"], code=code, color=color, size=size,
+                             known=known, max_crawl=MAX_CRAWL, log=log)
     recheck_in = [r for r in inp.get("recheck") or [] if r.get("url")][:10]
     rechecked = await pages.crawl([r["url"] for r in recheck_in], log=log) if recheck_in else []
-    listings, filtered = [], {"wanted_posts": [c["url"] for c in wanted], "deleted": [], "unknown_match": 0}
+    listings, outside = [], []
     compared = 0
-    for c in cands:
-        p = pg.get(c["url"]) or {"status": "not_crawled"}
-        if c["judge"]["match"] == "unknown":
-            filtered["unknown_match"] += 1
-            continue
-        if p.get("status") == "deleted":
-            filtered["deleted"].append(c["url"])
-            continue
-        if brand and p.get("status") in ("ok", "stock_unknown", "sold", "partial"):
-            learn_alias(brand, p)
-        page_title = p.get("title") if p.get("title") and rules.norm(p.get("title")) not in ("번개장터", "중고나라", "후루츠패밀리", "[w concept]") else ""
-        title = page_title or c["title"]
-        # 페이지까지 보면 판정을 다시 한다(제목만 보고 고른 것을 페이지 내용으로 확인)
-        j = rules.judge(brand=brand, name=model, brand_aliases=al["brand_ko"], name_aliases=al["name_ko"], code=code,
-                        text=" ".join([c["title"], c["snippet"], page_title, p.get("description") or "", p.get("sku") or "", p.get("brand") or ""]), title=page_title or c["title"])
-        if p.get("status") in ("ok", "stock_unknown", "sold", "partial") and j["match"] == "unknown":
-            j = c["judge"]
-        head = (p.get("text_head") or "")[:800]
-        color_text = " ".join([c["title"], page_title, p.get("color") or ""]) if c["domain"] in NEW_SELLERS else " ".join([c["title"], page_title, c["snippet"], head])
-        cm = rules.color_match(color, color_text)
-        sm = rules.size_match(size, " ".join([c["title"], page_title, head if c["domain"] not in NEW_SELLERS else ""]))
-        stock = p.get("stock") or ("sold_out" if rules.stock_from("", c["title"], c["snippet"]) == "sold_out" else "unknown")
-        if p.get("status") == "sold":
-            stock = "sold_out"
-        evidence = list(j["evidence"])
-        if cm == "match":
-            evidence.append(f"색상 {color_word} 표기가 있어요")
-        elif cm == "mismatch":
-            evidence.append(f"다른 색상 표기: {', '.join(sorted(rules.colors_in(color_text)))}")
-        if sm == "match":
-            evidence.append(f"사이즈 {size} 표기가 있어요")
-        elif sm == "mismatch":
-            evidence.append(f"다른 사이즈 표기: {', '.join(sorted(rules.sizes_in(c['title'] + ' ' + page_title)))}")
+    for c in res["candidates"]:
+        p = c["page"]
         vis = None
-        if inp.get("photo") and inp.get("features") and compared < MAX_COMPARE and j["match"] == "same_likely":
-            img = fetch_image(p.get("image") or c.get("img") or "")
+        if inp.get("photo") and inp.get("features") and compared < MAX_COMPARE and c["match"] == "same_likely":
+            img = fetch_image(p.get("image") or "")
             if img:
                 try:
-                    vis = v.compare(inp["photo"], img, title)
+                    vis = v.compare(inp["photo"], img, c["title"])
                     compared += 1
                 except Exception as e:
                     log("  비교 실패", type(e).__name__)
-        listings.append({
-            "seller": name_of[c["domain"]], "url": c["url"], "title": title[:160], "price": p.get("price"), "size": ",".join(sorted(rules.sizes_in(c["title"] + " " + page_title))),
-            "condition": "new" if c["domain"] in NEW_SELLERS else "used", "match": j["match"], "stock": "sold_out" if stock == "sold_out" else ("listed" if stock == "listed" else "unknown"),
-            "reason": " · ".join(evidence)[:300], "pageStatus": p.get("status") or "not_crawled", "colorMatch": cm, "sizeMatch": sm, "image": p.get("image") or c.get("img") or "",
-            "snippet": c["snippet"][:300], "evidence": evidence, "query": c["query"], "visual": vis, "priceSrc": p.get("price_src"), "reserved": stock == "reserved",
-        })
-    # 판매처별 메모
+        ev = list(c["evidence"]) + ([f"다른 색상 표기({c['color_match']})"] if c["color_match"] == "mismatch" else []) + ([f"사이즈 {size} 표기가 있어요"] if c["size_match"] == "match" else [])
+        row = {"seller": c["seller"], "url": c["url"], "title": c["title"][:160], "price": p.get("price"), "size": ",".join(sorted(rules.sizes_in(c["title"]))),
+               "condition": "used" if c["seller"] in ("번개장터", "중고나라", "후루츠패밀리") or c["kind"] == "cafe" else "new", "match": c["match"],
+               "stock": "sold_out" if c["stock"] == "sold_out" else ("listed" if c["stock"] == "listed" else "unknown"), "reason": " · ".join(ev)[:300],
+               "pageStatus": p.get("status") or "not_crawled", "colorMatch": c["color_match"], "sizeMatch": c["size_match"], "image": p.get("image") or "",
+               "snippet": c["snippet"][:300], "evidence": ev, "query": c["queries"][0] if c["queries"] else "", "visual": vis, "reserved": c["stock"] == "reserved", "sources": c["sources"]}
+        # 판매처 6곳은 운영자 검수 목록으로, 그 밖(공식몰·KREAM·솔드아웃·카페)은 리포트의 “판매처 밖 발견”으로
+        (listings if c["kind"] == "seller" else outside).append(row)
     notes = []
     for s in sellers:
-        d = s["domain"]
-        rs = [r for r in results if r["domain"] == d]
-        sts = [r["status"] for r in rs]
-        searched = any(x in ("ok", "empty") for x in sts)
-        crawled = [pg[c["url"]] for c in to_open if c["domain"] == d and c["url"] in pg]
-        bad = sorted({why for r in rs for _, why in r["engines_bad"]})
-        st = "results" if "ok" in sts else "no_results" if "empty" in sts else "blocked" if "blocked" in sts else "failed"
-        txt = {"results": f"검색 {len(rs)}회 · 결과 {per[d]['results']}건(상품 {per[d]['product_urls']} · 새 주소 {per[d]['new']} · 중복 {per[d]['dup']})",
-               "no_results": f"검색 {len(rs)}회 · 결과 없음(색인 안 됨일 수도 있어요 — 매물 없음과 달라요)",
-               "blocked": "검색 엔진이 막음(" + ", ".join(bad)[:80] + ")", "failed": "검색 실패(" + (", ".join(bad) or (rs[0].get("error") if rs else "-"))[:80] + ")"}[st]
-        if crawled:
-            txt += " · 페이지 " + ", ".join(f"{STATUS_KO.get(k, k)} {sum(1 for p in crawled if p['status'] == k)}" for k in dict.fromkeys(p["status"] for p in crawled))
-        notes.append({"seller": s["name"], "searched": searched, "note": txt[:200], "status": st})
-    valid = [x for x in listings if x["match"] == "same_likely" and x["colorMatch"] in ("match", "unknown", "any") and x["sizeMatch"] in ("match", "unknown", "any")
-             and x["stock"] != "sold_out" and not x["reserved"]]
+        mine = [d for d in res["drops"] if s["domain"] in d["url"]]
+        found = [x for x in listings if x["seller"] == s["name"]]
+        notes.append({"seller": s["name"], "searched": any(r["status"] in ("ok", "empty") for r in raw), "status": "results" if found else "no_results",
+                      "note": (f"검수 후보 {len(found)}건" if found else "검수 후보 없음") + (f" · 탈락 {len(mine)}건" if mine else "")})
     metrics = {
-        "engine": "oss", "vlm": VLM, "day": inp.get("day"), "aliases": al, "code": code,
-        "queries": [{k: r.get(k) for k in ("domain", "q", "status", "engines_ok", "engines_bad", "ms", "error")} | {"n": len(r["results"])} for r in results],
-        "per_seller": per, "seller_status": {n["seller"]: n["status"] for n in notes},
-        "counts": {"queries": len(results), "results": sum(p["results"] for p in per.values()), "product_urls": sum(p["product_urls"] for p in per.values()),
-                   "new_urls": sum(p["new"] for p in per.values()), "dup_urls": sum(p["dup"] for p in per.values()), "wanted_posts": len(wanted),
-                   "opened": len(pg) - len(blocked), "robots_skipped": len(blocked), "pages": {k: sum(1 for p in pg.values() if p["status"] == k) for k in dict.fromkeys(p["status"] for p in pg.values())},
-                   "listings": len(listings), "same_likely": sum(1 for x in listings if x["match"] == "same_likely"), "similar": sum(1 for x in listings if x["match"] == "similar"),
-                   "valid_unverified": len(valid), "stock_confirmed_listed": sum(1 for x in valid if x["stock"] == "listed"), "deleted": len(filtered["deleted"]),
-                   "unknown_match": filtered["unknown_match"], "compared": compared},
-        "filtered": filtered,
+        "engine": "oss", "vlm": VLM, "day": inp.get("day"), "aliases": al, "code": code, "sources": src.available(), "queries_text": queries,
+        "queries": [{k: r.get(k) for k in ("source", "q", "status", "ms", "error", "cost")} | {"n": len(r["results"])} for r in raw],
+        "funnel": res["funnel"], "drops": res["drops"][:300], "domains": res["domains"], "outside_sellers": outside[:30],
+        "seller_status": {n["seller"]: n["status"] for n in notes},
+        "counts": {"queries": sum(1 for r in raw if r["status"] not in ("no_key", "skipped")), "listings": len(listings), "outside": len(outside),
+                   "same_likely": sum(1 for x in listings if x["match"] == "same_likely"), "new_urls": sum(f.get("unique", 0) for f in res["funnel"].values()),
+                   "dup_urls": sum(f.get("known", 0) for f in res["funnel"].values()), "wanted_posts": sum(f.get("wanted_post", 0) for f in res["funnel"].values()),
+                   "valid_unverified": sum(1 for x in listings + outside if x["match"] == "same_likely" and x["colorMatch"] != "mismatch" and x["sizeMatch"] != "mismatch" and x["stock"] != "sold_out"),
+                   "compared": compared},
         "rechecks": [{"url": r["url"], "prevPrice": r.get("price"), "price": p.get("price"), "status": p.get("status"), "stock": p.get("stock")} for r, p in zip(recheck_in, rechecked)],
-        "timing": {"total_ms": int((time.monotonic() - t0) * 1000), "search_ms": sum(r["ms"] for r in results), "crawl_ms": sum(p.get("ms", 0) for p in [*pg.values(), *rechecked]),
+        "timing": {"total_ms": int((time.monotonic() - t0) * 1000), "search_ms": sum(r["ms"] for r in raw), "crawl_ms": sum(p.get("ms", 0) for p in [*res["opened"].values(), *rechecked]),
                    "vision_ms": v.ms, "vision_calls": v.calls},
-        "external_api_calls": 0, "cost_krw": 0,
+        # 무료 API(네이버 API HUB 한시적 무료·Tavily 무료 크레딧) 호출 수와 유료 호출(0)을 따로 센다
+        "free_api_calls": sum(1 for r in raw if r["source"] != "searxng" and r["status"] not in ("no_key", "skipped", "quota")),
+        "external_api_calls": 0, "cost_krw": 0, "tavily_credits": sum(r.get("cost", 0) for r in raw if r["source"] == "tavily"),
     }
-    summary = f"검색 {len(results)}회 · 새 상품 주소 {metrics['counts']['new_urls']}건 · 같은 상품으로 보임 {metrics['counts']['same_likely']}건 · 조건 맞음(검수 전) {len(valid)}건 · 구매글 {len(wanted)}건 제외"
+    summary = f"검색 {metrics['counts']['queries']}회({', '.join(k for k, v_ in src.available().items() if v_ == 'ready')}) · 판매처 검수 후보 {len(listings)}건 · 판매처 밖 발견 {len(outside)}건 · 조건 맞음(검수 전) {metrics['counts']['valid_unverified']}건"
     return {"sellers": notes, "listings": listings, "summary": summary, "metrics": metrics}
 
 

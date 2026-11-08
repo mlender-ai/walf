@@ -26,7 +26,7 @@ export function reportHtml(db: DB, cfg: { ai?: { kind: string; label: string } |
   const done = search.filter(j => j.status === 'done');
   const runs = db.prepare(`SELECT s.*, r.product_name, r.identified_name FROM search_runs s JOIN requests r ON r.id=s.request_id WHERE s.request_id IN (${reqIds.map(() => '?').join(',')}) ORDER BY s.request_id, s.day`).all(...reqIds) as Row[];
   const sum = (xs: number[]) => xs.reduce((a, b) => a + (Number(b) || 0), 0);
-  const ext = sum(jobs.map(j => m(j).external_api_calls || 0)), cost = sum(jobs.map(j => m(j).cost_krw || 0));
+  const ext = sum(jobs.map(j => m(j).external_api_calls || 0)), cost = sum(jobs.map(j => m(j).cost_krw || 0)), freeCalls = sum(jobs.map(j => m(j).free_api_calls || 0)), credits = sum(jobs.map(j => m(j).tavily_credits || 0));
   const totalMs = sum(jobs.map(j => m(j).timing?.total_ms || 0));
   const first = jobs[0].created_at, last = jobs[jobs.length - 1].finished_at || jobs[jobs.length - 1].created_at;
 
@@ -73,6 +73,15 @@ export function reportHtml(db: DB, cfg: { ai?: { kind: string; label: string } |
     <table><thead><tr><th>판매처</th><th>검색 성공률</th><th>날별 검색 결과</th><th>AI가 남긴 매물</th><th>페이지 상태</th></tr></thead><tbody>${sellerRows}</tbody></table>
     <h3 style="margin-top:14px">검색 엔진 응답</h3>${Object.keys(engines).length ? `<table><tbody>${Object.entries(engines).map(([e, x]: [string, any]) => `<tr><td><b>${esc(e)}</b></td><td>응답 ${x.ok}회</td><td class="sub">${Object.entries(x.bad).map(([k, v]) => `${esc(k)} ${v}회`).join(' · ') || '실패 없음'}</td></tr>`).join('')}</tbody></table>` : none()}</section>`;
 
+  // 3-1) 검색 소스별 단계(진단)
+  const F = ['raw', 'unique', 'out_of_scope', 'non_product', 'known', 'robots', 'page_error', 'extracted', 'same', 'color_mismatch', 'size_mismatch', 'reviewable'];
+  const FL = ['수집 URL', '중복 제거 후', '범위 밖', '상품 아님', '이미 본 주소', 'robots', '페이지 오류', '추출 성공', '같은 상품', '색 불일치', '사이즈 불일치', '검수 가능'];
+  const fsum: Row = {};
+  for (const j of done) for (const [src, f] of Object.entries(m(j).funnel || {}) as [string, Row][]) { const x = (fsum[src] ||= {}); for (const k of F) x[k] = (x[k] || 0) + (f[k] || 0); }
+  const drops = sum(done.map(j => (m(j).drops || []).length));
+  const funnelSec = `<section><h2>검색 소스별 단계(누적)</h2>${Object.keys(fsum).length ? `<table><thead><tr><th>소스</th>${FL.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${Object.entries(fsum).map(([src, x]) => `<tr><td><b>${esc(src)}</b></td>${F.map(k => `<td>${x[k] || 0}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    <p class="sub">탈락한 URL은 원본 주소와 이유를 작업 기록에 ${drops}건 남겼어요.</p>` : none('이 단계 기록이 있는 탐색이 아직 없어요.')}</section>`;
+
   // 4) 찾은 것 · 운영자 판단
   const cands = db.prepare(`SELECT c.*, f.id fid FROM candidates c JOIN ai_finds f ON f.candidate_id=c.id JOIN ai_jobs j ON j.id=f.job_id WHERE j.provider='oss'`).all() as Row[];
   const reqOf = (id: number) => db.prepare('SELECT * FROM requests WHERE id=?').get(id) as Row;
@@ -109,6 +118,7 @@ export function reportHtml(db: DB, cfg: { ai?: { kind: string; label: string } |
     <tr><td>총 실행 시간</td><td>${sec(totalMs)} · 작업당 평균 ${sec(totalMs / jobs.length)}</td></tr>
     <tr><td>검색 · 페이지 수집 · 로컬 사진 모델</td><td>${sec(t('search_ms'))} · ${sec(t('crawl_ms'))} · ${sec(t('vision_ms'))} (모델 호출 ${t('vision_calls')}회)</td></tr>
     <tr><td>유료 API</td><td>호출 ${ext}회 · 과금 ${won(cost) || '0원'} (Claude·OpenAI 호출 없음)</td></tr>
+    <tr><td>무료 API</td><td>${freeCalls}회 (네이버 API HUB·Tavily) · Tavily ${credits}크레딧</td></tr>
     <tr><td>운영자 검수 시간(직접 입력)</td><td>${reviewed.length ? `${sum(reviewed.map(r => r.review_minutes))}분 · ${reviewed.length}일 입력` : '입력 없음'}</td></tr>
     <tr><td>탐색 끝 → 검수까지(대기 포함)</td><td>${lat.length ? `중앙값 ${sec(lat[Math.floor(lat.length / 2)])} · ${lat.length}건` : '데이터 없음'}</td></tr>
     <tr><td>실패·재시도</td><td>실패 ${jobs.filter(j => j.status === 'failed').length}건 · 두 번 이상 시도 ${jobs.filter(j => j.attempts > 1).length}건</td></tr></tbody></table></section>`;
@@ -122,5 +132,5 @@ export function reportHtml(db: DB, cfg: { ai?: { kind: string; label: string } |
   }).join('');
   const idSec = `<section><h2>사진 식별</h2>${ident.length ? `<table><thead><tr><th>의뢰</th><th>상태</th><th>요약</th><th>제안한 상품</th><th>시간</th></tr></thead><tbody>${idRows}</tbody></table>` : none()}</section>`;
   const cmp = `<section><h2>이전 Claude 탐색과 비교</h2>${claude ? `<p>Claude 작업 ${claude}건이 있어요. 같은 의뢰의 결과는 각 의뢰 화면에서 비교하세요.</p>` : none('기준 데이터 없음 — 이 서버에는 Claude로 실행한 탐색 기록이 없어 같은 기준으로 비교할 수 없어요. 유료 호출은 하지 않았어요.')}</section>`;
-  return head + summary + days + sellerSec + found + price + cost2 + idSec + cmp;
+  return head + summary + days + sellerSec + funnelSec + found + price + cost2 + idSec + cmp;
 }
