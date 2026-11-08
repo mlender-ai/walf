@@ -114,6 +114,7 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
 function saveIdentify(db: DB, j: Row, r: Row, data: import('./ai.ts').IdentifyResult, usage: Usage) {
   const mock = !!j.is_mock;
   tx(db, () => {
+    run(db, `UPDATE ai_identities SET status='passed' WHERE request_id=? AND status='proposed'`, r.id); // 다시 살펴봤으면 이전 제안은 고르지 않은 것으로
     const ins = db.prepare('INSERT INTO ai_identities(job_id, request_id, rank, brand, name, color, category, confidence, reasons, refs, is_mock) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     data.identities.forEach((x, i) => ins.run(j.id, r.id, i + 1, x.brand || null, x.name, x.color || null, x.category || null, x.confidence, json(x.reasons), json(x.refs), mock ? 1 : 0));
     finish(db, j.id, 'done', { summary: data.summary || null, detail: { missing: data.missing, features: data.features ?? null, metrics: data.metrics ?? null }, usage });
