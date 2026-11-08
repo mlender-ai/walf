@@ -39,7 +39,7 @@ def host_of(url: str) -> str:
 
 
 def classify_domain(url: str, sellers: list[dict], brand: str, brand_ko: list[str]) -> tuple[str, str]:
-    """(분류, 이름) — seller(판매처 6곳) · platform(KREAM·솔드아웃) · official(브랜드 공식몰) · cafe(네이버 카페) · overseas · other"""
+    """(분류, 이름) — seller(판매처 6곳) · platform(KREAM·솔드아웃) · official(브랜드 공식몰) · shop(카페24 국내몰) · cafe(네이버 카페) · overseas · other"""
     h = host_of(url)
     if any(h == o or h.endswith("." + o) for o in rules.OVERSEAS_HOSTS):
         return "overseas", h
@@ -51,6 +51,8 @@ def classify_domain(url: str, sellers: list[dict], brand: str, brand_ko: list[st
             return "platform", n
     if h == "cafe.naver.com" or h.endswith(".cafe.naver.com"):
         return "cafe", "네이버 카페"
+    if h.endswith(".cafe24.com") or h.endswith(".cafe24shop.com"):
+        return "shop", h  # 국내 쇼핑몰 플랫폼(카페24)으로 만든 몰 — 브랜드 아카이브·편집숍 등
     b = re.sub(r"[^a-z0-9]", "", (brand or "").lower())
     if b and len(b) >= 4 and b in re.sub(r"[^a-z0-9]", "", h):
         return "official", h
@@ -200,5 +202,5 @@ async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, b
         cands.append({**it, "sources": srcs, "queries": sorted(it["queries"]), "page": p, "title": title, "match": j["match"], "evidence": j["evidence"],
                       "color_match": cm, "size_match": sm, "stock": stock})
     domains = {h: {"kind": d["kind"], "name": d["name"], "sources": sorted(d["sources"]), "urls": d["urls"], "robots": pages.robots_ok(f"https://{h}/")[1] if d["kind"] != "overseas" else "-"}
-               for h, d in domain_seen.items() if d["kind"] in ("seller", "platform", "official", "cafe") or h.endswith(".kr")}
+               for h, d in domain_seen.items() if d["kind"] in ("seller", "platform", "official", "shop", "cafe") or h.endswith(".kr")}
     return {"funnel": funnel, "drops": drops, "candidates": cands, "domains": domains, "opened": opened}

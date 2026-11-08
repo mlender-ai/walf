@@ -1,0 +1,369 @@
+{
+ "test": "A",
+ "features": [
+  {
+   "ms": 32837,
+   "hits": {
+    "브라운 계열": true,
+    "울·트위드 질감": true,
+    "지퍼 여밈": true,
+    "가슴 지퍼 포켓": true,
+    "소매·암 절개선": false
+   },
+   "material": "추정: 코튼 혼방 또는 폴리에스터 혼방의 텍스처 있는 소재",
+   "colors": [
+    "브라운"
+   ],
+   "details": [
+    "칼라: 라운드 칼라",
+    "여밈: 중앙 지퍼",
+    "포켓: 오른쪽 가슴에 직사각형 형태의 지퍼 포켓, 왼쪽 가슴에는 없음",
+    "소매: 단추로 조절 가능한 소매, 손목 부분에 단추가 보임",
+    "몸판 절개선: 중앙 지퍼로 연결된 단순한 절개선",
+    "밑단: 직선 형태의 밑단"
+   ],
+   "brand_guess": "",
+   "keywords_ko": [
+    "브라운 외투",
+    "지퍼 포켓",
+    "라운드 칼라",
+    "슬림핏",
+    "중간 기장"
+   ]
+  },
+  {
+   "ms": 35964,
+   "hits": {
+    "브라운 계열": true,
+    "울·트위드 질감": true,
+    "지퍼 여밈": true,
+    "가슴 지퍼 포켓": true,
+    "소매·암 절개선": false
+   },
+   "material": "추정: 코튼 혼방 또는 폴리에스터 혼방의 텍스처 있는 소재",
+   "colors": [
+    "브라운"
+   ],
+   "details": [
+    "칼라: 라운드 칼라",
+    "여밈: 중앙 지퍼",
+    "포켓: 오른쪽 가슴에 직사각형 형태의 지퍼 포켓, 왼쪽 가슴에는 없음",
+    "소매: 단추로 조절 가능한 소매, 손목 부분에 단추가 보임",
+    "몸판 절개선: 중앙 지퍼로 연결된 단순한 절개선",
+    "밑단: 직선 형태의 밑단"
+   ],
+   "brand_guess": "",
+   "keywords_ko": [
+    "브라운 외투",
+    "지퍼 포켓",
+    "라운드 칼라",
+    "슬림핏",
+    "중간 기장"
+   ]
+  },
+  {
+   "ms": 33306,
+   "hits": {
+    "브라운 계열": true,
+    "울·트위드 질감": true,
+    "지퍼 여밈": true,
+    "가슴 지퍼 포켓": true,
+    "소매·암 절개선": false
+   },
+   "material": "추정: 코튼 혼방 또는 폴리에스터 혼방의 텍스처 있는 소재",
+   "colors": [
+    "브라운"
+   ],
+   "details": [
+    "칼라: 라운드 칼라",
+    "여밈: 중앙 지퍼",
+    "포켓: 오른쪽 가슴에 직사각형 형태의 지퍼 포켓, 왼쪽 가슴에는 없음",
+    "소매: 단추로 조절 가능한 소매, 손목 부분에 단추가 보임",
+    "몸판 절개선: 중앙 지퍼로 연결된 단순한 절개선",
+    "밑단: 직선 형태의 밑단"
+   ],
+   "brand_guess": "",
+   "keywords_ko": [
+    "브라운 외투",
+    "지퍼 포켓",
+    "라운드 칼라",
+    "슬림핏",
+    "중간 기장"
+   ]
+  }
+ ],
+ "photo_queries": [
+  "브라운 코튼 집업 자켓",
+  "브라운 코튼 자켓 가슴 지퍼 포켓",
+  "브라운 집업 자켓 가슴 지퍼 포켓"
+ ],
+ "model_estimate": {
+  "naver_web": [],
+  "naver_cafe": [],
+  "tavily": [],
+  "searxng": []
+ },
+ "ref_candidates": [
+  "https://fararchive.cafe24.com/product/far-wool-arm-cutline-jacket/499/",
+  "https://www.farfromwhat.com/product/far-twisted-oil-denim-pants/495/category/45/display/1/"
+ ],
+ "compares": [
+  {
+   "label": "정답 후보(FAR WOOL ARM CUTLINE)",
+   "url": "https://fararchive.cafe24.com/product/far-wool-arm-cutline-jacket/499/",
+   "verdict": "different",
+   "matching": [
+    "칼라: 첫 번째 사진은 갈색 텍스처가 있는 재킷, 두 번째 사진은 검은색 가죽 재킷. 색상과 소재가 다름."
+   ],
+   "differing": [
+    "여밈: 첫 번째 사진은 앞면에 지퍼가 있고, 두 번째 사진도 앞면에 지퍼가 있음. (동일) 하지만 첫 번째 사진은 단순한 지퍼, 두 번째 사진은 더 두꺼운 지퍼와 고정 장치가 있음. (차이)",
+    "포켓 위치·모양: 첫 번째 사진은 가슴에 작은 지퍼 포켓이 있고, 두 번째 사진은 가슴에 포켓이 없음. (차이)",
+    "소매·몸판 절개선: 첫 번째 사진은 소매가 평범한 형태, 두 번째 사진은 소매가 더 넓고, 손목 부분에 털이 있는 디자인. (차이)",
+    "소재 질감: 첫 번째 사진은 텍스처 있는 코트 재질, 두 번째 사진은 매끄러운 가죽 재질. (차이)",
+    "기장: 첫 번째 사진은 일반적인 길이, 두 번째 사진은 짧은 기장. (차이)"
+   ],
+   "ms": 44310
+  },
+  {
+   "label": "다른 브라운 자켓",
+   "url": "https://fruitsfamily.com/product/6lx03/%EB%B0%B0%EB%93%9C-%EB%B8%94%EB%9F%AC%EB%93%9C-%EB%8B%A4%ED%81%AC-%EB%B9%8C%EB%A6%AC-%EB%82%98%EC%9D%BC%EB%A1%A0-%ED%8A%B8%EB%9E%99-%EC%9E%90%EC%BC%93-%EC%B1%A0%EC%BD%9C%EB%B8%8C%EB%9D%BC%EC%9A%B4-s",
+   "verdict": "이미지 못 받음"
+  }
+ ],
+ "ref_drops": [
+  {
+   "source": "searxng",
+   "url": "https://www.youtube.com/",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.youtube.com/feed/NAVER",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.youtube.com/@Youtube_Official_KR",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.youtube.com/youtube",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.youtube.com/@youtube__kr",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.youtube.com/@youtubekorea",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://blog.chrismoore.com/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://music.youtube.com/",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://en.wikipedia.org/wiki/YouTube",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://kream.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "KREAM 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://farfromwhat.com/",
+   "stage": "상품 페이지 아님",
+   "reason": "farfromwhat.com 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://en.farfromwhat.com/",
+   "stage": "상품 페이지 아님",
+   "reason": "en.farfromwhat.com 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.globalsecurity.org/wmd/library/policy/army/fm/4-02-7/fm4-02-7_2009.pdf",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://m.bunjang.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "번개장터 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.unmck.or.kr/intro/",
+   "stage": "상품 페이지 아님",
+   "reason": "www.unmck.or.kr 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://digitalcommons.cwu.edu/cgi/viewcontent.cgi?article=1033&context=hmvla_jampa",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://play.google.com/store/apps/details?id=com.google.android.youtube&hl=en-US",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "http://www.oldchesterpa.com/reunions/srl_all_reunion_chg20100907.htm",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://ko.wikipedia.org/wiki/%EC%9C%A0%ED%8A%9C%EB%B8%8C",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://iffti.org/downloads/papers-presented/XVIII-BIFT.pdf",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.aliexpress.com/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.dph.ncdhhs.gov/environmental-health/ahera-lea-reference-manual/download?attachment",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.netflix.com/kr/",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.netflix.com/kr/login",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www3.stage.netflix.com/kr/browse/genre/67879",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://help.netflix.com/ko/node/102377",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.netflix.com/kr/signup",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://www.netflix.com/",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://help.netflix.com/ko/node/101653",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://en.wikipedia.org/wiki/Netflix",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://help.netflix.com/ko",
+   "stage": "범위",
+   "reason": "상품 판매와 상관없는 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://fruitsfamily.com/",
+   "stage": "상품 페이지 아님",
+   "reason": "후루츠패밀리 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://farfromwhat.com/",
+   "stage": "상품 페이지 아님",
+   "reason": "farfromwhat.com 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://daangn.com/kr/",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  },
+  {
+   "source": "searxng",
+   "url": "https://m.bunjang.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "번개장터 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://kream.co.kr/",
+   "stage": "상품 페이지 아님",
+   "reason": "KREAM 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://production.fruitsfamily.com/",
+   "stage": "상품 페이지 아님",
+   "reason": "후루츠패밀리 첫 화면·목록·검색·후기 등"
+  },
+  {
+   "source": "searxng",
+   "url": "https://play.google.com/store/apps/details?id=com.netflix.mediaclient&hl=ko",
+   "stage": "범위",
+   "reason": "국내 판매처로 확인되지 않은 사이트"
+  }
+ ],
+ "available": {
+  "naver_web": "키 없음(~/.walf-oss/keys.env 의 WALF_NAVER_HUB_ID·WALF_NAVER_HUB_SECRET)",
+  "naver_cafe": "키 없음(~/.walf-oss/keys.env 의 WALF_NAVER_HUB_ID·WALF_NAVER_HUB_SECRET)",
+  "tavily": "키 없음(~/.walf-oss/keys.env 의 WALF_TAVILY_KEY)",
+  "searxng": "ready"
+ }
+}

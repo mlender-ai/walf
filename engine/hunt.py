@@ -325,7 +325,7 @@ async def search(inp: dict) -> dict:
         p = c["page"]
         vis = None
         if inp.get("photo") and inp.get("features") and compared < MAX_COMPARE and c["match"] == "same_likely":
-            img = fetch_image(p.get("image") or "")
+            img = fetch_image(p.get("image") or "") if p.get("image_src") in ("jsonld", "og") else None
             if img:
                 try:
                     vis = v.compare(inp["photo"], img, c["title"])

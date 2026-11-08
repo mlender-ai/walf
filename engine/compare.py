@@ -14,6 +14,7 @@ import re
 import sys
 import time
 
+import pages
 import pipeline
 from sources import Sources
 from vision import Vision
@@ -124,6 +125,7 @@ async def test_b():
 # ── TEST A: 사진 식별 ───────────────────────────────────────────
 PHOTO = os.environ.get("WALF_TEST_A_PHOTO", "")
 A_CHECK = {"브라운 계열": r"브라운|갈색|모카|초콜릿|카멜", "울·트위드 질감": r"울|트위드|부클|텍스처", "지퍼 여밈": r"지퍼", "가슴 지퍼 포켓": r"가슴[^,]*지퍼|지퍼[^,]*포켓", "소매·암 절개선": r"소매[^,]*(절개|라인|컷)|암\s*컷|절개[^,]*소매"}
+A_NEG = ["https://fruitsfamily.com/product/6lx03/%EB%B0%B0%EB%93%9C-%EB%B8%94%EB%9F%AC%EB%93%9C-%EB%8B%A4%ED%81%AC-%EB%B9%8C%EB%A6%AC-%EB%82%98%EC%9D%BC%EB%A1%A0-%ED%8A%B8%EB%9E%99-%EC%9E%90%EC%BC%93-%EC%B1%A0%EC%BD%9C%EB%B8%8C%EB%9D%BC%EC%9A%B4-s"]
 A_REF = {"brand": "FAR FROM WHAT", "model": "FAR WOOL ARM CUTLINE JACKET", "brand_ko": ["파프롬왓"], "name_ko": []}
 
 
@@ -153,13 +155,20 @@ async def test_a():
                              color="브라운", size="", known=set(), max_crawl=8, log=log)
     import hunt as _h
     compares = []
-    pos = [c for c in ref["candidates"] if c["match"] == "same_likely" and c["page"].get("image")][:2]
-    other = await pipeline.run(raw=raw, sellers=SELLERS, brand="", model="브라운 자켓", brand_ko=[], name_ko=[], code=None, color="브라운", size="", known=set(), max_crawl=6, log=log)
-    neg = [c for c in other["opened"].values() if c.get("image") and not hit.search(c.get("title", ""))][:2]
+    # 정답 후보: 주소·제목에 모델명(ARM CUTLINE)이 보이는 페이지. 브랜드명이 주소에 없을 수 있어(fararchive.cafe24.com) 모델명으로 고른다
+    pos = [c for c in ref["candidates"] if re.search(r"arm[\s-]*cutline|암\s*컷라인", c["url"] + " " + c["title"], re.I) and c["page"].get("image")][:2]
+    log("정답 후보 이미지", [c["url"] for c in pos], "· 후보 전체", [(c["url"], c["match"], c["page"].get("status")) for c in ref["candidates"]])
+    # 오답 표본(정해 둔 것): 다른 브랜드·모델의 브라운 계열 자켓 실매물 — 사진 비교가 “비슷하다”와 “같은 모델”을 가르는지 본다
+    neg = [p for p in await pages.crawl(A_NEG, log=log) if p.get("image")]
     for label, items in (("정답 후보(FAR WOOL ARM CUTLINE)", pos), ("다른 브라운 자켓", neg)):
         for c in items:
             img_url = c["page"].get("image") if "page" in c else c.get("image")
             img = _h.fetch_image(img_url)
+            src_kind = (c["page"] if "page" in c else c).get("image_src")
+            if img and src_kind == "guess":
+                r = v.compare(PHOTO, img, c.get("title", ""))
+                compares.append({"label": label, "url": c["url"], "verdict": f"검증 무효 — 상품 이미지를 확정하지 못함(페이지 안 다른 이미지 {img_url}), 모델 판정 {r['verdict']}"})
+                continue
             if not img:
                 compares.append({"label": label, "url": c["url"], "verdict": "이미지 못 받음"})
                 continue

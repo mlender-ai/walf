@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import html as htmllib
 import urllib.robotparser
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 import json
 import os
 import re
@@ -161,9 +161,19 @@ def extract(url: str, html: str, text: str, http: int | None) -> dict:
         status = "stock_unknown"
     else:
         status = "partial"
+    # 대표 이미지: 구조화 데이터 → og:image(사이트 공유용 로고는 빼고) → 카페24 상품 큰 이미지(/web/product/big/). 상대 주소는 페이지 기준으로
+    image, image_src = ld.get("image") or "", "jsonld" if ld.get("image") else ""
+    og = m.get("og:image") or ""
+    if not image and og and not re.search(r"share|logo|default|og[-_]?image", og, re.I):
+        image, image_src = og, "og"
+    if not image:
+        # 추정 이미지: 페이지 안의 첫 상품 큰 이미지. 다른 상품 배너일 수 있어(2026-11-09 파프롬왓 아카이브에서 검은 가죽 자켓 배너를 집음) 사진 비교에 쓰지 않는다
+        mm = re.search(r"""<img[^>]+src=["']([^"']*/web/product/(?:big|extra/big|medium)/[^"']+)["']""", html or "", re.I)
+        image, image_src = (mm.group(1), "guess") if mm else ("", "")
+    image = urljoin(url, image) if image else ""
     return {"url": url, "http": http, "status": status, "title": (title or "")[:200], "brand": ld.get("brand") or m.get("product:brand") or "",
             "price": price, "price_src": price_src, "availability": availability, "stock": stock, "jsonld": bool(ld),
-            "image": ld.get("image") or m.get("og:image") or "", "color": ld.get("color") or "", "sku": ld.get("sku") or "",
+            "image": image, "image_src": image_src, "color": ld.get("color") or "", "sku": ld.get("sku") or "",
             "description": ld.get("description") or m.get("og:description", "")[:300], "text_head": (text or "")[:2500]}
 
 
