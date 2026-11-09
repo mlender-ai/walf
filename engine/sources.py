@@ -24,7 +24,9 @@ HOME = os.path.expanduser(os.environ.get("WALF_OSS_HOME", "~/.walf-oss"))
 NAVER = "https://naverapihub.apigw.ntruss.com"
 TAVILY = "https://api.tavily.com/search"
 # 스스로 정한 상한(무료 범위 안쪽으로 넉넉히 낮게)
-LIMITS = {"naver": {"day": int(os.environ.get("WALF_NAVER_DAY_CAP", "1000"))}, "tavily": {"month": int(os.environ.get("WALF_TAVILY_MONTH_CAP", "800"))}}
+LIMITS = {"naver": {"day": int(os.environ.get("WALF_NAVER_DAY_CAP", "1000"))}, "tavily": {"month": int(os.environ.get("WALF_TAVILY_MONTH_CAP", "800"))},
+          # SerpApi 무료 250회/월·50회/시간 — 스스로 200회에서 멈춘다(캐시된 검색은 SerpApi 가 세지 않지만 여기서는 보수적으로 센다)
+          "serpapi": {"month": int(os.environ.get("WALF_SERPAPI_MONTH_CAP", "200"))}}
 
 
 def load_keys() -> dict:
@@ -35,7 +37,7 @@ def load_keys() -> dict:
             m = re.match(r"\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$", line)
             if m and m.group(2):
                 keys[m.group(1)] = m.group(2)
-    keys.update({k: v for k, v in os.environ.items() if k.startswith(("WALF_NAVER_HUB_", "WALF_TAVILY_")) and v})
+    keys.update({k: v for k, v in os.environ.items() if k.startswith(("WALF_NAVER_HUB_", "WALF_TAVILY_", "WALF_SERPAPI_", "WALF_BRAVE_")) and v})
     return keys
 
 
