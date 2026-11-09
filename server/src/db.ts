@@ -184,6 +184,9 @@ export function openDb(file: string): DB {
   const ins = db.prepare('INSERT OR IGNORE INTO sellers(name, kind, sort) VALUES (?, ?, ?)');
   const dom = db.prepare('UPDATE sellers SET domain=? WHERE name=? AND domain IS NULL');
   SELLERS.forEach(([n, k, d], i) => { ins.run(n, k, i); dom.run(d, n); });
+  // 7일 실험: 브랜드 공식몰은 의뢰마다 주소가 달라 도메인을 두지 않는다. AI가 찾은 매물의 검수 대상일 뿐, 매일 판매처 점검표(active=1)에는 넣지 않는다.
+  ins.run('브랜드 공식몰', 'official', SELLERS.length);
+  db.exec(`UPDATE sellers SET active=0, domain=NULL WHERE kind='official'`);
   return db;
 }
 

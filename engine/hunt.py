@@ -21,6 +21,7 @@ import pages
 import pipeline
 import rules
 import searx
+import sitesearch
 from sources import Sources
 from vision import Vision
 
@@ -303,11 +304,19 @@ async def search(inp: dict) -> dict:
     al = aliases_for(brand, note)
     ko = f"{al['brand_ko'][0]} {(al['name_ko'] or [model])[0]}" if al["brand_ko"] else ""
     queries = [q for q in dict.fromkeys([f"{brand} {model}".strip(), ko, f"{brand} {code}" if code else "", f"{ko} {color_word} {size}".strip() if ko else ""]) if q]
-    enabled = [x.strip() for x in os.environ.get("WALF_OSS_SOURCES", "naver_web,naver_cafe,tavily,searxng").split(",") if x.strip()]
-    src = Sources(enabled, SEARXNG, log)
-    log(f"DAY {inp.get('day')} 탐색 · {brand} {model} · 색 {color or '-'} · 사이즈 {size or '-'} · 품번 {code or '-'} · 소스 {src.available()} · 검색어 {queries}")
-    raw = []
-    for s_ in enabled:
+    enabled = [x.strip() for x in os.environ.get("WALF_OSS_SOURCES", "official,joongna,searxng,naver_web,naver_cafe,tavily").split(",") if x.strip()]
+    src = Sources([e for e in enabled if e not in ("official", "joongna")], SEARXNG, log)
+    # 1) 판매처 자체 검색(검증한 두 곳): 공식몰은 품번·상품명, 중고나라는 한글 브랜드(최신 매물 전체) + 브랜드·모델
+    off_domains = sitesearch.official_domains(brand, note) if "official" in enabled else []
+    name_ko = (al["name_ko"] or [""])[0]
+    distinct_ko = next((w for w in name_ko.split() if w not in rules.GENERIC), "")
+    site_plan = [("official", d, q) for d in off_domains for q in dict.fromkeys([code or "", name_ko or model]) if q]
+    if "joongna" in enabled:
+        bko = (al["brand_ko"] or [brand])[0]
+        site_plan += [("joongna", "web.joongna.com", q) for q in dict.fromkeys([bko, f"{bko} {distinct_ko}".strip(), f"{bko} {name_ko}".strip()]) if q]
+    log(f"DAY {inp.get('day')} 탐색 · {brand} {model} · 색 {color or '-'} · 사이즈 {size or '-'} · 품번 {code or '-'} · 공식몰 {off_domains or '모름'} · 소스 {src.available()} · 보조 검색어 {queries}")
+    raw = await sitesearch.run(site_plan, log=log)
+    for s_ in [e for e in enabled if e not in ("official", "joongna")]:
         for q in queries:
             r = src.search(s_, q)
             raw.append(r)
@@ -315,8 +324,9 @@ async def search(inp: dict) -> dict:
                 await asyncio.sleep(DELAY if s_ == "searxng" else 0.3)
     learn_from_titles(brand, raw)
     known = {rules.url_key(u) for u in inp.get("known") or []}
-    res = await pipeline.run(raw=raw, sellers=sellers, brand=brand, model=model, brand_ko=al["brand_ko"], name_ko=al["name_ko"], code=code, color=color, size=size,
+    res = await pipeline.run(raw=raw, sellers=[x for x in sellers if x.get("domain")], brand=brand, model=model, brand_ko=al["brand_ko"], name_ko=al["name_ko"], code=code, color=color, size=size,
                              known=known, max_crawl=MAX_CRAWL, log=log)
+    sitesearch.learn_official(brand, {pipeline.host_of(c["url"]): {"kind": "official"} for c in res["candidates"] if c["kind"] == "official" and c["match"] == "same_likely"}, log)
     recheck_in = [r for r in inp.get("recheck") or [] if r.get("url")][:10]
     rechecked = await pages.crawl([r["url"] for r in recheck_in], log=log) if recheck_in else []
     listings, outside = [], []
@@ -333,16 +343,21 @@ async def search(inp: dict) -> dict:
                 except Exception as e:
                     log("  비교 실패", type(e).__name__)
         ev = list(c["evidence"]) + ([f"다른 색상 표기({c['color_match']})"] if c["color_match"] == "mismatch" else []) + ([f"사이즈 {size} 표기가 있어요"] if c["size_match"] == "match" else [])
-        row = {"seller": c["seller"], "url": c["url"], "title": c["title"][:160], "price": p.get("price"), "size": ",".join(sorted(rules.sizes_in(c["title"]))),
+        row = {"seller": c["seller"], "url": c["url"], "title": c["title"][:160], "price": p.get("price"), "size": (c["option"]["option"].split("-")[-1] if c.get("option") and c["option"].get("option") else ",".join(sorted(rules.sizes_in(c["title"])))),
                "condition": "used" if c["seller"] in ("번개장터", "중고나라", "후루츠패밀리") or c["kind"] == "cafe" else "new", "match": c["match"],
                "stock": "sold_out" if c["stock"] == "sold_out" else ("listed" if c["stock"] == "listed" else "unknown"), "reason": " · ".join(ev)[:300],
                "pageStatus": p.get("status") or "not_crawled", "colorMatch": c["color_match"], "sizeMatch": c["size_match"], "image": p.get("image") or "",
                "snippet": c["snippet"][:300], "evidence": ev, "query": c["queries"][0] if c["queries"] else "", "visual": vis, "reserved": c["stock"] == "reserved", "sources": c["sources"]}
-        # 판매처 6곳은 운영자 검수 목록으로, 그 밖(공식몰·KREAM·솔드아웃·카페)은 리포트의 “판매처 밖 발견”으로
-        (listings if c["kind"] == "seller" else outside).append(row)
+        # 판매처 6곳·브랜드 공식몰은 운영자 검수 목록으로, 그 밖(카페24 다른 몰·카페 등)은 리포트의 “판매처 밖 발견”으로
+        official_seller = next((x["name"] for x in sellers if x.get("official")), None)
+        if c["kind"] == "official" and official_seller:
+            row["seller"] = official_seller
+            listings.append(row)
+        else:
+            (listings if c["kind"] == "seller" else outside).append(row)
     notes = []
     for s in sellers:
-        mine = [d for d in res["drops"] if s["domain"] in d["url"]]
+        mine = [d for d in res["drops"] if s.get("domain") and s["domain"] in d["url"]]
         found = [x for x in listings if x["seller"] == s["name"]]
         notes.append({"seller": s["name"], "searched": any(r["status"] in ("ok", "empty") for r in raw), "status": "results" if found else "no_results",
                       "note": (f"검수 후보 {len(found)}건" if found else "검수 후보 없음") + (f" · 탈락 {len(mine)}건" if mine else "")})
@@ -356,7 +371,10 @@ async def search(inp: dict) -> dict:
                    "dup_urls": sum(f.get("known", 0) for f in res["funnel"].values()), "wanted_posts": sum(f.get("wanted_post", 0) for f in res["funnel"].values()),
                    "valid_unverified": sum(1 for x in listings + outside if x["match"] == "same_likely" and x["colorMatch"] != "mismatch" and x["sizeMatch"] != "mismatch" and x["stock"] != "sold_out"),
                    "compared": compared},
-        "rechecks": [{"url": r["url"], "prevPrice": r.get("price"), "price": p.get("price"), "status": p.get("status"), "stock": p.get("stock")} for r, p in zip(recheck_in, rechecked)],
+        "rechecks": [{"url": r["url"], "prevPrice": r.get("price"), "price": p.get("price"), "status": p.get("status"),
+                      "stock": (rules.option_for(p["options"], color, size)["stock"] if p.get("options") else p.get("stock")),
+                      "option": (rules.option_for(p["options"], color, size) if p.get("options") else None)} for r, p in zip(recheck_in, rechecked)],
+        "site_search": [{k: r.get(k) for k in ("source", "q", "status", "ms", "error", "total")} | {"n": len(r["results"])} for r in raw if r["source"] in ("official", "joongna")],
         "timing": {"total_ms": int((time.monotonic() - t0) * 1000), "search_ms": sum(r["ms"] for r in raw), "crawl_ms": sum(p.get("ms", 0) for p in [*res["opened"].values(), *rechecked]),
                    "vision_ms": v.ms, "vision_calls": v.calls},
         # 무료 API(네이버 API HUB 한시적 무료·Tavily 무료 크레딧) 호출 수와 유료 호출(0)을 따로 센다

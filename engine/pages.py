@@ -147,6 +147,32 @@ def meta(html: str) -> dict:
     return out
 
 
+def option_stock(html: str) -> list[dict]:
+    """카페24 상품 페이지 안의 옵션별 재고(option_stock_data). 없으면 빈 목록.
+    stock 이 None 이면 재고 관리를 하지 않는 옵션(수량을 알 수 없음)."""
+    m = re.search(r"option_stock_data\s*=\s*'(\{.*?\})';", html or "", re.S)
+    if not m:
+        return []
+    raw = m.group(1)
+    try:
+        # 자바스크립트 문자열 안의 JSON 이라 한 번 더 이스케이프돼 있다(\" · \\uXXXX) — 한 단계 풀고 읽는다
+        data = json.loads(raw.replace('\\"', '"').replace('\\\\', '\\'))
+    except Exception:
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return []
+    out = []
+    for k, v in data.items():
+        if not isinstance(v, dict):
+            continue
+        vals = v.get("option_value_orginal") or str(v.get("option_value", "")).split("-")
+        use_stock = v.get("use_stock") in (True, "T")
+        out.append({"code": k, "option": "-".join(str(x) for x in vals), "values": [str(x) for x in vals],
+                    "stock": v.get("stock_number") if use_stock else None, "selling": v.get("is_selling") == "T", "display": v.get("is_display") != "F"})
+    return out
+
+
 def extract(url: str, html: str, text: str, http: int | None) -> dict:
     ld = jsonld_product(html) or {}
     m = meta(html)
@@ -187,7 +213,7 @@ def extract(url: str, html: str, text: str, http: int | None) -> dict:
     image = urljoin(url, image) if image else ""
     return {"url": url, "http": http, "status": status, "title": (title or "")[:200], "brand": ld.get("brand") or m.get("product:brand") or "",
             "price": price, "price_src": price_src, "availability": availability, "stock": stock, "jsonld": bool(ld),
-            "image": image, "image_src": image_src, "color": ld.get("color") or "", "sku": ld.get("sku") or "",
+            "options": option_stock(html), "image": image, "image_src": image_src, "color": ld.get("color") or "", "sku": ld.get("sku") or "",
             "description": ld.get("description") or m.get("og:description", "")[:300], "text_head": (text or "")[:2500]}
 
 

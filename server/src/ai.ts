@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 import { ossFromEnv } from './oss.ts';
 
-export type Seller = { id: number; name: string; domain: string };
+export type Seller = { id: number; name: string; domain: string; official?: boolean }; // official: 브랜드 공식몰(의뢰마다 주소가 다름)
 export type IdentifyInput = { productName?: string | null; brand?: string | null; productUrl?: string | null; note?: string | null; size?: string | null; color?: string | null; photoPath?: string | null; sellers?: Seller[] };
 export type Identity = { brand: string; name: string; color: string; category: string; confidence: 'high' | 'medium' | 'low'; reasons: string[]; refs: string[] };
 export type IdentifyResult = { identities: Identity[]; missing: string[]; summary: string; features?: unknown; metrics?: unknown };
@@ -72,7 +72,8 @@ export function cleanSearch(raw: any, sellers: Seller[], seen: Set<string> | nul
   for (const x of Array.isArray(raw?.listings) ? raw.listings : []) {
     const s = byName.get(x?.seller);
     const url = str(x?.url, 1000);
-    if (!s || (url && (!isHttp(url) || !onDomain(url, s.domain)))) { dropped++; continue; }
+    const okHost = s?.official ? onDomain(url, new URL(isHttp(url) ? url : 'http://x').host.replace(/^www\./, '')) : !!s && onDomain(url, s.domain);
+    if (!s || (url && (!isHttp(url) || !okHost))) { dropped++; continue; }
     const price = x?.price == null || x.price === '' ? null : Math.round(Number(x.price));
     listings.push({
       seller: s.name, url, title: str(x?.title, 160), price: Number.isFinite(price) && price! >= 0 ? price : null, size: str(x?.size, 20),

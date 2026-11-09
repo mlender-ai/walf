@@ -107,3 +107,19 @@ test('리포트: 오픈소스 작업이 없으면 없다고 보인다', () => {
   const db = openDb(':memory:');
   assert.match(reportHtml(db, { ai: null }), /아직 오픈소스 엔진으로 실행한 작업이 없어요/);
 });
+
+test('브랜드 공식몰 매물은 검수 대상으로 받고(도메인이 의뢰마다 다름), 해외 판매용 사이트는 버린다', async () => {
+  const { cleanSearch } = await import('../src/ai.ts');
+  const sellers = [{ id: 4, name: '중고나라', domain: 'joongna.com' }, { id: 7, name: '브랜드 공식몰', domain: '', official: true }];
+  const out = cleanSearch({ sellers: [], listings: [
+    { seller: '브랜드 공식몰', url: 'https://badblood.co.kr/product/w-jkt26-055/14555/', title: '미스틱', price: 189000, size: 'M', condition: 'new', match: 'same_likely', stock: 'sold_out', reason: '옵션 재고 네이비-M: 0 (품절)' },
+    { seller: '브랜드 공식몰', url: 'https://global.musinsa.com/us/products/1', title: '해외', price: 1, size: '', condition: 'new', match: 'same_likely', stock: 'unknown', reason: '' },
+    { seller: '중고나라', url: 'https://badblood.co.kr/product/x/1/', title: '도메인 다름', price: 1, size: '', condition: 'used', match: 'similar', stock: 'unknown', reason: '' },
+  ] }, sellers as any, null);
+  assert.deepEqual(out.listings.map(l => l.url), ['https://badblood.co.kr/product/w-jkt26-055/14555/']);
+  assert.equal(out.listings[0].stock, 'sold_out', '공식몰 옵션 재고 0 은 판매 종료로');
+  assert.equal(out.dropped, 2);
+  const db = openDb(':memory:');
+  const off = db.prepare(`SELECT * FROM sellers WHERE kind='official'`).get() as any;
+  assert.equal(off.active, 0, '매일 판매처 점검표에는 넣지 않는다'); assert.equal(off.domain, null);
+});

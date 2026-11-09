@@ -215,7 +215,10 @@ def judge(*, brand: str, name: str, brand_aliases: list[str], name_aliases: list
     def distinct(x: str) -> list[str]:
         return [w for w in tokens(x) if w not in GENERIC and w not in {norm(b) for b in brands} and not colors_in(w)]
     sets = [d for d in (distinct(x) for x in [name, *name_aliases]) if d]
-    full = any(all(w in tt or (len(w) >= 3 and w in t) for w in d) for d in sets)
+    # 모델 고유 단어는 제목에 있어야 한다(설명·태그에만 있는 “미스틱”으로 다른 모델을 같은 상품으로 보지 않는다)
+    th = norm(title) if title else t
+    tth = set(tokens(title)) if title else tt
+    full = any(all(w in tth or (len(w) >= 3 and w in th) for w in d) for d in sets)
     model_ok = (not sets or full) and (not desc or bool(desc_hits))
     if brand_hit and code_hit and not garment_conflict:
         match = "same_likely"
@@ -278,3 +281,28 @@ def url_key(url: str) -> str:
         return host + path
     except ValueError:
         return url
+
+
+def option_for(options: list[dict], color: str | None, size: str | None) -> dict:
+    """옵션 재고에서 원하는 색·사이즈 칸을 찾는다.
+    결과 stock: listed(재고 있음) · sold_out(재고 0·판매 안 함) · unknown(재고 관리 안 하는 옵션) · none(원하는 칸이 없음)"""
+    want_c = colors_in(color)  # “블루그레이”처럼 색 이름이 둘인 색도 그대로 비교한다
+    w = (size or "").strip().upper()
+    w = _NUM_TO_ALPHA.get(w, w)
+    hits = []
+    for o in options or []:
+        vals = [norm(x) for x in o.get("values") or []]
+        c_ok = not want_c or any(colors_in(x) == want_c for x in vals)
+        s_ok = not w or any(x.upper() == w or _NUM_TO_ALPHA.get(x.upper()) == w for x in vals)
+        if c_ok and s_ok:
+            hits.append(o)
+    if not hits:
+        return {"stock": "none", "option": None}
+    o = next((x for x in hits if x.get("selling") and (x.get("stock") or 0) > 0), hits[0])
+    if not o.get("selling") or o.get("stock") == 0:
+        st = "sold_out"
+    elif o.get("stock") is None:
+        st = "unknown"
+    else:
+        st = "listed"
+    return {"stock": st, "option": o["option"], "count": o.get("stock")}

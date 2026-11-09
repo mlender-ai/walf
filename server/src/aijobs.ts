@@ -87,7 +87,8 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
           const out = await provider.identify({ productName: r.product_name, brand: r.brand, productUrl: r.product_url, note: r.note, size: r.size, color: r.color, photoPath: r.photo ? path.join(uploads, r.photo) : null, sellers });
           saveIdentify(db, j, r, out.data, out.usage);
         } else {
-          const sellers = all(db, 'SELECT id, name, domain FROM sellers WHERE active=1 ORDER BY sort') as any[];
+          // 공식몰(도메인 없음)도 매물 검수 대상으로 넘긴다 — 엔진이 의뢰마다 공식몰 주소를 찾는다
+          const sellers = (all(db, `SELECT id, name, domain, kind FROM sellers WHERE active=1 OR kind='official' ORDER BY sort`) as any[]).map(x => ({ id: x.id, name: x.name, domain: x.domain, ...(x.kind === 'official' ? { official: true } : {}) }));
           const known = [...all(db, 'SELECT url FROM candidates WHERE request_id=? AND url IS NOT NULL', r.id), ...all(db, `SELECT url FROM ai_finds WHERE request_id=? AND url IS NOT NULL AND url<>''`, r.id)].map(x => x.url);
           // 접수 때 본 사진 특징은 다시 분석하지 않고 넘긴다. 지난번에 찾은 같은 상품 매물은 다시 열어 가격·판매 상태를 본다.
           const idDone = one(db, `SELECT detail FROM ai_jobs WHERE request_id=? AND kind='identify' AND status='done' ORDER BY id DESC LIMIT 1`, r.id);

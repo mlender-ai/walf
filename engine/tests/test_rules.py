@@ -59,6 +59,10 @@ class Judge(unittest.TestCase):
         self.assertEqual(rules.judge(**B, text="BADBLOOD Mystic Fleece Jacket")["match"], "similar", "소재·라인 단어(나일론·트랙)가 하나도 없으면 비슷한 상품")
         self.assertEqual(rules.judge(**B, text="배드블러드(BADBLOOD) 미스틱 나일론 트랙 자켓 - 네이비")["match"], "same_likely")
 
+    def test_model_word_only_in_description_is_not_same(self):
+        j = rules.judge(**B, text="배드블러드 사틴 나일론 MA1 자켓 #미스틱 #트랙", title="배드블러드 사틴 나일론 MA1 자켓")
+        self.assertEqual(j["match"], "similar", "모델 이름은 제목에 있어야 같은 상품 후보")
+
     def test_generic_words_do_not_make_same(self):
         self.assertEqual(rules.judge(**B, text="배드블러드 나일론 트랙 자켓 블랙")["match"], "similar", "브랜드 + 흔한 단어(나일론·트랙·자켓)만이면 비슷한 상품")
         self.assertEqual(rules.judge(**B, text="미스틱 트랙 자켓 (다른 브랜드)")["match"], "unknown")
