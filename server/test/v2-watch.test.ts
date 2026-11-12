@@ -147,6 +147,15 @@ test('정책: 활성 3개 · 일시중지·재개 · 종료 · 30일 뒤 계속�
   assert.equal(watch(db, four).renew_at, T0 + 60 * DAY);
 });
 
+test('다른 사용자의 기다려줘는 보거나 바꿀 수 없다', () => {
+  const { db, u } = setup();
+  const other = D.upsertUser(db, 'device-watch-0003');
+  const a = W.createWatch(db, u.id, { productUrl: 'mock://fixture/price-drop', targetPrice: 150000 }, policy);
+  assert.throws(() => W.ownWatch(db, other.id, a), (e: any) => e.status === 404);
+  assert.throws(() => W.setWatchState(db, other.id, a, 'end', policy), (e: any) => e.status === 404);
+  assert.throws(() => W.updateWatch(db, other.id, a, { targetPrice: 1000 }, policy), (e: any) => e.status === 404);
+});
+
 test('운영자가 상품 페이지를 붙이면 확인 요청이 풀리고, 막힌 판매처는 붙일 수 없다', async () => {
   const { db, u, checker } = setup();
   const a = W.createWatch(db, u.id, { productName: 'BADBLOOD 트랙 자켓', size: 'M', targetPrice: 150000 }, policy);
