@@ -1,0 +1,39 @@
+[
+  {
+    "trigger": "[테스트:정확]",
+    "summary": "공식몰 상품 페이지와 품번·색상이 일치하는 사례(가상의 테스트 데이터)",
+    "identities": [
+      { "brand": "BADBLOOD", "name": "Mystic Nylon Track Jacket", "color": "Navy", "category": "아우터", "season": "", "code": "W-JKT26-055", "confidence": "high",
+        "reasons": ["테스트 데이터예요"], "refs": ["https://badblood.co.kr/product/w-jkt26-055/14555/"],
+        "matched": ["브랜드: 가슴 로고 자수가 공식몰 사진과 같아요(테스트)", "모델: 소매 절개선·지퍼 구성이 같아요(테스트)", "색상: 네이비(테스트)"],
+        "uncertain": ["시즌: 페이지에 시즌 표기가 없어요(테스트)"] }
+    ],
+    "style": { "mood": ["sportswear", "street"], "material": ["nylon"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["navy"] }
+  },
+  {
+    "trigger": "[테스트:유력]",
+    "summary": "디자인이 비슷한 두 상품 중 하나로 좁힌 사례(가상의 테스트 데이터)",
+    "identities": [
+      { "brand": "테스트브랜드A", "name": "울 집업 자켓 브라운", "color": "브라운", "category": "아우터", "season": "", "code": "", "confidence": "medium",
+        "reasons": ["테스트 데이터예요"], "refs": [],
+        "matched": ["소재: 울 질감이 비슷해요(테스트)", "디테일: 가슴 지퍼 포켓 위치가 같아요(테스트)"],
+        "uncertain": ["모델: 비슷한 디자인의 다른 상품일 수 있어요(테스트)", "시즌: 확인 못 함(테스트)"] },
+      { "brand": "테스트브랜드B", "name": "울 블루종 자켓", "color": "브라운", "category": "아우터", "season": "", "code": "", "confidence": "medium",
+        "reasons": ["테스트 데이터예요"], "refs": [],
+        "matched": ["색상: 브라운(테스트)"],
+        "uncertain": ["디테일: 소매 절개선이 사진과 달라 보여요(테스트)", "모델: 확인 못 함(테스트)"] }
+    ],
+    "missing": ["케어라벨·브랜드 택 사진"],
+    "style": { "mood": ["minimal", "workwear"], "material": ["wool"], "silhouette": ["boxy"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["brown"] }
+  },
+  {
+    "trigger": "[테스트:유사]",
+    "summary": "정확한 상품을 찾지 못하고 스타일만 읽은 사례(가상의 테스트 데이터)",
+    "identities": [
+      { "brand": "", "name": "브라운 울 집업 자켓(모델 미확인)", "color": "브라운", "category": "아우터", "season": "", "code": "", "confidence": "low",
+        "reasons": ["테스트 데이터예요"], "refs": [], "matched": [], "uncertain": ["브랜드: 로고가 보이지 않아요(테스트)", "모델: 확인 못 함(테스트)"] }
+    ],
+    "missing": ["브랜드 택 사진"],
+    "style": { "mood": ["minimal", "workwear"], "material": ["wool"], "silhouette": ["boxy"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["brown"] }
+  }
+]

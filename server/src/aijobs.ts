@@ -1,11 +1,14 @@
 // AI 작업 순서 — 접수되면 AI가 먼저 상품을 식별하고, 7일 탐색이 시작되면 그날의 국내 판매처 탐색을 먼저 한다.
 // 왈프 팀은 그 제안을 검수(채택·수정·제외)한다. AI 결과는 검수 전까지 사용자에게 보이지 않는다.
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now } from './time.ts';
 import { type AiProvider, type Usage, aiErrorText, urlKey } from './ai.ts';
+import { canStart, estimateUsd, limitsFromEnv, type Limits } from './cost.ts';
+import { saveRequestStyle } from './catalog.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -36,8 +39,13 @@ export function ensureAiJobs(db: DB, provider: AiProvider) {
   return n;
 }
 
-/** 서버가 꺼지며 끊긴 작업은 다시 대기열로 */
+/**
+ * 서버가 꺼지며 끊긴 작업. 아직 API를 부르기 전(attempts=0)이거나 모의 작업이면 다시 대기열로.
+ * 이미 유료 API를 불렀을 수 있는 작업은 자동으로 다시 돌리지 않는다(중복 과금 방지) — 어드민에서 “다시 실행”한다.
+ */
 export function recoverAiJobs(db: DB) {
+  run(db, `UPDATE ai_jobs SET status='interrupted', finished_at=?, error='서버가 다시 켜지며 중단됐어요. 이미 API를 불렀을 수 있어 자동으로 다시 실행하지 않아요(중복 과금 방지).'
+    WHERE status='running' AND attempts>0 AND provider<>'mock' AND is_mock=0`, now());
   return Number(run(db, `UPDATE ai_jobs SET status='queued', started_at=NULL WHERE status='running'`).changes);
 }
 
@@ -46,6 +54,7 @@ export function rerunAi(db: DB, provider: AiProvider | null, requestId: number, 
   if (!provider) throw new HttpError(409, 'ai_off', 'AI가 연결되어 있지 않아요. server/.env 에 ANTHROPIC_API_KEY 를 넣고 서버를 다시 켜세요.');
   const r = D.getRequest(db, requestId);
   if (one(db, `SELECT id FROM ai_jobs WHERE request_id=? AND kind=? AND status IN ('queued','running')`, requestId, kind)) throw new HttpError(409, 'ai_busy', '이미 AI가 살펴보고 있어요.');
+  if (one(db, `SELECT id FROM ai_jobs WHERE request_id=? AND kind=? AND status='held'`, requestId, kind)) throw new HttpError(409, 'ai_held', '예산·호출 상한 때문에 멈춘 AI 작업이 있어요. 어드민 비용 화면에서 먼저 확인하세요.');
   if (kind === 'identify') {
     if (r.status !== 'submitted') throw new HttpError(409, 'bad_state', '상품 확인 대기 중인 의뢰만 다시 식별할 수 있어요.');
     addJob(db, provider, r, 'identify', null, operator);
@@ -56,14 +65,22 @@ export function rerunAi(db: DB, provider: AiProvider | null, requestId: number, 
   }
 }
 
-function finish(db: DB, jobId: number, status: string, fields: { summary?: string | null; detail?: unknown; error?: string | null; usage?: Usage }) {
-  run(db, `UPDATE ai_jobs SET status=?, summary=?, detail=?, error=?, model=COALESCE(?, model), input_tokens=?, output_tokens=?, searches=?, finished_at=? WHERE id=?`,
+function finish(db: DB, jobId: number, status: string, fields: { summary?: string | null; detail?: unknown; error?: string | null; usage?: Usage; reusedFrom?: number }) {
+  const est = fields.usage ? (fields.usage.model === 'mock' ? 0 : estimateUsd(fields.usage)) : null;
+  run(db, `UPDATE ai_jobs SET status=?, summary=?, detail=?, error=?, model=COALESCE(?, model), input_tokens=?, output_tokens=?, searches=?, est_cost_usd=?, reused_from=?, finished_at=? WHERE id=?`,
     status, fields.summary ?? null, fields.detail === undefined ? null : json(fields.detail), fields.error ?? null, fields.usage?.model ?? null,
-    fields.usage?.inputTokens ?? null, fields.usage?.outputTokens ?? null, fields.usage?.searches ?? null, now(), jobId);
+    fields.usage?.inputTokens ?? null, fields.usage?.outputTokens ?? null, fields.usage?.searches ?? null, est, fields.reusedFrom ?? null, now(), jobId);
 }
 
-/** 대기열에서 하나를 꺼내 실행한다. 한 번에 하나씩만. */
-export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
+/** 같은 조건의 국내 탐색인지 가르는 열쇠 — 하루 안에 같은 열쇠의 검색 결과가 있으면 다시 부르지 않고 쓴다 */
+export function searchKey(i: { brand: string; name: string; color?: string | null; size?: string | null; maxPrice?: number | null; usedOk: boolean; sellers: { domain: string }[] }) {
+  const n = (s: unknown) => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return crypto.createHash('sha256').update(json([n(i.brand), n(i.name), n(i.color), n(i.size), i.maxPrice ?? null, i.usedOk, i.sellers.map(s => s.domain).sort()])).digest('hex').slice(0, 32);
+}
+const REUSE_MS = 20 * 3600_000;
+
+/** 대기열에서 하나를 꺼내 실행한다. 한 번에 하나씩만. 유료 작업은 시작 전에 예산·의뢰별 상한을 확인한다 */
+export function createAiWorker(db: DB, provider: AiProvider, uploads: string, limits: Limits = limitsFromEnv()) {
   let busy = false, timer: NodeJS.Timeout | null = null;
   async function step(): Promise<number | null> {
     if (busy) return null;
@@ -71,7 +88,6 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
     try {
       const j = one(db, `SELECT * FROM ai_jobs WHERE status='queued' ORDER BY id LIMIT 1`);
       if (!j) return null;
-      run(db, `UPDATE ai_jobs SET status='running', started_at=?, attempts=attempts+1 WHERE id=?`, now(), j.id);
       const r = one(db, 'SELECT * FROM requests WHERE id=?', j.request_id);
       const s = j.run_id ? one(db, 'SELECT * FROM search_runs WHERE id=?', j.run_id) : undefined;
       // 그사이 운영자가 먼저 처리했거나 의뢰가 끝났으면 하지 않는다
@@ -79,6 +95,14 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
         finish(db, j.id, 'cancelled', { summary: '의뢰 상태가 바뀌어 실행하지 않았어요' });
         return j.id;
       }
+      const gate = canStart(db, j, limits);
+      if (!gate.ok) {
+        run(db, `UPDATE ai_jobs SET status='held', error=? WHERE id=?`, gate.reason, j.id);
+        console.warn(`AI ${j.kind} #${j.id} 보류 · 의뢰 #${j.request_id} · ${gate.reason}`);
+        return j.id;
+      }
+      // 이 줄 이후로는 API를 불렀을 수 있다 — attempts 로 표시해 재시작 때 자동으로 다시 돌리지 않는다
+      run(db, `UPDATE ai_jobs SET status='running', started_at=?, attempts=attempts+1 WHERE id=?`, now(), j.id);
       try {
         if (j.kind === 'identify') {
           const out = await provider.identify({ productName: r.product_name, brand: r.brand, productUrl: r.product_url, note: r.note, size: r.size, color: r.color, photoPath: r.photo ? path.join(uploads, r.photo) : null });
@@ -86,8 +110,15 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
         } else {
           const sellers = all(db, 'SELECT id, name, domain FROM sellers WHERE active=1 ORDER BY sort') as any[];
           const known = [...all(db, 'SELECT url FROM candidates WHERE request_id=? AND url IS NOT NULL', r.id), ...all(db, `SELECT url FROM ai_finds WHERE request_id=? AND url IS NOT NULL AND url<>''`, r.id)].map(x => x.url);
-          const out = await provider.search({ brand: r.identified_brand || r.brand || '', name: r.identified_name || r.product_name || '', color: r.color, size: r.size, maxPrice: r.max_price, usedOk: !!r.used_ok, day: s!.day, sellers, known });
-          saveSearch(db, j, r, s!, sellers, known, out.data, out.usage);
+          const input = { brand: r.identified_brand || r.brand || '', name: r.identified_name || r.product_name || '', color: r.color, size: r.size, maxPrice: r.max_price, usedOk: !!r.used_ok, day: s!.day, sellers, known };
+          const key = searchKey(input);
+          run(db, 'UPDATE ai_jobs SET dedupe_key=? WHERE id=?', key, j.id);
+          const prev = one(db, `SELECT * FROM ai_jobs WHERE kind='search' AND status='done' AND dedupe_key=? AND id<>? AND is_mock=? AND finished_at>? ORDER BY id DESC LIMIT 1`, key, j.id, j.is_mock, now() - REUSE_MS);
+          if (prev) reuseSearch(db, j, r, s!, sellers, known, prev);
+          else {
+            const out = await provider.search(input);
+            saveSearch(db, j, r, s!, sellers, known, out.data, out.usage);
+          }
         }
       } catch (e) {
         finish(db, j.id, 'failed', { error: aiErrorText(e) });
@@ -106,9 +137,11 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string) {
 function saveIdentify(db: DB, j: Row, r: Row, data: import('./ai.ts').IdentifyResult, usage: Usage) {
   const mock = !!j.is_mock;
   tx(db, () => {
-    const ins = db.prepare('INSERT INTO ai_identities(job_id, request_id, rank, brand, name, color, category, confidence, reasons, refs, is_mock) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
-    data.identities.forEach((x, i) => ins.run(j.id, r.id, i + 1, x.brand || null, x.name, x.color || null, x.category || null, x.confidence, json(x.reasons), json(x.refs), mock ? 1 : 0));
-    finish(db, j.id, 'done', { summary: data.summary || null, detail: { missing: data.missing }, usage });
+    const ins = db.prepare('INSERT INTO ai_identities(job_id, request_id, rank, brand, name, color, category, confidence, reasons, refs, season, model_code, matched, uncertain, is_mock) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    data.identities.forEach((x, i) => ins.run(j.id, r.id, i + 1, x.brand || null, x.name, x.color || null, x.category || null, x.confidence, json(x.reasons), json(x.refs),
+      x.season || null, x.code || null, json(x.matched || []), json(x.uncertain || []), mock ? 1 : 0));
+    finish(db, j.id, 'done', { summary: data.summary || null, detail: { missing: data.missing, style: data.style || {} }, usage });
+    saveRequestStyle(db, r.id, data.style || {}, mock ? 'fixture' : 'ai');
     // 사용자 일지에는 “왈프가 먼저 살펴봤고, 팀이 확인 중”이라는 사실만 남긴다(후보 내용은 검수 전이라 보이지 않는다)
     const parts = [r.photo && '사진', r.product_url && '링크', r.product_name && '상품명'].filter(Boolean) as string[];
     D.log(db, r.id, 'walf', 'ai_identify', '왈프가 먼저 살펴봤어요', data.identities.length
@@ -137,6 +170,23 @@ function saveSearch(db: DB, j: Row, r: Row, s: Row, sellers: Row[], known: strin
     D.log(db, r.id, 'walf', 'ai_search', '국내 판매처를 먼저 살펴봤어요', searched
       ? `${searched}곳을 검색했어요 · 결과는 왈프 팀이 확인한 뒤 알려 드려요`
       : '이번에는 판매처를 검색하지 못했어요 · 왈프 팀이 직접 확인해요', { isMock: mock });
+  });
+}
+
+/** 하루 안에 같은 조건으로 검색한 결과를 이 의뢰에 다시 쓴다(추가 비용 없음). 이미 아는 주소는 뺀다 */
+function reuseSearch(db: DB, j: Row, r: Row, s: Row, sellers: Row[], known: string[], prev: Row) {
+  const knownKeys = new Set(known.map(urlKey));
+  const src = all(db, 'SELECT * FROM ai_finds WHERE job_id=?', prev.id).filter(f => !f.url || !knownKeys.has(urlKey(f.url)));
+  const mock = !!j.is_mock;
+  tx(db, () => {
+    const ins = db.prepare(`INSERT INTO ai_finds(job_id, request_id, run_id, seller_id, url, url_seen, title, price, size, condition, match_guess, stock_guess, reason, is_mock) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    for (const f of src) ins.run(j.id, r.id, s.id, f.seller_id, f.url, f.url_seen, f.title, f.price, f.size, f.condition, f.match_guess, f.stock_guess, f.reason, mock ? 1 : 0);
+    const detail = (() => { try { return JSON.parse(prev.detail || '{}'); } catch { return {}; } })();
+    finish(db, j.id, 'done', { summary: `같은 조건으로 ${Math.round((now() - prev.finished_at) / 3600_000)}시간 전에 검색한 결과를 다시 썼어요(추가 비용 없음)`, reusedFrom: prev.id,
+      usage: { model: prev.model || 'reuse', inputTokens: 0, outputTokens: 0, searches: 0 }, detail: { ...detail, added: src.length, duplicates: 0, reusedFrom: prev.id } });
+    run(db, 'UPDATE ai_jobs SET est_cost_usd=0 WHERE id=?', j.id);
+    const searched = (detail.sellers || []).filter((n: any) => n.searched).length;
+    D.log(db, r.id, 'walf', 'ai_search', '국내 판매처를 먼저 살펴봤어요', searched ? `${searched}곳을 검색했어요 · 결과는 왈프 팀이 확인한 뒤 알려 드려요` : '이번에는 판매처를 검색하지 못했어요 · 왈프 팀이 직접 확인해요', { isMock: mock });
   });
 }
 

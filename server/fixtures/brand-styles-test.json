@@ -1,0 +1,18 @@
+[
+  { "name": "TEST MINIMAL", "country": "테스트", "official_site": "example.com",
+    "tags": [
+      { "kind": "mood", "value": "minimal", "source_url": "https://example.com/test-minimal", "basis": "테스트 데이터" },
+      { "kind": "material", "value": "wool", "source_url": "https://example.com/test-minimal", "basis": "테스트 데이터" },
+      { "kind": "category", "value": "outerwear", "source_url": "https://example.com/test-minimal", "basis": "테스트 데이터" }
+    ] },
+  { "name": "TEST WORK", "country": "테스트", "official_site": "example.org",
+    "tags": [
+      { "kind": "mood", "value": "workwear", "source_url": "https://example.org/test-work", "basis": "테스트 데이터" },
+      { "kind": "detail", "value": "zip", "source_url": "https://example.org/test-work", "basis": "테스트 데이터" }
+    ] },
+  { "name": "TEST TECH", "country": "테스트", "official_site": "example.net",
+    "tags": [
+      { "kind": "mood", "value": "techwear", "source_url": "https://example.net/test-tech", "basis": "테스트 데이터" },
+      { "kind": "material", "value": "nylon", "source_url": "https://example.net/test-tech", "basis": "테스트 데이터" }
+    ] }
+]

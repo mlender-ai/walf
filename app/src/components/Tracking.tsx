@@ -13,7 +13,7 @@ const POST_LABEL: Record<string, string> = {
 };
 
 /** S05 추적함 — 활성 의뢰와 지난 의뢰가 같은 구성을 쓴다 */
-export function TrackingView({ r, onChange, refreshing, onRefresh }: { r: RequestView; onChange: () => void; refreshing?: boolean; onRefresh?: () => void }) {
+export function TrackingView({ r, onChange, refreshing, onRefresh, footer }: { r: RequestView; onChange: () => void; refreshing?: boolean; onRefresh?: () => void; footer?: React.ReactNode }) {
   const open = ['submitted', 'needs_info', 'active'].includes(r.status);
   const found = [...r.candidates.offers, ...r.candidates.leads, ...r.candidates.priceWatch];
   const [showMis, setShowMis] = useState(true);
@@ -137,6 +137,7 @@ export function TrackingView({ r, onChange, refreshing, onRefresh }: { r: Reques
           {busy ? <T size={12} color={C.gray500}>처리 중…</T> : null}
         </View>
       ) : null}
+      {footer ? <><Gap />{footer}</> : null}
     </ScrollView>
   );
 }

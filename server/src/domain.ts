@@ -30,6 +30,8 @@ export function deleteUser(db: DB, userId: number) {
         log(db, r.id, 'system', 'account_deleted', '사용자 데이터 삭제', '게시된 수배글 삭제 처리를 위해 채널 기록만 남겼어요', { isMock: !!r.is_mock });
       } else run(db, 'DELETE FROM requests WHERE id=?', r.id);
     }
+    for (const w of all(db, 'SELECT photo FROM watches WHERE user_id=? AND photo IS NOT NULL', userId)) photos.push(w.photo);
+    run(db, 'DELETE FROM watches WHERE user_id=?', userId); // 기다려줘·감시 기록(watch_events)도 함께. 상품 페이지 가격 기록은 개인 정보가 아니라 남는다
     run(db, 'DELETE FROM notifications WHERE user_id=?', userId);
     if (one(db, 'SELECT COUNT(*) n FROM requests WHERE user_id=?', userId)!.n) run(db, `UPDATE users SET device_id='deleted:'||id||':'||?, push_token=NULL, deleted_at=? WHERE id=?`, now(), now(), userId);
     else run(db, 'DELETE FROM users WHERE id=?', userId);
@@ -66,18 +68,25 @@ export function log(db: DB, requestId: number, actor: string, kind: string, titl
     requestId, actor, kind, title, detail ?? null, opts.operator ?? null, opts.isMock ? 1 : 0, opts.at ?? now());
 }
 
-export function notify(db: DB, req: Row, kind: string, title: string, body: string, link: string, opts: { candidateId?: number; isMock?: boolean; forcePush?: boolean } = {}) {
-  const user = one(db, 'SELECT * FROM users WHERE id=?', req.user_id);
+export function notify(db: DB, req: Row, kind: string, title: string, body: string, link: string, opts: { candidateId?: number; isMock?: boolean; forcePush?: boolean; dedupeKey?: string } = {}) {
+  return notifyUser(db, req.user_id, { kind, title, body, link, requestId: req.id, candidateId: opts.candidateId, isMock: !!opts.isMock || !!req.is_mock, forcePush: opts.forcePush, dedupeKey: opts.dedupeKey });
+}
+
+export type Notice = { kind: string; title: string; body: string; link: string; requestId?: number | null; candidateId?: number | null; watchId?: number | null; isMock?: boolean; forcePush?: boolean; dedupeKey?: string };
+/** 사용자 알림 한 통. dedupeKey 가 같은 알림은 두 번 만들지 않는다(0을 돌려준다) */
+export function notifyUser(db: DB, userId: number, n: Notice) {
+  const user = one(db, 'SELECT * FROM users WHERE id=?', userId);
   if (!user || user.deleted_at) return 0;
-  const isMock = !!opts.isMock || !!req.is_mock;
+  const isMock = !!n.isMock;
   // 모의 데이터는 푸시하지 않는다. 예외는 운영자가 명시적으로 보내는 “테스트 알림”(forcePush) 하나뿐
-  const status = isMock && !opts.forcePush ? 'skipped_mock' : user.push_token ? 'sending' : 'no_token';
+  const status = isMock && !n.forcePush ? 'skipped_mock' : user.push_token ? 'sending' : 'no_token';
   const detail = status === 'skipped_mock' ? '모의 데이터라 푸시를 보내지 않음 — 앱 안 알림에만 표시' : user.push_token ? null : '기기 푸시 토큰 없음 — 앱 안 알림으로만 전달';
-  const info = run(db, `INSERT INTO notifications(user_id, request_id, candidate_id, kind, title, body, link, is_mock, created_at, push_status, push_detail)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, req.user_id, req.id, opts.candidateId ?? null, kind, title, body, link, isMock ? 1 : 0, now(), status, detail);
+  const info = run(db, `INSERT OR IGNORE INTO notifications(user_id, request_id, candidate_id, watch_id, kind, title, body, link, is_mock, created_at, push_status, push_detail, dedupe_key)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, userId, n.requestId ?? null, n.candidateId ?? null, n.watchId ?? null, n.kind, n.title, n.body, n.link, isMock ? 1 : 0, now(), status, detail, n.dedupeKey ?? null);
+  if (!info.changes) return 0;
   const nid = Number(info.lastInsertRowid);
   if (status === 'sending') {
-    sendPush(user.push_token, title, body, { link }).then(
+    sendPush(user.push_token, n.title, n.body, { link: n.link }).then(
       r => {
         run(db, 'UPDATE notifications SET push_status=?, push_detail=? WHERE id=?', r.ok ? 'sent' : 'failed', r.detail, nid);
         if (r.unregistered) run(db, 'UPDATE users SET push_token=NULL WHERE id=? AND push_token=?', user.id, user.push_token); // 지워진 기기 토큰은 버린다
@@ -521,8 +530,17 @@ export function display(db: DB, r: Row, t = now()): Display {
   const day = dayOf(r, t);
   const L: Record<string, string> = STATE_LABEL;
   const d = (key: string, eyebrow: string, title: string, desc: string, extra: Partial<Display> = {}): Display => ({ key, label: L[key], eyebrow, title, desc, ...extra });
-  if (r.status === 'submitted') return d('identification_pending', '의뢰 접수 · 7일 시작 전', '어떤 옷인지 확인하고 있어요', '왈프 팀이 상품을 확인하면 7일 탐색이 시작돼요. 확인 전에는 기간이 흐르지 않아요.');
+  if (r.status === 'submitted') {
+    // 찾아줘 결과(운영자가 검수해 공개한 것)가 있으면 그 결과를 먼저 보여 준다
+    const f = findTiers(db, r.id);
+    if (f.match) return d('find_match', '찾아줘 결과 · 7일 시작 전', '같은 옷을 찾았어요', '브랜드·모델을 확인했어요. 맞는지 보고, 매물을 찾을지 가격을 기다릴지 골라 주세요.', { action: { label: '결과 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
+    if (f.likely) return d('find_likely', '찾아줘 결과 · 7일 시작 전', `이 옷일 가능성이 높아요`, `후보 ${f.likely}개를 골라 뒀어요. 확인되지 않은 부분도 함께 적었어요.`, { action: { label: '후보 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
+    if (f.discover) return d('find_discover', '찾아줘 결과 · 7일 시작 전', '같은 옷은 아직 못 찾았어요', '대신 비슷한 스타일의 브랜드를 골라 뒀어요. 같은 상품이라는 뜻은 아니에요.', { action: { label: '비슷한 브랜드 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
+    return d('identification_pending', '의뢰 접수 · 7일 시작 전', '어떤 옷인지 확인하고 있어요', '왈프 팀이 상품을 확인하면 7일 탐색이 시작돼요. 확인 전에는 기간이 흐르지 않아요.');
+  }
   if (r.status === 'needs_info') return d('needs_info', '의뢰 접수 · 7일 시작 전', '정보가 조금 더 필요해요', r.info_request || '어떤 옷인지 확인할 정보를 더 보내주세요.', { action: { label: '정보 보내기', target: `info:${r.id}`, primary: true } });
+  if (r.status === 'completed' && String(r.end_reason || '').startsWith('find_')) return d('find_done', `${kDate(r.ended_at)} · 찾아줘 완료`, '어떤 옷인지 찾았어요',
+    r.end_reason === 'find_watch' ? '기다려줘에서 원하는 사이즈·가격을 지켜보고 있어요.' : '내가 찾는 옷에 저장했어요. 매물을 찾거나 가격을 기다리려면 새로 맡겨 주세요.', { muted: true, isMock: !!r.is_mock });
   if (r.status === 'completed') return d('completed', `${kDate(r.ended_at)} · 구매 확인`, '찾던 옷을 구했어요', '탐색과 수배를 멈췄어요. 게시된 수배지는 내리도록 요청했어요.', { muted: true });
   if (r.status === 'cancelled') return d('cancelled', `${kDate(r.ended_at)} · 그만둠`, '의뢰를 그만뒀어요', '탐색을 멈췄어요. 기록은 추적함에 남아 있어요.', { muted: true });
   const cands = visibleCands(db, r);
@@ -576,8 +594,16 @@ export function display(db: DB, r: Row, t = now()): Display {
   return mk(d('searching', `DAY ${dd(day)} · ${kWhen(lastClosed.completed_at, t)}`, `${kRelDay(lastClosed.completed_at, t)} 판매처 ${n}곳을 살폈어요`, `조건에 맞는 매물은 아직 없어요. ${nextText}`), !!lastClosed.is_mock);
 }
 
+/** 사용자에게 공개된 찾아줘 결과 개수(MATCH·LIKELY·DISCOVER) */
+export function findTiers(db: DB, requestId: number) {
+  const rows = all(db, `SELECT tier, is_mock FROM product_identities WHERE request_id=? AND status='published'`, requestId);
+  const n = (t: string) => rows.filter(x => x.tier === t).length;
+  return { match: n('match'), likely: n('likely'), discover: n('discover'), mock: rows.some(x => x.is_mock) };
+}
+
 export const STATE_LABEL: Record<string, string> = {
-  identification_pending: '상품 확인 중', needs_info: '정보 보완 대기', first_search_pending: '첫 탐색 준비', searching: '탐색 중',
+  find_match: '같은 옷 찾음', find_likely: '유력 후보 발견', find_discover: '유사 제품 추천', find_done: '완료·종료',
+  identification_pending: '제품 식별 중', needs_info: '정보 보완 대기', first_search_pending: '첫 탐색 준비', searching: '탐색 중',
   awaiting_consent: '수배 동의 대기', wanted_queued: '수배 게시 대기', wanted_published: '수배 게시 완료', lead_found: '유력 후보',
   offer_verified: '구매 가능 확인', price_watch: '가격 초과 관찰', paused_failed: '일부 실패', expired: '7일 종료', completed: '구매 완료', cancelled: '그만둠',
 };
