@@ -6,8 +6,22 @@ import path from 'node:path';
 import type { DB } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
+import * as F from './find.ts';
+import * as W from './watch.ts';
+import { SOURCES } from './sources.ts';
 
-type Cfg = { uploads: string; pushConfigured: boolean };
+type Cfg = { uploads: string; pushConfigured: boolean; policy: W.WatchPolicy; rate?: { writes: number; windowMs: number } };
+
+/** 사용자(기기)별 쓰기 요청 제한 — 메모리 고정 창. 서버 한 대 기준(여러 대면 공용 저장소로 옮겨야 함) */
+export function rateLimiter(max: number, windowMs: number) {
+  const hits = new Map<string, { n: number; until: number }>();
+  return (key: string, t = Date.now()) => {
+    const h = hits.get(key);
+    if (!h || h.until <= t) { hits.set(key, { n: 1, until: t + windowMs }); if (hits.size > 5000) for (const [k, v] of hits) if (v.until <= t) hits.delete(k); return true; }
+    h.n += 1;
+    return h.n <= max;
+  };
+}
 const EXT: Record<string, string> = { 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'image/heif': '.heif', 'image/heic-sequence': '.heic', 'image/heif-sequence': '.heif' };
 // 기기가 형식을 못 정해 보낸 경우(octet-stream 등)는 파일 이름 확장자로 판단한다
 const BY_NAME: Record<string, string> = { jpg: '.jpg', jpeg: '.jpg', png: '.png', webp: '.webp', heic: '.heic', heif: '.heif' };
@@ -36,6 +50,14 @@ export function userApi(db: DB, cfg: Cfg) {
   };
   const uid = (req: express.Request) => (req as any).user.id as number;
   const idp = (v: string) => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw new HttpError(404, 'not_found'); return n; };
+  // 쓰기 요청(등록·변경)은 사용자마다 시간당 횟수를 제한한다 — 업로드·외부 조회·AI 작업을 부르는 길이라서
+  const allow = rateLimiter(cfg.rate?.writes ?? 60, cfg.rate?.windowMs ?? 10 * 60_000);
+  r.use((req, res, next) => {
+    if (req.method === 'GET' || req.path === '/session' || req.path === '/client-log') return next();
+    const dev = req.get('x-walf-device') || req.ip || 'x';
+    if (!allow(dev)) return res.status(429).json({ error: 'rate_limited', message: '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' });
+    next();
+  });
 
   r.get('/health', (_q, res) => res.json({ ok: true, service: 'walf', pushConfigured: cfg.pushConfigured }));
 
@@ -57,13 +79,54 @@ export function userApi(db: DB, cfg: Cfg) {
     const past = db.prepare(`SELECT * FROM requests WHERE user_id=? AND status NOT IN ('submitted','needs_info','active') ORDER BY id DESC LIMIT 20`).all(uid(req)) as any[];
     const unread = (db.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read_at IS NULL').get(uid(req)) as any).n;
     const u = (req as any).user;
+    const mine = W.myItems(db, uid(req), base, cfg.policy);
     res.json({
       user: { id: u.id, pushToken: !!u.push_token, pushPermission: u.push_permission || null, createdAt: u.created_at },
       active: open ? D.requestView(db, open, base) : null,
       past: past.map(p => ({ id: p.id, status: p.status, title: D.shortName(p), brand: p.identified_brand || p.brand, isMock: !!p.is_mock,
         display: D.display(db, p), endedAt: p.ended_at, photoUrl: p.photo ? `${base}/uploads/${p.photo}` : null })),
+      items: mine.items, watchLimit: mine.watchLimit,
       unread, pushConfigured: cfg.pushConfigured,
     });
+  });
+
+  // ── V2 · 내가 찾는 옷 · 찾아줘 결과 · 기다려줘 ─────────────────
+  r.get('/items', auth, (req, res) => res.json(W.myItems(db, uid(req), baseOf(req), cfg.policy)));
+  r.get('/sources', auth, (_q, res) => res.json(SOURCES.filter(s => s.status !== 'TEST_ONLY').map(s => ({ id: s.id, label: s.label, kind: s.kind, status: s.status, reason: s.reason, checked: s.checked }))));
+
+  r.get('/requests/:id/find', auth, (req, res) => res.json(F.findView(db, D.ownRequest(db, uid(req), idp(req.params.id)))));
+  r.post('/requests/:id/find/confirm', auth, (req, res) => {
+    const id = idp(req.params.id), next = req.body?.next;
+    if (!['hunt', 'watch', 'save'].includes(next)) throw new HttpError(400, 'bad_next');
+    const out = F.confirmFind(db, uid(req), id, Number(req.body?.identityId), next);
+    res.json({ ...out, find: F.findView(db, D.getRequest(db, id)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
+  });
+  r.post('/requests/:id/find/reject', auth, (req, res) => {
+    const id = idp(req.params.id);
+    F.rejectFind(db, uid(req), id, req.body?.reason);
+    res.json(F.findView(db, D.getRequest(db, id)));
+  });
+
+  const watchOut = (req: express.Request, id: number) => W.watchView(db, W.ownWatch(db, uid(req), id), baseOf(req), cfg.policy);
+  r.post('/watches', auth, up.single('photo'), (req, res) => {
+    try {
+      const b = req.body || {};
+      const id = W.createWatch(db, uid(req), { productName: b.productName, productUrl: b.productUrl, brand: b.brand, size: b.size, color: b.color, targetPrice: b.targetPrice,
+        condition: b.condition, photo: req.file?.filename || null, productId: b.productId ? Number(b.productId) : null, requestId: b.requestId ? Number(b.requestId) : null }, cfg.policy);
+      res.status(201).json(watchOut(req, id));
+    } catch (e) { removeUpload(cfg.uploads, req.file); throw e; }
+  });
+  r.get('/watches/:id', auth, (req, res) => res.json(watchOut(req, idp(req.params.id))));
+  r.patch('/watches/:id', auth, (req, res) => {
+    const id = idp(req.params.id);
+    W.updateWatch(db, uid(req), id, req.body || {}, cfg.policy);
+    res.json(watchOut(req, id));
+  });
+  r.post('/watches/:id/:action', auth, (req, res) => {
+    const id = idp(req.params.id), a = req.params.action;
+    if (!['pause', 'resume', 'end', 'renew'].includes(a)) throw new HttpError(404, 'not_found');
+    W.setWatchState(db, uid(req), id, a as any, cfg.policy);
+    res.json(watchOut(req, id));
   });
 
   r.post('/requests', auth, up.single('photo'), (req, res) => {

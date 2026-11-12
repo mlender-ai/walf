@@ -7,8 +7,13 @@ import { uploader, baseOf } from './api.ts';
 import { now, kDate, kTime, kWhen, HOUR, DAY } from './time.ts';
 import type { AiProvider } from './ai.ts';
 import * as A from './aijobs.ts';
+import * as F from './find.ts';
+import * as W from './watch.ts';
+import * as C from './cost.ts';
+import { STYLE_LABEL, styleLabel } from './catalog.ts';
+import { SOURCES } from './sources.ts';
 
-type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null };
+type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null; limits?: C.Limits; policy?: W.WatchPolicy; checker?: { step: (t?: number) => Promise<number | null> } };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const MOCK = '<span class="mk">모의</span>';
 
@@ -46,7 +51,7 @@ ul{list-style:none;margin:0;padding:0}details summary{cursor:pointer;font-weight
 const FONT = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">';
 
 function page(title: string, body: string, op?: string, tab = '') {
-  const nav = op ? `<nav><a href="/admin" class="${tab === 'home' ? 'on' : ''}">대기열</a><a href="/admin/requests" class="${tab === 'list' ? 'on' : ''}">전체 의뢰</a></nav><span class="sp"></span><small>운영자 ${esc(op)}</small><form method="post" action="/admin/logout"><button class="btn s sm">로그아웃</button></form>` : '';
+  const nav = op ? `<nav><a href="/admin" class="${tab === 'home' ? 'on' : ''}">대기열</a><a href="/admin/requests" class="${tab === 'list' ? 'on' : ''}">찾아줘 의뢰</a><a href="/admin/watches" class="${tab === 'watch' ? 'on' : ''}">기다려줘</a><a href="/admin/costs" class="${tab === 'cost' ? 'on' : ''}">비용</a><a href="/admin/styles" class="${tab === 'style' ? 'on' : ''}">스타일 매핑</a></nav><span class="sp"></span><small>운영자 ${esc(op)}</small><form method="post" action="/admin/logout"><button class="btn s sm">로그아웃</button></form>` : '';
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · WALF OPS</title>${FONT}<style>${CSS}</style></head>
 <body><header class="t"><b>WALF.</b><small>OPS</small>${nav}</header><main>${body}</main></body></html>`;
 }
@@ -120,6 +125,12 @@ export function adminRouter(db: DB, cfg: Cfg) {
       ['수배글 삭제 요청', '철회·종료된 의뢰의 게시글', q(`SELECT p.*, w.request_id, r.product_name, r.identified_name, r.product_url, r.is_mock FROM wanted_posts p JOIN wanted w ON w.id=p.wanted_id JOIN requests r ON r.id=w.request_id WHERE p.status='removal_requested'`)
         .map(p => link({ ...p, id: p.request_id }, esc(p.channel))).join('')],
       ['24시간 안에 7일 종료', '종료 보고가 자동으로 발송돼요', q(`SELECT * FROM requests WHERE status='active' AND expires_at<=?`, t + DAY).map(x => link(x, `${kWhen(x.expires_at, t)} 종료`)).join('')],
+      ['찾아줘 결과: 사용자가 아니라고 함', '다시 확인해 결과를 공개하거나 보완을 요청하세요', F.rejectedQueue(db).map(x => link(x, `${kWhen(x.rejected_at, t)} · 사용자가 다른 옷이라고 했어요`)).join('')],
+      ['기다려줘 확인 필요', '상품 페이지가 없거나, 가격은 맞는데 재고·사이즈를 확인하지 못했거나, 연속으로 확인 못 한 것', q(`SELECT * FROM watches WHERE status='needs_info'
+          OR (status='active' AND (last_state IN ('stock_unknown','unverified','sale_only') OR fail_streak>=?)) ORDER BY updated_at`, cfg.policy?.unreachableAfter ?? 3)
+        .map(w => `<div class="q"><a href="/admin/watches#w${w.id}"><b>W${w.id} ${esc(w.title)}</b>${w.is_mock ? MOCK : ''}</a><span class="sub">${w.status === 'needs_info' ? '상품 페이지 필요' : w.fail_streak >= (cfg.policy?.unreachableAfter ?? 3) ? `연속 ${w.fail_streak}번 확인 실패` : esc(JSON.parse(w.last_result || '{}').reasons?.[0] || '')}</span></div>`).join('')],
+      ['예산·상한으로 멈춘 AI 작업', '비용 화면에서 확인한 뒤 계속하거나 직접 확인하세요', q(`SELECT j.*, r.product_name, r.identified_name, r.product_url, r.is_mock rm, r.id rid FROM ai_jobs j JOIN requests r ON r.id=j.request_id WHERE j.status IN ('held','interrupted') ORDER BY j.id`)
+        .map(j => link({ ...j, id: j.rid, is_mock: j.rm }, `AI ${j.kind === 'identify' ? '식별' : '탐색'} ${j.status === 'held' ? '보류' : '중단'} · ${esc(String(j.error || '').slice(0, 60))}`)).join('')],
     ];
     const counts = (db.prepare(`SELECT status, COUNT(*) n FROM requests GROUP BY status`).all() as any[]).reduce((m, x) => (m[x.status] = x.n, m), {} as any);
     const jc = (db.prepare(`SELECT status, COUNT(*) n FROM ai_jobs WHERE created_at>? GROUP BY status`).all(t - DAY) as any[]).reduce((m, x) => (m[x.status] = x.n, m), {} as any);
@@ -191,9 +202,25 @@ export function adminRouter(db: DB, cfg: Cfg) {
       ${av.identifyDone && !ids.length && !busy(idJob) ? '<p class="sub">AI가 고를 만한 후보를 내지 못했어요. 아래에서 직접 확인하거나 보완을 요청하세요.</p>' : ''}
       ${missing.length ? `<p class="sub">AI가 더 필요하다고 본 정보: ${missing.map(esc).join(' · ')}</p>` : ''}
       ${cfg.ai && rq.status === 'submitted' && !busy(idJob) ? `<form method="post" action="/admin/requests/${rq.id}/ai/identify"><button class="btn s sm">AI 다시 살펴보기</button></form>` : ''}</div>`;
+    // V2 찾아줘 결과 — MATCH·LIKELY·DISCOVER 로 골라 사용자에게 공개(공개한 것만 보인다). 사용자가 확인하면 상품 저장 + 7일 탐색 또는 기다려줘
+    const fd = F.findDraft(db, rq.id);
+    const TIER: Record<string, string> = { match: 'MATCH · 같은 옷 확인', likely: 'LIKELY · 유력 후보', skip: '공개 안 함' };
+    const attrList = (xs: string[], cls: string) => xs.length ? `<ul class="${cls}">${xs.map(s => `<li>${esc(s)}</li>`).join('')}</ul>` : '';
+    const pubRows = fd.published.map((p: any) => `<tr><td>${esc(p.tier.toUpperCase())}</td><td><b>${esc([p.brand, p.name].filter(Boolean).join(' '))}</b>${p.is_mock ? MOCK : ''}</td><td>${{ published: '사용자에게 공개됨', confirmed: '<b>사용자가 “이 옷이 맞아요”</b>', rejected: '사용자가 “아니에요”' }[p.status as string] || esc(p.status)}</td><td class="sub">${esc(p.published_by || '')} ${kWhen(p.created_at, t)}</td></tr>`).join('');
+    const findBox = !fd.job ? '' : `<div class="ai" data-ai="find:${fd.published.some((p: any) => p.status === 'published') ? 'published' : 'draft'}"><h3>찾아줘 결과 공개 <span class="sub">· 사용자에게 보일 결과를 골라요. 근거 주소가 없으면 MATCH로 공개할 수 없어요</span>${fd.isMock ? MOCK : ''}</h3>
+      ${rq.status === 'submitted' ? `<form method="post" action="/admin/requests/${rq.id}/find/publish">${fd.identities.map((x: any) => `<div class="id"><p style="margin:0 0 6px"><b>${x.rank}순위</b> <span class="tg aip">AI 제안</span> <span class="tg ${x.confidence === 'high' ? 'o' : 'x'}">신뢰도 ${A.CONF_LABEL[x.confidence]}</span> <span class="sub">서버 판정: ${x.tier === 'hidden' ? '숨김(신뢰도 낮음)' : TIER[x.tier]}</span></p>
+        <div class="row"><div><label>공개 등급</label><select name="tier_${x.id}">${(['match', 'likely', 'skip'] as const).map(k => `<option value="${k}" ${(x.tier === 'hidden' ? 'skip' : x.tier) === k ? 'selected' : ''} ${k === 'match' && !x.refs.length ? 'disabled' : ''}>${TIER[k]}</option>`).join('')}</select></div>
+        <div><label>브랜드</label><input type="text" name="brand_${x.id}" value="${esc(x.brand || '')}"></div><div style="flex:2"><label>상품명(사용자에게 보임)</label><input type="text" name="name_${x.id}" value="${esc(A.identityLabel(x))}"></div></div>
+        <div class="grid"><div><p class="sub" style="margin:6px 0 0">확인한 것</p>${attrList(x.matched, '') || '<p class="empty">없음</p>'}</div><div><p class="sub" style="margin:6px 0 0">확인 못 한 것</p>${attrList(x.uncertain, '') || '<p class="empty">없음</p>'}</div></div>
+        ${x.model_code || x.season ? `<p class="sub">품번 ${esc(x.model_code || '—')} · 시즌 ${esc(x.season || '—')}</p>` : ''}${x.refs.length ? `<p class="sub">근거: ${x.refs.map((u: string) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(host(u))}</a>`).join(' · ')}</p>` : ''}</div>`).join('')}
+        ${fd.discover.length ? `<div class="id"><p style="margin:0 0 6px"><b>DISCOVER · 비슷한 스타일</b> <span class="sub">MATCH가 없을 때만 공개돼요. 같은 상품이라고 말하지 않아요. 사진에서 본 스타일: ${esc(fd.styleWords.join(' · ') || '없음')}</span></p>
+          ${fd.discover.map(c => `<label class="in" style="display:flex;margin:6px 0"><input type="checkbox" name="disc" value="${esc(c.brandKey + '|' + c.scope)}" checked><b>${esc(c.brand)}${c.scope ? ' ' + esc(c.scope) : ''}</b>&nbsp;<span class="sub">점수 ${c.score} · ${esc(c.reasons.join(' · '))} · ${c.status === 'verified' ? '왈프 팀 확인' : c.status === 'fixture' ? '테스트 데이터' : '출처 있음·검수 전'}${c.sources.length ? ` · <a href="${esc(c.sources[0])}" target="_blank" rel="noopener noreferrer">출처</a>` : ''}</span></label>`).join('')}</div>`
+          : `<p class="sub">비슷한 스타일 후보 없음${fd.styleWords.length ? ` — 사진에서 본 스타일(${esc(fd.styleWords.join(' · '))})과 2가지 이상 겹치는 브랜드 매핑이 없어요` : ''}.</p>`}
+        <p><button class="btn sm">고른 결과를 사용자에게 공개</button> <span class="sub">공개하면 앱에 결과가 보이고 알림이 가요. 사용자가 확인하면 7일 탐색 또는 기다려줘로 이어져요.</span></p></form>` : ''}
+      ${pubRows ? `<table><tbody>${pubRows}</tbody></table>` : ''}</div>`;
     let ident = '';
     if (['submitted', 'needs_info'].includes(rq.status)) ident = `<section class="warn"><h2>1 · 상품 확인</h2><p class="sub">AI가 먼저 후보를 추리고 왈프 팀이 확정해요. 확정하면 지금부터 168시간(7일) 탐색이 시작되고, 1일차 탐색도 AI가 먼저 해요.${rq.status === 'needs_info' ? ` 현재 보완 요청: “${esc(rq.info_request)}”` : ''}</p>
-      ${aiId}
+      ${aiId}${findBox}
       <div class="grid"><details ${ids.length || busy(idJob) ? '' : 'open'}><summary>직접 확인해서 시작(AI 제안이 틀렸거나 AI 없이)</summary><form method="post" action="/admin/requests/${rq.id}/activate"><label>확인한 브랜드</label><input type="text" name="brand" value="${esc(rq.identified_brand || rq.brand || '')}">
       <label>확인한 상품명(모델·색상)</label><input type="text" name="name" required value="${esc(rq.identified_name || rq.product_name || '')}"><label>근거 메모(내부)</label><input type="text" name="note" value="${esc(rq.identified_note || '')}">
       <p><button class="btn">상품 확인 → 7일 탐색 시작</button></p></form></details>
@@ -392,6 +419,92 @@ export function adminRouter(db: DB, cfg: Cfg) {
     return [f.request_id, 'AI가 찾은 매물을 제외했어요.'];
   }));
   r.post('/requests/:id/wanted/propose', act(req => { const id = Number(req.params.id); D.proposeWanted(db, id, OP(req)); return [id, '수배를 제안했어요.']; }));
+
+  // ── V2: 찾아줘 결과 공개 ──
+  r.post('/requests/:id/find/publish', act(req => {
+    const id = Number(req.params.id), b = req.body;
+    const items = Object.keys(b).filter(k => k.startsWith('tier_')).map(k => {
+      const aid = Number(k.slice(5));
+      return { aiIdentityId: aid, tier: b[k], brand: b[`brand_${aid}`], name: b[`name_${aid}`] };
+    });
+    const disc = ([] as string[]).concat(b.disc || []).map(v => { const [brandKey, scope = ''] = String(v).split('|'); return { brandKey, scope }; });
+    F.publishFind(db, id, { items, discover: disc }, OP(req));
+    return [id, '찾아줘 결과를 사용자에게 공개했어요.'];
+  }));
+
+  // ── V2: 기다려줘 ──
+  const flash = (req: express.Request) => `${req.query.m ? `<div class="flash">${esc(req.query.m)}</div>` : ''}${req.query.e ? `<div class="flash err">${esc(req.query.e)}</div>` : ''}`;
+  r.get('/watches', (req, res) => {
+    const t = now();
+    const policy = cfg.policy!;
+    const rows = W.adminWatchRows(db);
+    const LS: Record<string, string> = { met: '조건 충족', above: '목표가 위', sold_out: '품절', size_missing: '사이즈 없음', color_missing: '색상 없음', stock_unknown: '재고 미확인', unverified: '같은 상품 미확인', sale_only: '할인가만 목표 이하', condition: '상태 불일치', no_price: '가격 없음', check_failed: '확인 실패' };
+    const qa = cfg.qaTools ? `<form method="post" action="/admin/watches/qa/check" style="display:inline"><button class="btn s sm">지금 확인할 차례인 가격 확인 실행(QA)</button></form>` : '';
+    const body = `${flash(req)}<h1>기다려줘</h1><p class="sub">사용자당 활성 ${policy.maxActive}개 · ${policy.checkEveryMs / 3600_000}시간마다 상품 페이지 한 번 · AI 호출 없음 · 같은 페이지는 한 번만 읽어 함께 써요. ${qa}</p>
+      <section><h2>판매처 자동 확인 범위</h2><table><thead><tr><th>판매처</th><th>상태</th><th>근거</th></tr></thead><tbody>${SOURCES.map(s => `<tr><td><b>${esc(s.label)}</b></td><td><span class="st">${s.status}</span></td><td class="sub">${esc(s.reason)} (${s.checked})</td></tr>`).join('')}</tbody></table></section>
+      <section><h2>전체 ${rows.length}</h2><table><thead><tr><th>#</th><th>옷 · 조건</th><th>사용자 화면</th><th>마지막 확인</th><th>상품 페이지</th></tr></thead><tbody>${rows.map(w => {
+        const d = W.watchDisplay(w, policy, t);
+        const ev = JSON.parse(w.last_result || 'null');
+        return `<tr id="w${w.id}"><td>W${w.id}</td><td><b>${esc(w.title)}</b>${w.is_mock ? MOCK : ''}<div class="sub">${esc(w.brand || '')} · ${w.target_price.toLocaleString()}원 이하 ${esc(w.size || '')} ${esc(w.color || '')} ${w.condition === 'new' ? '· 새 상품만' : ''}</div></td>
+          <td><span class="st">${esc(d.label)}</span><div class="sub">${esc(d.title)}</div></td>
+          <td>${w.last_checked_at ? kWhen(w.last_checked_at, t) : '—'}<div class="sub">${ev ? esc(LS[ev.state] || ev.state) + (ev.total != null ? ` · ${ev.total.toLocaleString()}원${ev.shippingKnown ? '(배송비 포함)' : '(배송비 미확인)'}` : '') : ''}${w.fail_streak ? ` · 연속 실패 ${w.fail_streak}` : ''}</div></td>
+          <td>${w.url ? `<a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.url.slice(0, 60))}</a>` : '<b>없음</b>'}${w.info_note ? `<div class="sub">${esc(w.info_note)}</div>` : ''}
+          ${['needs_info', 'active', 'paused'].includes(w.status) ? `<form method="post" action="/admin/watches/${w.id}/url" class="row" style="margin-top:6px"><input type="url" name="url" placeholder="공식몰 등 상품 페이지 주소" required><button class="btn sm" style="flex:none">페이지 연결</button></form>` : ''}</td></tr>`;
+      }).join('') || '<tr><td colspan="5" class="empty">아직 기다려줘가 없어요.</td></tr>'}</tbody></table></section>`;
+    send(req, res, page('기다려줘', body, OP(req), 'watch'));
+  });
+  const wback = (res: express.Response, m: string, isErr = false) => res.redirect(`/admin/watches?${isErr ? 'e' : 'm'}=${encodeURIComponent(m)}`);
+  r.post('/watches/:id/url', (req, res) => {
+    try { W.attachUrl(db, Number(req.params.id), req.body.url, OP(req), cfg.policy!); wback(res, `W${req.params.id}에 상품 페이지를 연결했어요. 다음 확인 때 가격을 읽어요.`); }
+    catch (e: any) { if (e instanceof HttpError) return wback(res, e.message, true); throw e; }
+  });
+  if (cfg.qaTools) r.post('/watches/qa/check', async (req, res) => {
+    W.tickWatches(db, cfg.policy!);
+    let n = 0; while (n < 20 && await cfg.checker?.step()) n++;
+    wback(res, `가격 확인 ${n}건을 실행했어요(QA). 실제 페이지는 robots.txt 허용일 때만 열어요.`);
+  });
+
+  // ── V2: 비용 ──
+  r.get('/costs', (req, res) => {
+    const limits = cfg.limits!;
+    const key = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? String(req.query.month) : C.monthKey();
+    const rep = C.costReport(db, limits, key);
+    const usd = (n: number) => `$${(Math.round(n * 100) / 100).toFixed(2)}`;
+    const body = `${flash(req)}<h1>AI·조회 비용 <span class="sub">${esc(key)} (KST)</span></h1><p class="sub">추정치예요. 단가 ${esc(rep.pricesChecked)} · 캐시 읽기도 입력 단가로 셈(실제보다 크게). 모의 실행은 비용에서 빠져요.</p>
+      <div class="g3"><section><h3>이번 달 추정 사용</h3><p class="n">${usd(rep.spent.usd)}</p><p class="sub">유료 호출 ${rep.spent.calls}건${rep.spent.unknown ? ` · 비용 미상 ${rep.spent.unknown}건(중단·실패)` : ''}</p></section>
+      <section><h3>월 예산</h3><p class="n">${usd(rep.budget.total)}</p><p class="sub">기본 ${usd(rep.budget.base)}(WALF_AI_MONTHLY_BUDGET_USD) + 운영자 승인 ${usd(rep.budget.extra)}</p></section>
+      <section><h3>의뢰별 AI 호출 상한</h3><p class="n">${limits.perRequestCalls}회</p><p class="sub">WALF_AI_MAX_CALLS_PER_REQUEST</p></section></div>
+      <section class="${rep.held.length ? 'warn' : ''}"><h2>멈춘 AI 작업 ${rep.held.length}</h2>${rep.held.length ? `<table><tbody>${rep.held.map(j => `<tr><td>#${j.id}</td><td><a href="/admin/requests/${j.request_id}">의뢰 #${j.request_id}</a> · ${j.kind === 'identify' ? '식별' : '탐색'}</td><td class="sub">${esc(j.error)}</td></tr>`).join('')}</tbody></table>
+        <form method="post" action="/admin/costs/approve" class="row" style="max-width:520px;margin-top:10px"><div><label>이번 달 예산 추가(USD)</label><input type="number" name="usd" min="1" max="1000" step="1" value="5" required></div><button class="btn" style="flex:none">확인하고 계속</button></form>
+        <p class="sub">추가하면 예산 때문에 멈춘 작업이 다시 대기열로 가요. Anthropic Console의 지출 한도도 함께 확인하세요.</p>` : '<p class="empty">없음</p>'}</section>
+      <section><h2>AI 작업</h2><table><thead><tr><th>종류</th><th>제공자</th><th>상태</th><th>건수</th><th>입력 토큰</th><th>출력 토큰</th><th>웹 검색</th><th>추정 비용</th><th>재사용</th></tr></thead><tbody>${rep.jobs.map(j => `<tr><td>${j.kind}</td><td>${esc(j.provider)}${j.mock ? MOCK : ''}</td><td>${j.status}</td><td>${j.n}</td><td>${j.inp.toLocaleString()}</td><td>${j.outp.toLocaleString()}</td><td>${j.srch}</td><td>${j.provider === 'mock' ? '—' : usd(j.usd)}</td><td>${j.reused || ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">없음</td></tr>'}</tbody></table></section>
+      <div class="grid"><section><h2>의뢰별 상위 20</h2><table><tbody>${rep.perRequest.map(p => `<tr><td><a href="/admin/requests/${p.request_id}">#${p.request_id}</a></td><td>${p.n}회</td><td>검색 ${p.srch}</td><td>${usd(p.usd)}</td></tr>`).join('') || '<tr><td class="empty">없음</td></tr>'}</tbody></table></section>
+      <section><h2>가격 확인(AI 없음)</h2><table><tbody>${rep.checks.map(c => `<tr><td>${esc(c.source)}${c.is_mock ? MOCK : ''}</td><td>${c.status}</td><td>${c.n}건</td></tr>`).join('') || '<tr><td class="empty">없음</td></tr>'}</tbody></table><p class="sub">상품 페이지 읽기는 외부 API 비용이 없고 서버 트래픽만 써요.</p></section></div>`;
+    send(req, res, page('비용', body, OP(req), 'cost'));
+  });
+  r.post('/costs/approve', (req, res) => {
+    try { const n = C.approveExtra(db, Number(req.body.usd), OP(req)); res.redirect(`/admin/costs?m=${encodeURIComponent(`이번 달 예산을 늘렸어요. 멈춘 작업 ${n}건을 다시 대기열에 넣었어요.`)}`); }
+    catch (e: any) { res.redirect(`/admin/costs?e=${encodeURIComponent(e.message || '실패')}`); }
+  });
+
+  // ── V2: 브랜드 스타일 매핑 검수 ──
+  r.get('/styles', (req, res) => {
+    const brands = db.prepare('SELECT * FROM brands ORDER BY name').all() as any[];
+    const tags = db.prepare(`SELECT * FROM style_tags WHERE subject='brand' ORDER BY subject_key, kind, value`).all() as any[];
+    const body = `${flash(req)}<h1>브랜드 스타일 매핑</h1><p class="sub">“비슷한 옷(DISCOVER)” 추천에 쓰는 근거예요. 출처가 있는 것만 들어 있고, 왈프 팀이 확인하면 “확인됨”이 돼요. 브랜드 전체가 아니라 라인·시즌 단위(범위)로도 매핑해요. 어휘: ${esc(Object.keys(STYLE_LABEL).slice(0, 12).join(', '))} …</p>
+      <section><table><thead><tr><th>브랜드</th><th>범위</th><th>종류</th><th>값</th><th>근거</th><th>상태</th></tr></thead><tbody>${tags.map(x => {
+        const b = brands.find(y => y.key === x.subject_key);
+        return `<tr><td><b>${esc(b?.name || x.subject_key)}</b>${b?.site ? `<div class="sub">${esc(b.site)}</div>` : ''}</td><td>${esc(x.scope || '브랜드 전체')}</td><td>${esc(x.kind)}</td><td>${esc(styleLabel(x.value))}</td>
+          <td class="sub">${esc(x.basis || '')}${x.source_url ? ` <a href="${esc(x.source_url)}" target="_blank" rel="noopener noreferrer">출처</a>` : ''}</td>
+          <td><form method="post" action="/admin/styles/${x.id}"><input type="hidden" name="to" value="${x.status === 'verified' ? 'sourced' : 'verified'}"><span class="st">${x.status === 'verified' ? '확인됨' : x.status === 'fixture' ? '테스트' : '검수 전'}</span> ${x.status === 'fixture' ? '' : `<button class="btn s sm">${x.status === 'verified' ? '확인 취소' : '확인'}</button>`}</form></td></tr>`;
+      }).join('') || '<tr><td colspan="6" class="empty">매핑이 없어요. server/seed/brand-styles.json 을 넣고 서버를 다시 켜세요.</td></tr>'}</tbody></table></section>`;
+    send(req, res, page('스타일 매핑', body, OP(req), 'style'));
+  });
+  r.post('/styles/:id', (req, res) => {
+    const to = req.body.to === 'verified' ? 'verified' : 'sourced';
+    db.prepare(`UPDATE style_tags SET status=?, updated_by=? WHERE id=? AND status IN ('sourced','verified')`).run(to, OP(req), Number(req.params.id));
+    res.redirect(`/admin/styles?m=${encodeURIComponent(to === 'verified' ? '확인했어요.' : '확인을 취소했어요.')}`);
+  });
   r.post('/posts/:id', (req, res, next) => {
     const p = db.prepare('SELECT p.*, w.request_id FROM wanted_posts p JOIN wanted w ON w.id=p.wanted_id WHERE p.id=?').get(Number(req.params.id)) as any;
     if (!p) return next(new HttpError(404, 'not_found'));

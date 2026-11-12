@@ -30,6 +30,8 @@ export function deleteUser(db: DB, userId: number) {
         log(db, r.id, 'system', 'account_deleted', '사용자 데이터 삭제', '게시된 수배글 삭제 처리를 위해 채널 기록만 남겼어요', { isMock: !!r.is_mock });
       } else run(db, 'DELETE FROM requests WHERE id=?', r.id);
     }
+    for (const w of all(db, 'SELECT photo FROM watches WHERE user_id=? AND photo IS NOT NULL', userId)) photos.push(w.photo);
+    run(db, 'DELETE FROM watches WHERE user_id=?', userId); // 기다려줘·감시 기록(watch_events)도 함께. 상품 페이지 가격 기록은 개인 정보가 아니라 남는다
     run(db, 'DELETE FROM notifications WHERE user_id=?', userId);
     if (one(db, 'SELECT COUNT(*) n FROM requests WHERE user_id=?', userId)!.n) run(db, `UPDATE users SET device_id='deleted:'||id||':'||?, push_token=NULL, deleted_at=? WHERE id=?`, now(), now(), userId);
     else run(db, 'DELETE FROM users WHERE id=?', userId);
@@ -537,6 +539,8 @@ export function display(db: DB, r: Row, t = now()): Display {
     return d('identification_pending', '의뢰 접수 · 7일 시작 전', '어떤 옷인지 확인하고 있어요', '왈프 팀이 상품을 확인하면 7일 탐색이 시작돼요. 확인 전에는 기간이 흐르지 않아요.');
   }
   if (r.status === 'needs_info') return d('needs_info', '의뢰 접수 · 7일 시작 전', '정보가 조금 더 필요해요', r.info_request || '어떤 옷인지 확인할 정보를 더 보내주세요.', { action: { label: '정보 보내기', target: `info:${r.id}`, primary: true } });
+  if (r.status === 'completed' && String(r.end_reason || '').startsWith('find_')) return d('find_done', `${kDate(r.ended_at)} · 찾아줘 완료`, '어떤 옷인지 찾았어요',
+    r.end_reason === 'find_watch' ? '기다려줘에서 원하는 사이즈·가격을 지켜보고 있어요.' : '내가 찾는 옷에 저장했어요. 매물을 찾거나 가격을 기다리려면 새로 맡겨 주세요.', { muted: true, isMock: !!r.is_mock });
   if (r.status === 'completed') return d('completed', `${kDate(r.ended_at)} · 구매 확인`, '찾던 옷을 구했어요', '탐색과 수배를 멈췄어요. 게시된 수배지는 내리도록 요청했어요.', { muted: true });
   if (r.status === 'cancelled') return d('cancelled', `${kDate(r.ended_at)} · 그만둠`, '의뢰를 그만뒀어요', '탐색을 멈췄어요. 기록은 추적함에 남아 있어요.', { muted: true });
   const cands = visibleCands(db, r);
@@ -598,7 +602,7 @@ export function findTiers(db: DB, requestId: number) {
 }
 
 export const STATE_LABEL: Record<string, string> = {
-  find_match: '같은 옷 찾음', find_likely: '유력 후보 발견', find_discover: '유사 제품 추천',
+  find_match: '같은 옷 찾음', find_likely: '유력 후보 발견', find_discover: '유사 제품 추천', find_done: '완료·종료',
   identification_pending: '제품 식별 중', needs_info: '정보 보완 대기', first_search_pending: '첫 탐색 준비', searching: '탐색 중',
   awaiting_consent: '수배 동의 대기', wanted_queued: '수배 게시 대기', wanted_published: '수배 게시 완료', lead_found: '유력 후보',
   offer_verified: '구매 가능 확인', price_watch: '가격 초과 관찰', paused_failed: '일부 실패', expired: '7일 종료', completed: '구매 완료', cancelled: '그만둠',

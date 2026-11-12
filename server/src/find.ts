@@ -117,6 +117,12 @@ export function confirmFind(db: DB, userId: number, requestId: number, identityI
     db.prepare(`UPDATE product_identities SET status='confirmed', product_id=?, decided_at=? WHERE id=?`).run(productId, t, x.id);
     db.prepare(`UPDATE requests SET product_id=?, updated_at=? WHERE id=?`).run(productId, t, requestId);
     D.log(db, requestId, 'user', 'find_confirmed', '이 옷이 맞아요', `${[x.brand, x.name].filter(Boolean).join(' ')}${x.tier === 'likely' ? ' · 유력 후보를 골랐어요' : ''}`, { isMock: !!x.is_mock || !!r.is_mock });
+    // 7일 매물 탐색을 고르지 않으면 찾아줘는 여기서 끝난다(식별 완료). 기다려줘는 따로 이어진다
+    if (next !== 'hunt' && r.status === 'submitted') {
+      db.prepare(`UPDATE requests SET status='completed', ended_at=?, end_reason=?, updated_at=? WHERE id=?`).run(t, `find_${next}`, t, requestId);
+      db.prepare(`UPDATE ai_identities SET status='passed' WHERE request_id=? AND status='proposed'`).run(requestId);
+      D.log(db, requestId, 'walf', 'find_done', '찾아줘 완료', next === 'watch' ? '기다려줘에서 원하는 가격을 지켜봐요' : '내가 찾는 옷에 저장했어요', { isMock: !!x.is_mock || !!r.is_mock });
+    }
   });
   // activate 는 자체 트랜잭션을 쓴다 — 위 저장이 끝난 뒤 부른다
   if (next === 'hunt') D.activate(db, requestId, { brand: x.brand, name: x.name, note: `찾아줘 결과(${x.tier === 'match' ? 'MATCH' : 'LIKELY'}) · 왈프 팀 ${x.published_by} 검수 · 사용자 확인` }, x.published_by || '왈프 팀', { isMock: !!x.is_mock });

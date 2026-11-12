@@ -78,7 +78,8 @@ test('LIKELY: 확인 못 한 부분을 보여 주고, 사용자가 골라도 “
   assert.equal(F.rejectedQueue(db).length, 0);
   const v2 = F.findView(db, D.getRequest(db, id));
   const { productId } = F.confirmFind(db, u.id, id, v2.likely[0].id, 'watch');
-  assert.equal(D.getRequest(db, id).status, 'submitted', '기다려줘로 가면 7일은 시작하지 않는다');
+  assert.equal(D.getRequest(db, id).status, 'completed', '기다려줘로 가면 7일은 시작하지 않고 찾아줘는 “찾음”으로 끝난다');
+  assert.equal(D.display(db, D.getRequest(db, id)).key, 'find_done');
   assert.equal((db.prepare('SELECT verified FROM products WHERE id=?').get(productId) as any).verified, 0);
 });
 

@@ -124,9 +124,8 @@ export function loadBrandSeed(db: DB, seeds: BrandSeed[], status: 'sourced' | 'f
 }
 export const brandKey = (s: string | null | undefined) => String(s || '').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, '');
 
-/** 서버 시작 시 seed/brand-styles.json 을 읽는다(있으면) */
-export function loadSeedFile(db: DB, dir = path.resolve(import.meta.dirname, '..', 'seed')) {
-  const f = path.join(dir, 'brand-styles.json');
+/** 서버 시작 시 seed/brand-styles.json(또는 WALF_STYLE_SEED)을 읽는다(있으면) */
+export function loadSeedFile(db: DB, f = process.env.WALF_STYLE_SEED || path.resolve(import.meta.dirname, '..', 'seed', 'brand-styles.json')) {
   if (!fs.existsSync(f)) return 0;
   return loadBrandSeed(db, JSON.parse(fs.readFileSync(f, 'utf8')));
 }

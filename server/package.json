@@ -10,7 +10,7 @@
     "start": "node src/index.ts",
     "dev": "node --watch src/index.ts",
     "test": "node --test test/*.test.ts",
-    "e2e": "node test/e2e-badblood.ts"
+    "e2e": "node test/e2e-badblood.ts && node test/e2e-v2.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
