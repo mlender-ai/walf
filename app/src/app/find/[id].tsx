@@ -63,15 +63,16 @@ export default function FindResult() {
               {f.state === 'confirmed' ? '이 옷으로 저장했어요' : f.match ? '같은 옷을 찾았어요' : f.likely.length ? '이 옷일 가능성이 높아요' : '같은 옷은 아직 못 찾았어요'}
             </T>
             <T size={14} lh={21} color={C.gray500} style={{ marginTop: 4 }}>
-              {f.match ? '브랜드와 모델을 페이지로 확인했어요. 확인하지 못한 부분도 함께 적었어요.' : f.likely.length ? '비슷한 디자인의 다른 옷일 수 있어요. 확인한 것과 못 한 것을 나눠 적었어요.' : '대신 비슷한 스타일을 골라 뒀어요. 같은 상품이라는 뜻은 아니에요.'}
+              {f.match ? '브랜드와 모델을 페이지로 확인했어요. 확인하지 못한 부분도 함께 적었어요.' : f.likely.length ? '비슷한 디자인의 다른 옷일 수 있어요. 확인한 것과 못 한 것을 나눠 적었어요.' : '대신 비슷한 스타일의 브랜드를 골라 뒀어요. 같은 상품이라는 뜻은 아니에요.'}
             </T>
           </View>
           {f.match ? <Card x={f.match} onConfirm={f.state === 'ready' ? () => confirm(f.match!) : undefined} busy={busy} /> : null}
           {f.likely.map(x => <Card key={x.id} x={x} onConfirm={f.state === 'ready' ? () => confirm(x) : undefined} busy={busy} />)}
           {f.discover.length ? <>
             <Gap />
-            <Section title="비슷한 스타일" sub="같은 상품 아님">
-              {f.styleWords.length ? <T size={12.5} color={C.gray500} style={{ marginTop: 6 }}>사진에서 본 특징: {f.styleWords.join(' · ')}</T> : null}
+            <Section title="비슷한 스타일의 브랜드" sub="같은 상품 아님">
+              <T size={12.5} color={C.gray500} style={{ marginTop: 6 }}>브랜드 추천이에요. 지금 판매 중인 비슷한 상품은 아직 골라 드리지 못해요.</T>
+              {f.styleWords.length ? <T size={12.5} color={C.gray500} style={{ marginTop: 2 }}>사진에서 본 특징: {f.styleWords.join(' · ')}</T> : null}
               {f.discover.map(x => (
                 <View key={x.id} style={s.disc}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><T size={15} w={800} style={{ flex: 1 }}>{x.name}</T><Tag t={{ kind: 'x', text: '같은 상품 아님' }} /></View>

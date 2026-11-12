@@ -126,8 +126,8 @@ export function adminRouter(db: DB, cfg: Cfg) {
         .map(p => link({ ...p, id: p.request_id }, esc(p.channel))).join('')],
       ['24시간 안에 7일 종료', '종료 보고가 자동으로 발송돼요', q(`SELECT * FROM requests WHERE status='active' AND expires_at<=?`, t + DAY).map(x => link(x, `${kWhen(x.expires_at, t)} 종료`)).join('')],
       ['찾아줘 결과: 사용자가 아니라고 함', '다시 확인해 결과를 공개하거나 보완을 요청하세요', F.rejectedQueue(db).map(x => link(x, `${kWhen(x.rejected_at, t)} · 사용자가 다른 옷이라고 했어요`)).join('')],
-      ['기다려줘 확인 필요', '상품 페이지가 없거나, 가격은 맞는데 재고·사이즈를 확인하지 못했거나, 연속으로 확인 못 한 것', q(`SELECT * FROM watches WHERE status='needs_info'
-          OR (status='active' AND (last_state IN ('stock_unknown','unverified','sale_only') OR fail_streak>=?)) ORDER BY updated_at`, cfg.policy?.unreachableAfter ?? 3)
+      ['기다려줘 확인 필요', '상품 페이지가 없거나, 등록한 옷과 같은 페이지인지·배송비·색상·재고를 확인하지 못했거나, 연속으로 확인 못 한 것', q(`SELECT * FROM watches WHERE status='needs_info'
+          OR (status='active' AND (last_state IN ('stock_unknown','shipping_unknown','color_unknown','unverified','mismatch','sale_only') OR page_identity IN ('unverified','mismatch') OR fail_streak>=?)) ORDER BY updated_at`, cfg.policy?.unreachableAfter ?? 3)
         .map(w => `<div class="q"><a href="/admin/watches#w${w.id}"><b>W${w.id} ${esc(w.title)}</b>${w.is_mock ? MOCK : ''}</a><span class="sub">${w.status === 'needs_info' ? '상품 페이지 필요' : w.fail_streak >= (cfg.policy?.unreachableAfter ?? 3) ? `연속 ${w.fail_streak}번 확인 실패` : esc(JSON.parse(w.last_result || '{}').reasons?.[0] || '')}</span></div>`).join('')],
       ['예산·상한으로 멈춘 AI 작업', '비용 화면에서 확인한 뒤 계속하거나 직접 확인하세요', q(`SELECT j.*, r.product_name, r.identified_name, r.product_url, r.is_mock rm, r.id rid FROM ai_jobs j JOIN requests r ON r.id=j.request_id WHERE j.status IN ('held','interrupted') ORDER BY j.id`)
         .map(j => link({ ...j, id: j.rid, is_mock: j.rm }, `AI ${j.kind === 'identify' ? '식별' : '탐색'} ${j.status === 'held' ? '보류' : '중단'} · ${esc(String(j.error || '').slice(0, 60))}`)).join('')],
@@ -209,10 +209,13 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const pubRows = fd.published.map((p: any) => `<tr><td>${esc(p.tier.toUpperCase())}</td><td><b>${esc([p.brand, p.name].filter(Boolean).join(' '))}</b>${p.is_mock ? MOCK : ''}</td><td>${{ published: '사용자에게 공개됨', confirmed: '<b>사용자가 “이 옷이 맞아요”</b>', rejected: '사용자가 “아니에요”' }[p.status as string] || esc(p.status)}</td><td class="sub">${esc(p.published_by || '')} ${kWhen(p.created_at, t)}</td></tr>`).join('');
     const findBox = !fd.job ? '' : `<div class="ai" data-ai="find:${fd.published.some((p: any) => p.status === 'published') ? 'published' : 'draft'}"><h3>찾아줘 결과 공개 <span class="sub">· 사용자에게 보일 결과를 골라요. 근거 주소가 없으면 MATCH로 공개할 수 없어요</span>${fd.isMock ? MOCK : ''}</h3>
       ${rq.status === 'submitted' ? `<form method="post" action="/admin/requests/${rq.id}/find/publish">${fd.identities.map((x: any) => `<div class="id"><p style="margin:0 0 6px"><b>${x.rank}순위</b> <span class="tg aip">AI 제안</span> <span class="tg ${x.confidence === 'high' ? 'o' : 'x'}">신뢰도 ${A.CONF_LABEL[x.confidence]}</span> <span class="sub">서버 판정: ${x.tier === 'hidden' ? '숨김(신뢰도 낮음)' : TIER[x.tier]}</span></p>
-        <div class="row"><div><label>공개 등급</label><select name="tier_${x.id}">${(['match', 'likely', 'skip'] as const).map(k => `<option value="${k}" ${(x.tier === 'hidden' ? 'skip' : x.tier) === k ? 'selected' : ''} ${k === 'match' && !x.refs.length ? 'disabled' : ''}>${TIER[k]}</option>`).join('')}</select></div>
+        <div class="row"><div><label>공개 등급</label><select name="tier_${x.id}">${(['match', 'likely', 'skip'] as const).map(k => `<option value="${k}" ${(x.tier === 'hidden' ? 'skip' : x.tier) === k ? 'selected' : ''}>${TIER[k]}</option>`).join('')}</select></div>
         <div><label>브랜드</label><input type="text" name="brand_${x.id}" value="${esc(x.brand || '')}"></div><div style="flex:2"><label>상품명(사용자에게 보임)</label><input type="text" name="name_${x.id}" value="${esc(A.identityLabel(x))}"></div></div>
         <div class="grid"><div><p class="sub" style="margin:6px 0 0">확인한 것</p>${attrList(x.matched, '') || '<p class="empty">없음</p>'}</div><div><p class="sub" style="margin:6px 0 0">확인 못 한 것</p>${attrList(x.uncertain, '') || '<p class="empty">없음</p>'}</div></div>
-        ${x.model_code || x.season ? `<p class="sub">품번 ${esc(x.model_code || '—')} · 시즌 ${esc(x.season || '—')}</p>` : ''}${x.refs.length ? `<p class="sub">근거: ${x.refs.map((u: string) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(host(u))}</a>`).join(' · ')}</p>` : ''}</div>`).join('')}
+        ${x.model_code || x.season ? `<p class="sub">품번 ${esc(x.model_code || '—')} · 시즌 ${esc(x.season || '—')}</p>` : ''}${x.refs.length ? `<p class="sub">근거: ${x.refs.map((u: string) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(host(u))}</a>`).join(' · ')}</p>` : ''}
+        <details><summary class="sub">MATCH로 올리기(서버 판정이 MATCH가 아니거나 이름·브랜드를 고칠 때 필수)</summary>
+        <div class="row"><div><label>직접 확인한 상품 페이지 주소</label><input type="url" name="vurl_${x.id}" placeholder="https:// 공식몰·판매 페이지"></div><div style="flex:2"><label>확인 사유(무엇이 같은지, 10자 이상)</label><input type="text" name="vwhy_${x.id}" maxlength="300" placeholder="예: 품번 W-JKT26-055와 소매 절개선·가슴 지퍼 위치가 같음"></div></div>
+        <p class="sub">근거 주소가 있다는 것만으로는 같은 상품이 아니에요. 서버 판정이 MATCH이고 이름을 고치지 않았을 때만 이 칸 없이 MATCH로 공개돼요.</p></details></div>`).join('')}
         ${fd.discover.length ? `<div class="id"><p style="margin:0 0 6px"><b>DISCOVER · 비슷한 스타일</b> <span class="sub">MATCH가 없을 때만 공개돼요. 같은 상품이라고 말하지 않아요. 사진에서 본 스타일: ${esc(fd.styleWords.join(' · ') || '없음')}</span></p>
           ${fd.discover.map(c => `<label class="in" style="display:flex;margin:6px 0"><input type="checkbox" name="disc" value="${esc(c.brandKey + '|' + c.scope)}" checked><b>${esc(c.brand)}${c.scope ? ' ' + esc(c.scope) : ''}</b>&nbsp;<span class="sub">점수 ${c.score} · ${esc(c.reasons.join(' · '))} · ${c.status === 'verified' ? '왈프 팀 확인' : c.status === 'fixture' ? '테스트 데이터' : '출처 있음·검수 전'}${c.sources.length ? ` · <a href="${esc(c.sources[0])}" target="_blank" rel="noopener noreferrer">출처</a>` : ''}</span></label>`).join('')}</div>`
           : `<p class="sub">비슷한 스타일 후보 없음${fd.styleWords.length ? ` — 사진에서 본 스타일(${esc(fd.styleWords.join(' · '))})과 2가지 이상 겹치는 브랜드 매핑이 없어요` : ''}.</p>`}
@@ -425,7 +428,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const id = Number(req.params.id), b = req.body;
     const items = Object.keys(b).filter(k => k.startsWith('tier_')).map(k => {
       const aid = Number(k.slice(5));
-      return { aiIdentityId: aid, tier: b[k], brand: b[`brand_${aid}`], name: b[`name_${aid}`] };
+      return { aiIdentityId: aid, tier: b[k], brand: b[`brand_${aid}`], name: b[`name_${aid}`], verifyUrl: b[`vurl_${aid}`], verifyReason: b[`vwhy_${aid}`] };
     });
     const disc = ([] as string[]).concat(b.disc || []).map(v => { const [brandKey, scope = ''] = String(v).split('|'); return { brandKey, scope }; });
     F.publishFind(db, id, { items, discover: disc }, OP(req));
@@ -438,7 +441,9 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const t = now();
     const policy = cfg.policy!;
     const rows = W.adminWatchRows(db);
-    const LS: Record<string, string> = { met: '조건 충족', above: '목표가 위', sold_out: '품절', size_missing: '사이즈 없음', color_missing: '색상 없음', stock_unknown: '재고 미확인', unverified: '같은 상품 미확인', sale_only: '할인가만 목표 이하', condition: '상태 불일치', no_price: '가격 없음', check_failed: '확인 실패' };
+    const LS: Record<string, string> = { met: '조건 충족', above: '목표가 위', sold_out: '품절', size_missing: '사이즈 없음', color_missing: '색상 없음', color_unknown: '색상 미확인', stock_unknown: '재고 미확인',
+      shipping_unknown: '상품가 충족·배송비 미확인', unverified: '같은 상품 페이지 미확인', mismatch: '다른 상품 페이지', sale_only: '할인가만 목표 이하', condition: '상태 불일치', no_price: '가격 없음', check_failed: '확인 실패' };
+    const PI: Record<string, string> = { pending: '아직 판단 전', page_defined: '사용자가 준 링크 자체가 상품', matched: '자동 확인: 같은 상품', operator_confirmed: '왈프 팀 확인: 같은 상품', unverified: '<b>같은 상품인지 확인 필요</b>', mismatch: '<b>다른 상품으로 보임</b>' };
     const qa = cfg.qaTools ? `<form method="post" action="/admin/watches/qa/check" style="display:inline"><button class="btn s sm">지금 확인할 차례인 가격 확인 실행(QA)</button></form>` : '';
     const body = `${flash(req)}<h1>기다려줘</h1><p class="sub">사용자당 활성 ${policy.maxActive}개 · ${policy.checkEveryMs / 3600_000}시간마다 상품 페이지 한 번 · AI 호출 없음 · 같은 페이지는 한 번만 읽어 함께 써요. ${qa}</p>
       <section><h2>판매처 자동 확인 범위</h2><table><thead><tr><th>판매처</th><th>상태</th><th>근거</th></tr></thead><tbody>${SOURCES.map(s => `<tr><td><b>${esc(s.label)}</b></td><td><span class="st">${s.status}</span></td><td class="sub">${esc(s.reason)} (${s.checked})</td></tr>`).join('')}</tbody></table></section>
@@ -449,6 +454,10 @@ export function adminRouter(db: DB, cfg: Cfg) {
           <td><span class="st">${esc(d.label)}</span><div class="sub">${esc(d.title)}</div></td>
           <td>${w.last_checked_at ? kWhen(w.last_checked_at, t) : '—'}<div class="sub">${ev ? esc(LS[ev.state] || ev.state) + (ev.total != null ? ` · ${ev.total.toLocaleString()}원${ev.shippingKnown ? '(배송비 포함)' : '(배송비 미확인)'}` : '') : ''}${w.fail_streak ? ` · 연속 실패 ${w.fail_streak}` : ''}</div></td>
           <td>${w.url ? `<a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.url.slice(0, 60))}</a>` : '<b>없음</b>'}${w.info_note ? `<div class="sub">${esc(w.info_note)}</div>` : ''}
+          ${w.url ? `<div class="sub">페이지 동일성: ${PI[w.page_identity] || esc(w.page_identity)}${w.identity_note ? ` · ${esc(w.identity_note)}` : ''}</div>
+            ${!['operator_confirmed', 'page_defined'].includes(w.page_identity) ? `<div class="row" style="margin-top:6px"><form method="post" action="/admin/watches/${w.id}/page"><input type="hidden" name="same" value="1"><button class="btn sm">같은 상품 페이지 맞음</button></form>
+              <form method="post" action="/admin/watches/${w.id}/page"><input type="hidden" name="same" value="0"><button class="btn s sm">다른 상품 — 페이지 떼기</button></form></div>` : ''}
+            ${ev?.state === 'shipping_unknown' ? `<form method="post" action="/admin/watches/${w.id}/shipping" class="row" style="margin-top:6px"><input type="number" name="fee" min="0" max="200000" placeholder="확인한 배송비(원, 무료면 0)" required><button class="btn sm" style="flex:none">배송비 확인</button></form>` : ''}` : ''}
           ${['needs_info', 'active', 'paused'].includes(w.status) ? `<form method="post" action="/admin/watches/${w.id}/url" class="row" style="margin-top:6px"><input type="url" name="url" placeholder="공식몰 등 상품 페이지 주소" required><button class="btn sm" style="flex:none">페이지 연결</button></form>` : ''}</td></tr>`;
       }).join('') || '<tr><td colspan="5" class="empty">아직 기다려줘가 없어요.</td></tr>'}</tbody></table></section>`;
     send(req, res, page('기다려줘', body, OP(req), 'watch'));
@@ -456,6 +465,14 @@ export function adminRouter(db: DB, cfg: Cfg) {
   const wback = (res: express.Response, m: string, isErr = false) => res.redirect(`/admin/watches?${isErr ? 'e' : 'm'}=${encodeURIComponent(m)}`);
   r.post('/watches/:id/url', (req, res) => {
     try { W.attachUrl(db, Number(req.params.id), req.body.url, OP(req), cfg.policy!); wback(res, `W${req.params.id}에 상품 페이지를 연결했어요. 다음 확인 때 가격을 읽어요.`); }
+    catch (e: any) { if (e instanceof HttpError) return wback(res, e.message, true); throw e; }
+  });
+  r.post('/watches/:id/page', (req, res) => {
+    try { W.confirmPage(db, Number(req.params.id), req.body.same === '1', OP(req), cfg.policy!); wback(res, req.body.same === '1' ? `W${req.params.id}: 같은 상품 페이지로 확인했어요. 이제 조건이 맞으면 알림이 가요.` : `W${req.params.id}: 페이지를 떼고 확인 요청으로 돌렸어요.`); }
+    catch (e: any) { if (e instanceof HttpError) return wback(res, e.message, true); throw e; }
+  });
+  r.post('/watches/:id/shipping', (req, res) => {
+    try { W.confirmShipping(db, Number(req.params.id), req.body.fee, OP(req), cfg.policy!); wback(res, `W${req.params.id}: 배송비를 확인했어요. 총액으로 다시 판정했어요.`); }
     catch (e: any) { if (e instanceof HttpError) return wback(res, e.message, true); throw e; }
   });
   if (cfg.qaTools) r.post('/watches/qa/check', async (req, res) => {

@@ -52,7 +52,7 @@ export type ProductInput = { brand?: string | null; name: string; modelCode?: st
 export function upsertProduct(db: DB, p: ProductInput): number {
   const name = String(p.name || '').trim().slice(0, 160);
   if (!name) throw new Error('product name required');
-  const key = productKey(p.brand, name);
+  const key = productKey(p.brand, name, p.modelCode, p.season);
   const t = now();
   const cur = one(db, 'SELECT * FROM products WHERE canonical_key=? AND is_mock=? ORDER BY verified DESC, id LIMIT 1', key, p.isMock ? 1 : 0);
   if (cur) {
@@ -132,8 +132,22 @@ export function loadSeedFile(db: DB, f = process.env.WALF_STYLE_SEED || path.res
 
 export type Curated = { brand: string; brandKey: string; scope: string; score: number; reasons: string[]; sources: string[]; status: 'verified' | 'sourced' | 'fixture' };
 
+// ── 비슷한 “상품” 큐레이션(미구현) ─────────────────────────────
+// 지금 DISCOVER 는 브랜드(또는 라인·시즌) 단위 스타일 추천뿐이다. 실제로 판매 중인 비슷한 상품을 고르는 일은 하지 않는다.
+// 별도로 연구 중인 패션 브레인(이미지·스타일 이해)을 붙일 자리만 정해 둔다 — 붙이기 전까지 결과는 늘 빈 목록이다.
+export type SimilarProduct = { brand: string; name: string; url: string; imageUrl: string | null; price: number | null; seller: string; reasons: string[]; source: string; verified: false };
+export interface SimilarProductProvider {
+  id: string; label: string; status: 'PENDING_INTEGRATION' | 'SUPPORTED';
+  /** style: 사진에서 본 스타일(통제 어휘) · exclude: 이미 결과에 있는 브랜드 · 돌려준 상품은 운영자 검수 전까지 공개하지 않는다 */
+  find(input: { style: Style; photoPath?: string | null; brands: string[]; exclude: string[]; limit: number }): Promise<SimilarProduct[]>;
+}
+export const SIMILAR_PRODUCTS: SimilarProductProvider = {
+  id: 'fashion-brain', label: '패션 브레인(별도 연구)', status: 'PENDING_INTEGRATION',
+  async find() { return []; },
+};
+
 /**
- * DISCOVER — 정확한 상품을 찾지 못했을 때 비슷한 스타일의 브랜드를 고른다. 같은 상품이라고 말하지 않는다.
+ * DISCOVER — 정확한 상품을 찾지 못했을 때 비슷한 스타일의 브랜드를 고른다(브랜드 단위 추천 · 판매 상품 큐레이션 아님). 같은 상품이라고 말하지 않는다.
  * 두 가지 이상 종류(무드·소재·제품군 등)가 겹치는 브랜드만, 점수 높은 순.
  */
 export function curate(db: DB, style: Style, opts: { exclude?: string[]; limit?: number; statuses?: string[] } = {}): Curated[] {

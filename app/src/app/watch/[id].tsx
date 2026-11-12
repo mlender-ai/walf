@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Header } from '@/components/Header';
@@ -23,7 +23,7 @@ export default function WatchScreen() {
   const [err, setErr] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState(false);
-  const [price, setPrice] = useState(''); const [size, setSize] = useState('');
+  const [price, setPrice] = useState(''); const [size, setSize] = useState(''); const [itemOnly, setItemOnly] = useState(false);
   const load = useCallback(() => { call<WatchView>('GET', `/watches/${id}`).then(x => { setW(x); setErr(null); }, setErr); }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -37,7 +37,7 @@ export default function WatchScreen() {
   };
   const save = async () => {
     setBusy(true);
-    try { setW(await call<WatchView>('PATCH', `/watches/${id}`, { targetPrice: price.replace(/[^\d]/g, '') || undefined, size })); setEdit(false); refresh(); }
+    try { setW(await call<WatchView>('PATCH', `/watches/${id}`, { targetPrice: price.replace(/[^\d]/g, '') || undefined, size, priceBasis: itemOnly ? 'item' : 'total' })); setEdit(false); refresh(); }
     catch (e: any) { Alert.alert('저장하지 못했어요', e.message); } finally { setBusy(false); }
   };
 
@@ -70,11 +70,11 @@ export default function WatchScreen() {
           {L ? (
             <View style={st.price}>
               <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                <Tag t={L.meets ? { kind: 'v', text: '조건 충족' } : { kind: 'p', text: '목표가 확인 중' }} />
+                <Tag t={d.key === 'met' ? { kind: 'v', text: '조건 충족' } : L.meets ? { kind: 'o', text: '목표 가격 이하' } : { kind: 'p', text: '목표가 확인 중' }} />
                 <Tag t={{ kind: L.stock === 'in_stock' ? 'o' : 'x', text: STOCK[L.stock || 'unknown'] || '재고 미확인' }} />
               </View>
               <T size={26} w={800} ls={-1} style={{ marginTop: 8, fontVariant: ['tabular-nums'] }}>{won(L.total)}</T>
-              <T size={12.5} color={C.gray500}>{L.shippingKnown ? `상품 ${won(L.price)} + 배송비 ${won(L.shipping)}` : `상품가 · 배송비 미확인`}{L.option ? ` · ${L.option}` : ''} · 원하는 가격 {won(w.conditions.targetPrice)}</T>
+              <T size={12.5} color={C.gray500}>{L.shippingKnown ? `상품 ${won(L.price)} + 배송비 ${won(L.shipping)}` : `상품가 · 배송비 미확인`}{L.option ? ` · ${L.option}` : ''} · 원하는 가격 {won(w.conditions.targetPrice)}{w.conditions.priceBasis === 'item' ? '(배송비 제외)' : ''}</T>
             </View>
           ) : null}
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
@@ -82,6 +82,8 @@ export default function WatchScreen() {
             <KV k="다음 확인" v={w.schedule.nextCheckLabel || (w.status === 'paused' ? '멈춤' : '—')} sub={w.schedule.renewLabel ? `${w.schedule.renewLabel} 지켜봐요` : undefined} />
           </View>
           {w.product.pageTitle ? <T size={12} color={C.gray500} style={{ marginTop: 10 }}>페이지에서 읽은 상품명: {w.product.pageTitle}{w.product.seller ? ` · ${w.product.seller}` : ''}</T> : null}
+          {w.product.pageTitle && !w.page.ok && d.key !== 'mismatch' ? <View style={st.notice} accessibilityRole="alert"><Icon name="close" size={14} /><T size={12.5} w={600} lh={18} style={{ flex: 1 }}>
+            {w.page.note || '등록한 옷과 같은 상품 페이지인지 확인하고 있어요'}. 확인 전에는 가격 알림을 보내지 않아요.</T></View> : null}
         </View>
         <Gap h={8} />
         <Section title="가격 기록" sub="확인한 그대로">
@@ -99,10 +101,14 @@ export default function WatchScreen() {
         </Section>
         <Gap h={8} />
         {w.actions.edit ? (
-          <Section title="조건" right={edit ? '닫기' : '바꾸기'} onRight={() => { setEdit(!edit); setPrice(String(w.conditions.targetPrice).replace(/\B(?=(\d{3})+(?!\d))/g, ',')); setSize(w.conditions.size || ''); }}>
+          <Section title="조건" right={edit ? '닫기' : '바꾸기'} onRight={() => { setEdit(!edit); setPrice(String(w.conditions.targetPrice).replace(/\B(?=(\d{3})+(?!\d))/g, ',')); setSize(w.conditions.size || ''); setItemOnly(w.conditions.priceBasis === 'item'); }}>
             {edit ? <>
               <Field label="원하는 가격" value={price} onChangeText={v => setPrice(v.replace(/[^\d]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','))} keyboardType="number-pad" suffix="원 이하" />
               <Field label="사이즈" value={size} onChangeText={setSize} autoCapitalize="characters" maxLength={20} placeholder="예: M" />
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
+                <T size={14} w={600} style={{ flex: 1 }}>배송비 빼고 비교</T>
+                <Switch value={itemOnly} onValueChange={setItemOnly} trackColor={{ true: C.black, false: C.gray300 }} accessibilityLabel="배송비 빼고 비교" />
+              </View>
               <Btn label="저장" busy={busy} onPress={save} style={{ marginTop: 14 }} />
             </> : <T size={13.5} style={{ marginTop: 6 }}>{w.conditions.label}</T>}
           </Section>

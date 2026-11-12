@@ -76,7 +76,10 @@ async function main() {
   ok('식별 결과는 운영자가 공개하기 전에는 앱에 보이지 않는다(“제품 식별 중”)');
   const tiers = [...html.matchAll(/name="tier_(\d+)"/g)].map(x => x[1]);
   assert.equal(tiers.length, 2);
-  assert.match(html, /value="match"\s+disabled/, '근거 주소 없는 후보는 MATCH 선택 불가');
+  // [리뷰 4] 서버 판정이 LIKELY 인 후보는 확인 근거 없이 MATCH로 공개할 수 없다
+  await assert.rejects(post(`/requests/${id}/find/publish`, { [`tier_${tiers[0]}`]: 'match', [`tier_${tiers[1]}`]: 'skip' }), /직접 확인한 상품 페이지 주소와 확인 사유/);
+  assert.equal((await api('GET', `/requests/${id}/find`)).j.state, 'pending');
+  ok('서버 판정 LIKELY 를 근거 없이 MATCH로 올리면 거부 — 결과도 공개되지 않음');
   await post(`/requests/${id}/find/publish`, Object.fromEntries(tiers.map(t => [`tier_${t}`, 'likely'])));
   let me = (await api('GET', '/me')).j;
   assert.equal(me.active.display.key, 'find_likely');
@@ -100,11 +103,22 @@ async function main() {
   ok(`다시 공개한 후보를 “이 옷이 맞아요” → 상품 #${conf.j.productId} 저장 · 찾아줘 “${conf.j.request.display.title}” · 7일 탐색 없이 기다려줘로`);
 
   // ── 기다려줘 ──
-  const w = await api('POST', '/watches', { productId: conf.j.productId, requestId: id, productUrl: 'mock://fixture/price-drop', size: 'M', color: '네이비', targetPrice: '150,000', condition: 'any' });
+  // [리뷰 3] 찾아줘 상품(테스트브랜드B 울 블루종 자켓)에 다른 상품 페이지(TESTBRAND 트랙 자켓)를 연결 → 가격·재고가 맞아도 알림 없음
+  const wrong = await api('POST', '/watches', { productId: conf.j.productId, requestId: id, productUrl: 'mock://fixture/sold-out', size: 'L', targetPrice: '300,000' });
+  assert.equal(wrong.status, 201, JSON.stringify(wrong.j));
+  await checkOnce(); await checkOnce();
+  const wr = (await api('GET', `/watches/${wrong.j.id}`)).j;
+  assert.equal(wr.display.key, 'mismatch'); assert.equal(wr.page.identity, 'mismatch'); assert.match(wr.page.note, /브랜드가 달라요/);
+  assert.equal((await api('GET', '/alerts')).j.filter((a: any) => a.kind === 'watch_met').length, 0);
+  assert.ok((await page('/')).includes(`W${wrong.j.id}`), '어드민 대기열 “기다려줘 확인 필요”');
+  ok(`찾아줘 상품에 다른 브랜드 상품 페이지를 연결 → “${wr.display.title}” · L 재고·가격이 맞아도 알림 0건`);
+  assert.equal((await api('POST', `/watches/${wrong.j.id}/end`)).j.status, 'ended');
+
+  const w = await api('POST', '/watches', { productUrl: 'mock://fixture/price-drop', size: 'M', color: '네이비', targetPrice: '150,000', condition: 'any' });
   assert.equal(w.status, 201, JSON.stringify(w.j));
-  assert.equal(w.j.status, 'active'); assert.ok(w.j.isMock); assert.equal(w.j.display.key, 'first');
+  assert.equal(w.j.status, 'active'); assert.ok(w.j.isMock); assert.equal(w.j.display.key, 'first'); assert.equal(w.j.page.identity, 'page_defined');
   const wid = w.j.id;
-  ok(`기다려줘 등록 W${wid} · 150,000원 이하 · M · 네이비 · 테스트 가격 소스(모의)`);
+  ok(`기다려줘 등록 W${wid}(상품 링크만) · 150,000원 이하(배송비 포함) · M · 네이비 · 테스트 가격 소스(모의)`);
   const totals: number[] = [];
   for (let i = 0; i < 3; i++) { await checkOnce(); totals.push((await api('GET', `/watches/${wid}`)).j.latest.total); }
   assert.deepEqual(totals, [223000, 193000, 148000]);
@@ -120,10 +134,24 @@ async function main() {
   assert.equal((await api('GET', `/watches/${wid}`)).j.history.length, 4);
   ok('같은 조건이 계속 맞아도 알림은 다시 보내지 않는다(중복 방지) · 이력 4건');
 
+  // [리뷰 1] 배송비가 없는 페이지 → “상품 가격은 충족, 배송비 미확인”, 운영자가 배송비를 확인한 뒤에만 조건 충족
+  const ship = await api('POST', '/watches', { productUrl: 'mock://fixture/unknown-shipping', size: 'M', color: '블랙', targetPrice: '101,000' });
+  await checkOnce();
+  let sv = (await api('GET', `/watches/${ship.j.id}`)).j;
+  assert.equal(sv.display.title, '상품 가격은 충족, 배송비 미확인');
+  assert.equal((await api('GET', '/alerts')).j.filter((a: any) => a.kind === 'watch_met').length, 1, '배송비 미확인으로는 알림 없음');
+  assert.ok((await page('/watches')).includes('배송비 확인'));
+  await post(`/watches/${ship.j.id}/shipping`, { fee: '3000' });
+  sv = (await api('GET', `/watches/${ship.j.id}`)).j;
+  assert.equal(sv.display.key, 'met');
+  assert.match((await api('GET', '/alerts')).j[0].body, /배송비 포함 총 101,000원/);
+  ok('배송비 미확인 → 알림 없이 “상품 가격은 충족, 배송비 미확인” → 운영자가 배송비 3,000원 확인 → 총 101,000원으로 조건 충족 알림');
+  assert.equal((await api('POST', `/watches/${ship.j.id}/end`)).j.status, 'ended');
+
   // 내가 찾는 옷 — 찾아줘 + 기다려줘 한 목록
   me = (await api('GET', '/me')).j;
-  assert.deepEqual(me.items.map((x: any) => x.kind).sort(), ['find', 'watch']);
-  assert.equal(me.items.find((x: any) => x.kind === 'watch').stateLabel, '조건 충족');
+  assert.ok(me.items.some((x: any) => x.kind === 'find') && me.items.some((x: any) => x.kind === 'watch'));
+  assert.equal(me.items.find((x: any) => x.kind === 'watch' && x.id === wid).stateLabel, '조건 충족');
   assert.deepEqual(me.watchLimit, { max: 3, used: 1 });
   ok(`내가 찾는 옷: ${me.items.map((x: any) => `${x.kind === 'find' ? '찾아줘' : '기다려줘'}·${x.stateLabel}`).join(' / ')}`);
 
@@ -158,7 +186,7 @@ async function main() {
   assert.equal((db2.prepare(`SELECT status FROM price_checks WHERE slot='crash-slot'`).get() as any).status, 'done');
   db2.close();
   assert.equal((await api('GET', `/watches/${wid}`)).j.status, 'active');
-  assert.equal((await api('GET', '/alerts')).j.filter((a: any) => a.kind === 'watch_met').length, 1);
+  assert.equal((await api('GET', '/alerts')).j.filter((a: any) => a.kind === 'watch_met' && a.link === `walf://watch/${wid}`).length, 1);
   ok('서버 재시작 → 끊긴 가격 확인을 다시 대기열에 넣어 끝냄 · 상태 유지 · 알림 중복 없음');
 
   // ── DISCOVER(다른 기기) ──

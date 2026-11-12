@@ -38,7 +38,7 @@ npm start                 # http://localhost:4300 , 어드민 http://localhost:4
 테스트:
 
 ```bash
-npm test        # 상태 규칙 · AI 작업 순서 · Claude 요청 형식(로컬 가짜 API) · V2(찾아줘·기다려줘·비용·가격 소스·마이그레이션) 단위 테스트 75개
+npm test        # 상태 규칙 · AI 작업 순서 · Claude 요청 형식(로컬 가짜 API) · V2(찾아줘·기다려줘·비용·가격 소스·마이그레이션) 단위 테스트 84개
 npm run e2e     # ① BADBLOOD 7일 수배 HTTP 전 구간 ② V2 찾아줘→기다려줘(테스트 가격 220,000→190,000→145,000)·서버 재시작 — 모두 임시 DB·모의
 ```
 

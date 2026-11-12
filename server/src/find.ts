@@ -4,7 +4,7 @@ import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now, kWhen } from './time.ts';
-import { curate, requestStyle, styleWords, upsertProduct, type Curated } from './catalog.ts';
+import { curate, requestStyle, styleWords, upsertProduct, SIMILAR_PRODUCTS, type Curated } from './catalog.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -41,7 +41,7 @@ export function findDraft(db: DB, requestId: number) {
 }
 
 export type PublishInput = {
-  items: { aiIdentityId: number; tier: 'match' | 'likely' | 'skip'; brand?: string; name?: string }[];
+  items: { aiIdentityId: number; tier: 'match' | 'likely' | 'skip'; brand?: string; name?: string; verifyReason?: string; verifyUrl?: string }[];
   discover: { brandKey: string; scope?: string }[];
 };
 /** 운영자가 고른 결과를 사용자에게 공개한다. 이전에 공개한 결과는 내린다 */
@@ -64,19 +64,38 @@ export function publishFind(db: DB, requestId: number, input: PublishInput, oper
     items.forEach((x, i) => {
       const a = draft.identities.find(v => v.id === Number(x.aiIdentityId));
       if (!a) throw new HttpError(400, 'bad_identity', '이 의뢰의 AI 제안이 아니에요.');
-      // MATCH 는 근거 주소가 있어야 한다 — 확인하지 않은 것을 확인했다고 보여 주지 않는다
-      if (x.tier === 'match' && !a.refs.length) throw new HttpError(400, 'match_needs_evidence', 'MATCH로 공개하려면 확인한 근거 주소가 있어야 해요. LIKELY로 공개하세요.');
-      ins.run(requestId, a.id, x.tier, i + 1, (x.brand ?? a.brand) || null, (x.name || '').trim() || a.name, a.model_code || null, a.season || null, a.color || null, a.category || null,
-        json(a.matched), json(a.uncertain), json(a.refs), json(a.reasons), 'published', operator, mock ? 1 : 0, t);
+      const v = x.tier === 'match' ? matchCheck(a, x) : null;
+      const evidence = v?.url ? [v.url, ...a.refs.filter((u: string) => u !== v.url)] : a.refs;
+      const matched = v?.reason ? [`왈프 팀 확인: ${v.reason}`, ...a.matched] : a.matched;
+      const id = Number(ins.run(requestId, a.id, x.tier, i + 1, (x.brand ?? a.brand) || null, (x.name || '').trim() || a.name, a.model_code || null, a.season || null, a.color || null, a.category || null,
+        json(matched), json(a.uncertain), json(evidence), json(a.reasons), 'published', operator, mock ? 1 : 0, t).lastInsertRowid);
+      if (v?.reason) db.prepare('UPDATE product_identities SET verify_reason=?, verify_url=? WHERE id=?').run(v.reason, v.url, id);
     });
     disc.forEach((c, i) => ins.run(requestId, null, 'discover', i + 1, c.brand, c.scope ? `${c.brand} ${c.scope}` : c.brand, null, null, null, null,
       json(c.reasons), json([]), json(c.sources), json([`스타일 근거: ${c.status === 'verified' ? '왈프 팀 확인' : c.status === 'fixture' ? '테스트 데이터' : '출처 있음 · 검수 전'}`]), 'published', operator, mock ? 1 : 0, t));
-    D.log(db, requestId, 'team', 'find_ready', '찾아줘 결과', hasMatch ? '같은 옷을 확인했어요 · 결과를 확인해 주세요' : items.length ? `유력 후보 ${items.length}개를 골랐어요` : '같은 옷은 못 찾았어요 · 비슷한 스타일을 골랐어요', { operator, isMock: mock });
+    D.log(db, requestId, 'team', 'find_ready', '찾아줘 결과', hasMatch ? '같은 옷을 확인했어요 · 결과를 확인해 주세요' : items.length ? `유력 후보 ${items.length}개를 골랐어요` : '같은 옷은 못 찾았어요 · 비슷한 스타일의 브랜드를 골랐어요', { operator, isMock: mock });
   });
-  D.notify(db, r, 'find_ready', hasMatch ? '같은 옷을 찾았어요' : items.length ? '이 옷일 가능성이 높아요' : '비슷한 옷을 골라봤어요',
-    hasMatch ? '맞는지 확인하고, 매물을 찾을지 가격을 기다릴지 골라 주세요.' : items.length ? '후보를 확인해 주세요. 확인되지 않은 부분도 함께 적었어요.' : '같은 상품은 아직 못 찾았어요. 대신 비슷한 스타일을 골라 뒀어요.',
+  D.notify(db, r, 'find_ready', hasMatch ? '같은 옷을 찾았어요' : items.length ? '이 옷일 가능성이 높아요' : '비슷한 스타일의 브랜드를 골라봤어요',
+    hasMatch ? '맞는지 확인하고, 매물을 찾을지 가격을 기다릴지 골라 주세요.' : items.length ? '후보를 확인해 주세요. 확인되지 않은 부분도 함께 적었어요.' : '같은 상품은 아직 못 찾았어요. 대신 비슷한 스타일의 브랜드를 골라 뒀어요(판매 상품 추천은 아직 없어요).',
     `walf://find/${requestId}`, { isMock: mock, dedupeKey: `find:${requestId}:${t}` });
 }
+
+const norm = (s: unknown) => String(s ?? '').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, '');
+/**
+ * MATCH 로 공개해도 되는지. 단순히 근거 주소가 있다고 같은 상품이 확인된 것은 아니다.
+ * - 서버 판정(tierOf)이 MATCH 이고 운영자가 브랜드·상품명을 고치지 않았으면 그대로 MATCH(AI가 실제로 본 근거 주소 필수).
+ * - 그 밖(LIKELY·숨김을 MATCH로 올림, 또는 이름·브랜드를 고침)은 운영자가 직접 확인한 상품 페이지 주소와 확인 사유가 있어야 한다.
+ */
+function matchCheck(a: Row, x: PublishInput['items'][number]) {
+  const edited = (x.name != null && x.name.trim() !== '' && norm(x.name) !== norm(identityName(a))) || (x.brand != null && norm(x.brand) !== norm(a.brand));
+  if (a.tier === 'match' && !edited) return null;
+  const reason = String(x.verifyReason ?? '').trim().slice(0, 300);
+  const url = String(x.verifyUrl ?? '').trim().slice(0, 1000);
+  if (reason.length < 10 || !/^https?:\/\//i.test(url))
+    throw new HttpError(400, 'match_needs_verification', `${a.tier !== 'match' ? `서버 판정이 ${a.tier === 'likely' ? 'LIKELY' : '숨김(신뢰도 낮음)'}이에요` : '브랜드·상품명을 고쳤어요'}. MATCH로 공개하려면 직접 확인한 상품 페이지 주소와 확인 사유(10자 이상: 무엇이 같은지)를 적어 주세요. 아니면 LIKELY로 공개하세요.`);
+  return { reason, url };
+}
+const identityName = (a: Row) => a.color && !String(a.name).includes(a.color) ? `${a.name} ${a.color}` : a.name;
 
 /** 앱 화면용 — 공개된 결과만 */
 export function findView(db: DB, r: Row) {
@@ -95,13 +114,16 @@ export function findView(db: DB, r: Row) {
     match: rows.filter(x => x.tier === 'match').map(item)[0] || null,
     likely: rows.filter(x => x.tier === 'likely').map(item),
     discover: rows.filter(x => x.tier === 'discover').map(item),
+    // DISCOVER 는 브랜드 단위 스타일 추천이다. 판매 중인 비슷한 상품 큐레이션은 아직 없다(catalog.ts SIMILAR_PRODUCTS)
+    discoverKind: 'brand' as const, similarProducts: { status: SIMILAR_PRODUCTS.status, items: [] as unknown[] },
     styleWords: style, productId: r.product_id ?? null, canHunt: r.status === 'submitted', isMock: rows.some(x => x.is_mock) || !!r.is_mock,
   };
 }
 const splitAttr = (s: string) => { const m = s.match(/^([^:：]{1,12})\s*[:：]\s*(.+)$/); return m ? { label: m[1].trim(), text: m[2].trim() } : { label: '', text: s }; };
 
 /**
- * 사용자가 “이 옷이 맞아요”: 상품으로 저장한다. next=hunt 면 7일 탐색을 시작한다(운영자가 이미 검수해 공개한 결과라서).
+ * 사용자가 “이 옷이 맞아요”: 상품으로 저장한다. 근거 주소(블로그·리뷰일 수 있음)는 구매 페이지가 아니라서 상품 주소로 저장하지 않는다
+ * — 기다려줘는 사용자·운영자가 따로 준 상품 페이지만 본다. next=hunt 면 7일 탐색을 시작한다(운영자가 이미 검수해 공개한 결과라서).
  * MATCH 만 상품을 “확인됨”으로 저장한다. LIKELY 를 고르면 사용자 확인일 뿐 확인된 상품은 아니다.
  */
 export function confirmFind(db: DB, userId: number, requestId: number, identityId: number, next: 'hunt' | 'watch' | 'save') {
@@ -113,7 +135,7 @@ export function confirmFind(db: DB, userId: number, requestId: number, identityI
   let productId = 0;
   tx(db, () => {
     productId = upsertProduct(db, { brand: x.brand, name: x.name, modelCode: x.model_code, season: x.season, color: x.color || r.color, category: x.category,
-      url: parse(x.evidence)[0] || null, verified: x.tier === 'match', source: x.tier === 'match' ? 'operator' : 'user', isMock: !!x.is_mock || !!r.is_mock });
+      url: null, verified: x.tier === 'match', source: x.tier === 'match' ? 'operator' : 'user', isMock: !!x.is_mock || !!r.is_mock });
     db.prepare(`UPDATE product_identities SET status='confirmed', product_id=?, decided_at=? WHERE id=?`).run(productId, t, x.id);
     db.prepare(`UPDATE requests SET product_id=?, updated_at=? WHERE id=?`).run(productId, t, requestId);
     D.log(db, requestId, 'user', 'find_confirmed', '이 옷이 맞아요', `${[x.brand, x.name].filter(Boolean).join(' ')}${x.tier === 'likely' ? ' · 유력 후보를 골랐어요' : ''}`, { isMock: !!x.is_mock || !!r.is_mock });

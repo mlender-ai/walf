@@ -4,7 +4,7 @@ import { openDb } from '../src/db.ts';
 import * as D from '../src/domain.ts';
 import * as A from '../src/aijobs.ts';
 import * as F from '../src/find.ts';
-import { curate, loadBrandSeed, normSize, sameColor, colorsIn } from '../src/catalog.ts';
+import { curate, loadBrandSeed, normSize, sameColor, colorsIn, upsertProduct } from '../src/catalog.ts';
 import { mockProvider, cleanIdentify } from '../src/ai.ts';
 import { setClock } from '../src/time.ts';
 
@@ -65,7 +65,8 @@ test('LIKELY: 확인 못 한 부분을 보여 주고, 사용자가 골라도 “
   const { db, u, id } = await setup('[테스트:유력]');
   const draft = F.findDraft(db, id);
   assert.deepEqual(draft.identities.map(x => x.tier), ['likely', 'likely']);
-  assert.throws(() => F.publishFind(db, id, { items: [{ aiIdentityId: draft.identities[0].id, tier: 'match' }], discover: [] }, '운영자'), (e: any) => e.code === 'match_needs_evidence');
+  assert.throws(() => F.publishFind(db, id, { items: [{ aiIdentityId: draft.identities[0].id, tier: 'match' }], discover: [] }, '운영자'), (e: any) => e.code === 'match_needs_verification',
+    '서버 판정이 LIKELY 인 후보는 근거 없이 MATCH로 올릴 수 없다');
   F.publishFind(db, id, { items: draft.identities.map(x => ({ aiIdentityId: x.id, tier: 'likely' as const })), discover: [] }, '운영자');
   assert.equal(D.display(db, D.getRequest(db, id)).key, 'find_likely');
   const v = F.findView(db, D.getRequest(db, id));
@@ -81,6 +82,48 @@ test('LIKELY: 확인 못 한 부분을 보여 주고, 사용자가 골라도 “
   assert.equal(D.getRequest(db, id).status, 'completed', '기다려줘로 가면 7일은 시작하지 않고 찾아줘는 “찾음”으로 끝난다');
   assert.equal(D.display(db, D.getRequest(db, id)).key, 'find_done');
   assert.equal((db.prepare('SELECT verified FROM products WHERE id=?').get(productId) as any).verified, 0);
+});
+
+test('[리뷰 4] MATCH 승격: 서버 판정 상한을 넘거나 이름을 고치면 직접 확인한 페이지 주소와 사유가 있어야 한다', async () => {
+  const { db, id } = await setup('[테스트:정확]');
+  const a = F.findDraft(db, id).identities[0];
+  assert.equal(a.tier, 'match');
+  // 서버 판정 MATCH 라도 운영자가 상품명을 고치면 근거와 같은 상품인지 다시 확인해야 한다
+  assert.throws(() => F.publishFind(db, id, { items: [{ aiIdentityId: a.id, tier: 'match', name: 'Mystic Nylon Track Jacket Black' }], discover: [] }, '운영자'), (e: any) => e.code === 'match_needs_verification');
+  assert.throws(() => F.publishFind(db, id, { items: [{ aiIdentityId: a.id, tier: 'match', name: 'Mystic Nylon Track Jacket Black', verifyUrl: 'https://badblood.co.kr/p/1', verifyReason: '짧음' }], discover: [] }, '운영자'),
+    (e: any) => e.code === 'match_needs_verification', '사유가 너무 짧으면 거부');
+  F.publishFind(db, id, { items: [{ aiIdentityId: a.id, tier: 'match', name: 'Mystic Nylon Track Jacket Black', verifyUrl: 'https://badblood.co.kr/p/2', verifyReason: '품번 W-JKT26-056 블랙 페이지와 로고·절개선이 같음' }], discover: [] }, '운영자');
+  const row = db.prepare(`SELECT * FROM product_identities WHERE request_id=? AND status='published'`).get(id) as any;
+  assert.equal(row.verify_url, 'https://badblood.co.kr/p/2');
+  const v = F.findView(db, D.getRequest(db, id));
+  assert.equal(v.match!.evidence[0].url, 'https://badblood.co.kr/p/2', '운영자가 확인한 페이지가 첫 근거');
+  assert.match(v.match!.matched[0].text, /품번 W-JKT26-056/);
+});
+
+test('[리뷰 4] 숨김(신뢰도 낮음) 후보도 확인 근거 없이는 MATCH로 올릴 수 없다', async () => {
+  const { db, id } = await setup('[테스트:유사]');
+  const a = F.findDraft(db, id).identities[0];
+  assert.equal(a.tier, 'hidden');
+  assert.throws(() => F.publishFind(db, id, { items: [{ aiIdentityId: a.id, tier: 'match' }], discover: [] }, '운영자'), (e: any) => e.code === 'match_needs_verification');
+});
+
+test('[품질] 상품 열쇠: 이름이 같아도 품번·시즌이 다르면 다른 상품, 품번이 같으면 같은 상품', () => {
+  setClock(T0);
+  const db = openDb(':memory:');
+  const p1 = upsertProduct(db, { brand: 'BADBLOOD', name: 'Mystic Nylon Track Jacket', modelCode: 'W-JKT26-055', source: 'operator' });
+  const p2 = upsertProduct(db, { brand: 'BADBLOOD', name: 'Mystic Nylon Track Jacket', modelCode: 'W-JKT26-054', source: 'operator' });
+  const p3 = upsertProduct(db, { brand: 'badblood', name: 'Mystic  Nylon Track Jacket', modelCode: 'w jkt26 055', source: 'user' });
+  const p4 = upsertProduct(db, { brand: 'BADBLOOD', name: 'Mystic Nylon Track Jacket', source: 'user' });
+  const p5 = upsertProduct(db, { brand: 'BADBLOOD', name: 'Mystic Nylon Track Jacket', modelCode: 'W-JKT26-055', season: '2025FW', source: 'user' });
+  assert.notEqual(p1, p2); assert.equal(p1, p3); assert.notEqual(p1, p4, '이름만 아는 상품과 품번 있는 상품은 합치지 않는다'); assert.notEqual(p1, p5);
+});
+
+test('[품질] DISCOVER 는 브랜드 단위 추천이고, 판매 상품 큐레이션은 아직 연결 전이다', async () => {
+  const { db, id } = await setup('[테스트:유사]');
+  const v = F.findView(db, D.getRequest(db, id));
+  assert.equal(v.discoverKind, 'brand');
+  assert.equal(v.similarProducts.status, 'PENDING_INTEGRATION');
+  assert.deepEqual(v.similarProducts.items, []);
 });
 
 test('DISCOVER: 같은 옷을 못 찾으면 스타일이 2가지 이상 겹치는 브랜드만 고르고, “같은 상품 아님”으로 공개한다', async () => {

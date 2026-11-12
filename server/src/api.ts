@@ -112,7 +112,7 @@ export function userApi(db: DB, cfg: Cfg) {
     try {
       const b = req.body || {};
       const id = W.createWatch(db, uid(req), { productName: b.productName, productUrl: b.productUrl, brand: b.brand, size: b.size, color: b.color, targetPrice: b.targetPrice,
-        condition: b.condition, photo: req.file?.filename || null, productId: b.productId ? Number(b.productId) : null, requestId: b.requestId ? Number(b.requestId) : null }, cfg.policy);
+        condition: b.condition, priceBasis: b.priceBasis, photo: req.file?.filename || null, productId: b.productId ? Number(b.productId) : null, requestId: b.requestId ? Number(b.requestId) : null }, cfg.policy);
       res.status(201).json(watchOut(req, id));
     } catch (e) { removeUpload(cfg.uploads, req.file); throw e; }
   });

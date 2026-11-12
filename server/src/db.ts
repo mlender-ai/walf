@@ -321,6 +321,15 @@ export function openDb(file: string, opts: OpenOpts = {}): DB {
   add('ai_identities', 'model_code', 'TEXT');
   add('ai_identities', 'matched', 'TEXT');
   add('ai_identities', 'uncertain', 'TEXT');
+  // PR #1 리뷰 반영
+  add('watches', 'price_basis', `TEXT NOT NULL DEFAULT 'total'`);   // total(상품가+배송비) | item(사용자가 “배송비 제외”를 고름)
+  add('watches', 'page_identity', `TEXT NOT NULL DEFAULT 'pending'`); // 이 상품 페이지가 등록한 옷인지: pending | page_defined | matched | operator_confirmed | unverified | mismatch
+  add('watches', 'identity_note', 'TEXT');
+  add('listings', 'shipping_fee', 'INTEGER');  // 운영자가 확인한 배송비(페이지에 없을 때)
+  add('listings', 'shipping_by', 'TEXT');
+  add('listings', 'shipping_at', 'INTEGER');
+  add('product_identities', 'verify_reason', 'TEXT'); // 운영자가 MATCH로 올린 근거(서버 판정이 MATCH가 아니거나 이름을 고쳤을 때 필수)
+  add('product_identities', 'verify_url', 'TEXT');
   // 같은 알림을 두 번 만들지 않는다(서버 재시작·동시 실행에도) — 열쇠가 있는 알림만
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_noti_dedupe ON notifications(user_id, dedupe_key) WHERE dedupe_key IS NOT NULL');
   if (version < 2) backfillProducts(db);
@@ -347,11 +356,14 @@ function backfillProducts(db: DB) {
   });
 }
 
-/** 같은 상품인지 비교할 열쇠 — 브랜드·모델명을 소문자로, 기호·여러 칸 띄어쓰기를 정리한다 */
-export function productKey(brand: string | null | undefined, name: string | null | undefined) {
+/**
+ * 같은 상품인지 비교할 열쇠. 상품(Product) = 브랜드 + 모델명 + (알면) 품번 + (알면) 시즌. 색상·사이즈는 상품이 아니라 변형(product_variants)이다.
+ * 품번·시즌을 아는 상품은 이름이 같아도 품번·시즌이 다르면 다른 줄, 이름만 아는 상품과도 합치지 않는다(다른 시즌·품번이 섞이지 않게).
+ */
+export function productKey(brand: string | null | undefined, name: string | null | undefined, code?: string | null, season?: string | null) {
   const n = (s: string | null | undefined) => String(s || '').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
-  const b = n(brand), m = n(name);
-  return `${b}|${b && m.startsWith(b + ' ') ? m.slice(b.length + 1) : m}`;
+  const b = n(brand), m = n(name), c = n(code).replace(/\s+/g, ''), s = n(season).replace(/\s+/g, '');
+  return `${b}|${b && m.startsWith(b + ' ') ? m.slice(b.length + 1) : m}${c ? `#${c}` : ''}${s ? `@${s}` : ''}`;
 }
 
 export function getSetting(db: DB, key: string): string | null {

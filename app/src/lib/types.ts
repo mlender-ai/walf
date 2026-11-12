@@ -43,7 +43,9 @@ export type Attr = { label: string; text: string };
 export type FindItem = { id: number; tier: 'match' | 'likely' | 'discover'; brand: string | null; name: string; modelCode: string | null; season: string | null; color: string | null; category: string | null;
   matched: Attr[]; uncertain: Attr[]; evidence: { url: string; host: string }[]; note: string | null; confirmed: boolean; isMock: boolean };
 export type FindView = { requestId: number; status: string; state: 'pending' | 'ready' | 'confirmed'; publishedLabel: string | null; match: FindItem | null; likely: FindItem[]; discover: FindItem[];
-  styleWords: string[]; productId: number | null; canHunt: boolean; isMock: boolean };
+  styleWords: string[]; productId: number | null; canHunt: boolean; isMock: boolean;
+  /** DISCOVER 는 브랜드 단위 추천. 판매 중인 비슷한 상품 큐레이션은 아직 연결 전(PENDING_INTEGRATION) */
+  discoverKind: 'brand'; similarProducts: { status: string; items: unknown[] } };
 
 export type WatchDisplay = { key: string; label: string; title: string; desc: string; eyebrow?: string; notice?: string; isMock: boolean };
 export type PricePoint = { at: number; label: string; ok: boolean; error: string | null; price: number | null; shipping: number | null; shippingKnown: boolean; total: number | null;
@@ -51,7 +53,9 @@ export type PricePoint = { at: number; label: string; ok: boolean; error: string
 export type WatchView = {
   id: number; status: 'needs_info' | 'active' | 'paused' | 'renew_due' | 'ended'; isMock: boolean; display: WatchDisplay;
   product: { title: string; brand: string | null; url: string | null; photoUrl: string | null; pageTitle: string | null; seller: string | null; productId: number | null };
-  conditions: { size: string | null; color: string | null; targetPrice: number; condition: 'new' | 'any'; label: string };
+  conditions: { size: string | null; color: string | null; targetPrice: number; condition: 'new' | 'any'; priceBasis: 'total' | 'item'; label: string };
+  /** 이 상품 페이지가 등록한 옷인지 — ok 일 때만 조건 충족 알림이 갈 수 있다 */
+  page: { identity: string; ok: boolean; note: string | null };
   source: { id: string; label: string; status: string; reason: string } | null;
   latest: PricePoint | null; history: PricePoint[];
   events: { id: number; at: number; label: string; clock: string; actor: string; kind: string; title: string; detail: string | null; isMock: boolean }[];

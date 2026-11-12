@@ -22,7 +22,7 @@ export default function NewWatch() {
   const { refresh } = useStore();
   const fromFind = !!p.productId;
   const [url, setUrl] = useState(''); const [name, setName] = useState(p.title || ''); const [brand, setBrand] = useState(p.brand || '');
-  const [price, setPrice] = useState(''); const [size, setSize] = useState(''); const [color, setColor] = useState(''); const [newOnly, setNewOnly] = useState(false);
+  const [price, setPrice] = useState(''); const [size, setSize] = useState(''); const [color, setColor] = useState(''); const [newOnly, setNewOnly] = useState(false); const [itemOnly, setItemOnly] = useState(false);
   const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const can = !!(url.trim() || name.trim()) && !!price.replace(/[^\d]/g, '');
@@ -39,7 +39,7 @@ export default function NewWatch() {
   const submit = async () => {
     setErr(''); setBusy(true);
     const fields: Record<string, string> = { productName: name.trim(), productUrl: url.trim(), brand: brand.trim(), size: size.trim(), color: color.trim(),
-      targetPrice: price.replace(/[^\d]/g, ''), condition: newOnly ? 'new' : 'any', productId: p.productId || '', requestId: p.requestId || '' };
+      targetPrice: price.replace(/[^\d]/g, ''), condition: newOnly ? 'new' : 'any', priceBasis: itemOnly ? 'item' : 'total', productId: p.productId || '', requestId: p.requestId || '' };
     try {
       let w: WatchView;
       if (photo) {
@@ -72,14 +72,18 @@ export default function NewWatch() {
               <T size={15} w={700}>{p.title}</T>
             </View>
           ) : null}
-          <Field label={fromFind ? '상품 링크(있으면 바로 지켜봐요)' : '상품 링크'} defaultValue="" onChangeText={setUrl} placeholder="공식몰 등 상품 페이지 https://" autoCapitalize="none" autoCorrect={false} keyboardType="url"
-            hint="공식몰 같은 상품 페이지는 바로 지켜봐요. 번개장터·무신사 등 자동 수집을 금지한 곳은 왈프 팀이 확인해요." />
+          <Field label={fromFind ? '살 수 있는 상품 페이지 링크(있으면 바로 지켜봐요)' : '상품 링크'} defaultValue="" onChangeText={setUrl} placeholder="공식몰 등 상품 페이지 https://" autoCapitalize="none" autoCorrect={false} keyboardType="url"
+            hint={fromFind ? '찾아줘 근거 페이지는 판매 페이지가 아닐 수 있어 가져오지 않아요. 링크가 없으면 왈프 팀이 찾아 연결해요.' : '공식몰 같은 상품 페이지는 바로 지켜봐요. 번개장터·무신사 등 자동 수집을 금지한 곳은 왈프 팀이 확인해요.'} />
           {fromFind ? null : <>
             <Field label="상품명" defaultValue={p.title || ''} onChangeText={setName} placeholder="예: BADBLOOD Mystic Nylon Track Jacket Navy" maxLength={120} />
             <Field label="브랜드 (선택)" defaultValue={p.brand || ''} onChangeText={setBrand} placeholder="예: BADBLOOD" maxLength={60} />
           </>}
           <Field label="원하는 가격" value={price} onChangeText={v => setPrice(fmt(v))} placeholder="예: 150,000" keyboardType="number-pad" suffix="원 이하"
-            hint="배송비를 확인할 수 있으면 더해서 비교해요. 쿠폰·회원가는 조건을 몰라 따로 표시해요." />
+            hint={itemOnly ? '상품 가격만 비교해요. 배송비는 따로 들 수 있어요.' : '상품 가격과 배송비를 더한 금액으로 비교해요. 배송비를 모르면 확인될 때까지 알리지 않아요. 쿠폰·회원가는 조건을 몰라 쓰지 않아요.'} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
+            <View style={{ flex: 1 }}><T size={14} w={600}>배송비 빼고 비교</T><T size={12} color={C.gray500}>켜면 상품 가격만 원하는 가격과 비교해요</T></View>
+            <Switch value={itemOnly} onValueChange={setItemOnly} trackColor={{ true: C.black, false: C.gray300 }} accessibilityLabel="배송비 빼고 비교" />
+          </View>
 
           <T size={13} w={700} style={{ marginTop: 18 }}>사이즈 (선택)</T>
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
