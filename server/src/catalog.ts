@@ -101,7 +101,7 @@ export function cleanStyle(raw: any): Style {
   return out;
 }
 
-export type BrandSeed = { name: string; ko?: string[]; country?: string; official_site?: string; tags: { kind: string; value: string; source_url?: string; basis?: string; scope?: string }[] };
+export type BrandSeed = { name: string; ko?: string[] | string; country?: string; official_site?: string; tags: { kind: string; value: string; source_url?: string; basis?: string; scope?: string }[] };
 
 /** seed 파일을 넣는다(없는 줄만). 출처가 없는 태그는 버린다. 이미 운영자가 확인한 값은 건드리지 않는다 */
 export function loadBrandSeed(db: DB, seeds: BrandSeed[], status: 'sourced' | 'fixture' = 'sourced') {
@@ -112,7 +112,7 @@ export function loadBrandSeed(db: DB, seeds: BrandSeed[], status: 'sourced' | 'f
     for (const b of seeds) {
       const key = brandKey(b.name);
       if (!key) continue;
-      insB.run(key, b.name, JSON.stringify(b.ko || []), b.country || null, b.official_site || null, status);
+      insB.run(key, b.name, JSON.stringify(Array.isArray(b.ko) ? b.ko : b.ko ? [b.ko] : []), b.country || null, b.official_site || null, status);
       for (const t of b.tags || []) {
         if (!(STYLE_KINDS as readonly string[]).includes(t.kind) || !t.value) continue;
         if (status === 'sourced' && !t.source_url) continue; // 출처 없는 매핑은 넣지 않는다

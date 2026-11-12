@@ -1,0 +1,2251 @@
+[
+  {
+    "name": "FAR FROM WHAT",
+    "ko": "파프롬왓",
+    "ko_source": "https://farfromwhat.com",
+    "country": "South Korea",
+    "official_site": "farfromwhat.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.musinsa.com/content/cms/4788",
+        "basis": "22FW news: washed logo hoodie gives a free-spirited street mood",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "zip",
+        "source_url": "https://www.musinsa.com/content/cms/9655",
+        "basis": "Editor: signature details built from zippers, pockets and embroidery",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "utility-pockets",
+        "source_url": "https://www.musinsa.com/content/cms/9655",
+        "basis": "Highlights big 3D pocket details, e.g. military pocket pullover, sweatpants",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "washed",
+        "source_url": "https://www.musinsa.com/content/cms/4788",
+        "basis": "22FW: key hoodie gets aged look via washing; vintage mood",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "earth-tone",
+        "source_url": "https://www.musinsa.com/content/cms/9655",
+        "basis": "Items shaped by colors of nature; designer draws palettes from nature",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "denim",
+        "source_url": "https://farfromwhat.com/product/far-raw-texture-denim-deep-indigo/545/",
+        "basis": "Own store: raw Japanese selvedge denim jeans, wide straight cut",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://farfromwhat.com/product/list.html?cate_no=47",
+        "basis": "Own store OUTER range: bombers, trucker, leather and wool zip jackets",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Seoul brand run by WAVE AREA COMPANY, CEO Song Seongho (official footer); Instagram @far.archive; Musinsa interview (Dec 2023) says brand had run 5+ years."
+  },
+  {
+    "name": "thisisneverthat",
+    "ko": "디스이즈네버댓",
+    "ko_source": "https://thisisneverthat.com",
+    "country": "South Korea",
+    "official_site": "thisisneverthat.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.highsnobiety.com/p/thisisneverthat-campaign/",
+        "basis": "Calls it a Seoul-based, Reddit-adored streetwear label",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "oversized",
+        "source_url": "https://hypebeast.com/2022/8/thisisneverthat-fall-winter-2022-collection-lookbook-info",
+        "basis": "FW22 stays true to its signature oversized '90s styling",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "graphics",
+        "source_url": "https://www.highsnobiety.com/p/best-korean-brands/",
+        "basis": "Describes thisisneverthat's collections as graphic-heavy",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.highsnobiety.com/p/thisisneverthat-campaign/",
+        "basis": "Campaign centers on weathergear puffers, an anorak, Pertex jackets, fleece vests",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://www.highsnobiety.com/p/thisisneverthat-campaign/",
+        "basis": "Campaign pieces include Pertex jackets and weathergear puffers",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 2010 by Jongkyu Choi, Nadan Cho and Inwook Park (Highsnobiety); official site calls it a contemporary fashion brand based out of Seoul. Site is JS-rendered, no about text readable."
+  },
+  {
+    "name": "ADER error",
+    "ko": "아더에러",
+    "ko_source": "https://adererror.com/kr",
+    "country": "South Korea",
+    "official_site": "adererror.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.highsnobiety.com/p/ader-error-interview/",
+        "basis": "Pairs brutalist-minimal lines with savvy street appeal; genderless, youthful",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://hypebae.com/2018/1/ader-error-korea-seoul-it-pop-up-hong-kong-interview",
+        "basis": "Brand says it reinterprets easily missed everyday things as 'a different minimalism'",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "oversized",
+        "source_url": "https://www.highsnobiety.com/p/ader-error-interview/",
+        "basis": "Lists oversized outerwear and voluminous trousers among its signature pieces",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://www.highsnobiety.com/p/best-korean-brands/",
+        "basis": "Known for oversized, reversible knitwear and reworked everyday garments",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "patchwork",
+        "source_url": "https://www.highsnobiety.com/p/ader-error-interview/",
+        "basis": "Cites quirky patchwork denim alongside colorful knitwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "deconstruction",
+        "source_url": "https://hypebeast.com/2023/9/ader-error-fall-winter-2023-oblique-hints-campaign-release-info",
+        "basis": "FW23 campaign: credits the label's deconstructed design methods",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "blue",
+        "source_url": "https://hypebeast.com/2023/9/ader-error-fall-winter-2023-oblique-hints-campaign-release-info",
+        "basis": "FW23: label's 'trademark blue hue' on nylon tracksuits, wool coats",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Seoul-based label first established in 2014 (Hypebae 2018); official store operated by FIVE SPACE CO., LTD, Seongdong-gu, Seoul."
+  },
+  {
+    "name": "Andersson Bell",
+    "ko": "앤더슨벨",
+    "ko_source": "https://anderssonbell.com",
+    "country": "South Korea",
+    "official_site": "anderssonbell.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://www.highsnobiety.com/p/best-korean-brands/",
+        "basis": "Minimalistic, Scandinavian look from a Korean angle with eclectic Korean touches",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "patchwork",
+        "source_url": "https://www.highsnobiety.com/p/andersson-bell-crocs-interview/",
+        "basis": "Label epitomized by pre-patchworked Levi's jeans and fringed hoodies",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "patchwork",
+        "source_url": "https://anderssonbell.com/product/list.html?cate_no=413",
+        "basis": "Own store jeans range includes several patchwork and trompe-l'oeil pairs",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "deconstruction",
+        "source_url": "https://hypebeast.com/2023/6/andersson-bell-ss24-spring-summer-2024-collection",
+        "basis": "SS24: deconstructed skirts; frayed jeans dissolving into cargo trousers",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "denim",
+        "source_url": "https://anderssonbell.com/product/list.html?cate_no=413",
+        "basis": "Own store jeans category lists ~29 denim styles (wide-leg, carpenter, biker)",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://anderssonbell.com/product/list.html?cate_no=412",
+        "basis": "Own store knits category is large: cardigans, cable, intarsia, heavy wool sweaters",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Launched in Seoul in 2014 (official About page, framed as Scandinavian style from a Korean perspective); creative director Dohun Kim (Highsnobiety/Hypebeast)."
+  },
+  {
+    "name": "POST ARCHIVE FACTION (PAF)",
+    "ko": "포스트 아카이브 팩션",
+    "ko_source": "https://www.musinsa.com/content/1373894782622798611",
+    "country": "South Korea",
+    "official_site": "postarchivefaction.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "techwear",
+        "source_url": "https://www.highsnobiety.com/p/best-korean-brands/",
+        "basis": "Calls PAF one of technical fashion's most uncompromising names",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "avant-garde",
+        "source_url": "https://hypebeast.com/2025/10/hb20-post-archive-faction-where-the-impossible-becomes-possible",
+        "basis": "Experimental silhouettes, modular constructions, utilitarian-meets-sci-fi sensibility",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "archive",
+        "source_url": "https://postarchivefaction.com",
+        "basis": "Brand line: creates timeless archives through evolving uniforms",
+        "confidence": "high"
+      },
+      {
+        "kind": "silhouette",
+        "value": "layered",
+        "source_url": "https://hypebeast.com/2025/10/hb20-post-archive-faction-where-the-impossible-becomes-possible",
+        "basis": "Often explores asymmetry, layering and technical fabrics",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://hypebeast.com/2025/10/hb20-post-archive-faction-where-the-impossible-becomes-possible",
+        "basis": "Often explores asymmetry, layering and technical fabrics",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "zip",
+        "source_url": "https://www.musinsa.com/content/1373894782622798611",
+        "basis": "Signature: asymmetric patterns, diagonal lines, zips in unexpected places",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.highsnobiety.com/p/best-korean-brands/",
+        "basis": "Singles out its puffer jackets among its standout work",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "black",
+        "source_url": "https://hypebeast.com/2023/7/finding-equilibrium-post-archive-faction-fashion-interview",
+        "basis": "Earlier collections mostly all-black with deep red/purple accents",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded in Seoul in 2018 by Dongjoon Lim (Hypebeast HB20); collections numbered by version (1.0, 2.0...) and split into right/center/left lines (Hypebeast, Musinsa)."
+  },
+  {
+    "name": "WOOYOUNGMI",
+    "ko": "우영미",
+    "ko_source": "https://wooyoungmi.com",
+    "country": "South Korea",
+    "official_site": "wooyoungmi.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://www.highsnobiety.com/p/best-korean-brands/",
+        "basis": "Highsnobiety: luxurious fabrics, sharp tailoring and architectural shapes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://hypebeast.com/2025/6/wooyoungmi-ss26-paris-fashion-week-collection",
+        "basis": "SS26 review: hourglass suiting reinterpreting classic formalwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://wooyoungmi.com",
+        "basis": "Official store lists coats, down and jackets under outerwear",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "shirts",
+        "source_url": "https://wooyoungmi.com",
+        "basis": "Official store tops include shirts",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://wooyoungmi.com",
+        "basis": "Official store tops include knitwear",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://wooyoungmi.com",
+        "basis": "Official store bottoms include pants and denim",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://wooyoungmi.com",
+        "basis": "Official store has a bags category",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://wooyoungmi.com",
+        "basis": "Official store has a shoes category",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Founder/CD Woo Young-mi; first South Korean label at Paris Men's Fashion Week, 2003 (Dazed). Official store operated by 주식회사 쏠리드 (also runs SOLID HOMME)."
+  },
+  {
+    "name": "JUUN.J",
+    "country": "South Korea",
+    "official_site": null,
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://hypebeast.com/2019/6/juun-j-paris-fashion-week-mens-spring-summer-2020-mens-collection-runway",
+        "basis": "SS20: reinterprets tailoring with exaggerated elements like padded shoulders",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "military",
+        "source_url": "https://www.dazeddigital.com/fashion/article/23360/1/juun-j-aw15",
+        "basis": "AW15 review: military recurs as inspiration time and time again",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "military",
+        "source_url": "https://news.samsungcnt.com/en/?p=22839",
+        "basis": "Owner's newsroom: FW22 details drawn from US Air Force CWU-8/P parkas",
+        "confidence": "high"
+      },
+      {
+        "kind": "silhouette",
+        "value": "oversized",
+        "source_url": "https://www.dazeddigital.com/fashion/article/23360/1/juun-j-aw15",
+        "basis": "AW15: combat trousers, parkas, pockets scaled up; MA-1 made oversized",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "boxy",
+        "source_url": "https://hypebeast.com/2019/6/juun-j-paris-fashion-week-mens-spring-summer-2020-mens-collection-runway",
+        "basis": "SS20: boxy silhouettes and oversized shoulders",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "leather",
+        "source_url": "https://hypebeast.com/2019/6/juun-j-paris-fashion-week-mens-spring-summer-2020-mens-collection-runway",
+        "basis": "SS20: black leather jumpsuits, motorbike-inspired trousers (collection-specific)",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "khaki",
+        "source_url": "https://www.dazeddigital.com/fashion/article/23360/1/juun-j-aw15",
+        "basis": "AW15 dominated by khaki; SS20 also khaki green and black",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Designer Jung Wook-jun; Paris debut 2007 (Highsnobiety). Samsung C&T Fashion Group brand sold via SSF Shop (Samsung C&T newsroom). juunj.com could not be confirmed (TLS cert served for samsungfashion.com), so official_site left null."
+  },
+  {
+    "name": "SOLID HOMME",
+    "ko": "솔리드옴므",
+    "ko_source": "https://www.solidhomme.com",
+    "country": "South Korea",
+    "official_site": "solidhomme.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://solidhomme.com/about.html",
+        "basis": "Official about: contemporary menswear known for quality and minimal design",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.solidhomme.com",
+        "basis": "Official store outerwear: coats, down, jackets",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "shirts",
+        "source_url": "https://www.solidhomme.com",
+        "basis": "Official store tops include shirts",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://www.solidhomme.com",
+        "basis": "Official store tops include knitwear",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://www.solidhomme.com",
+        "basis": "Official store bottoms include pants and denim",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.solidhomme.com",
+        "basis": "Official store has a shoes category",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Founded 1988 by Woo Young-mi (official about); Hypebeast calls it elevated casualwear with bold silhouettes."
+  },
+  {
+    "name": "SAN SAN GEAR",
+    "ko": "산산기어",
+    "ko_source": "https://www.sansangear.com",
+    "country": "South Korea",
+    "official_site": "sansangear.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "techwear",
+        "source_url": "https://hypebeast.com/2024/11/best-new-gorpcore-techwear-brands-fall-winter-2024",
+        "basis": "Featured among technical brands; early technical design rode the gorpcore rise",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "nylon",
+        "source_url": "https://hypebeast.com/2025/8/san-san-gear-fall-winter-2025-wayfinder-collection-lookbook-release-info",
+        "basis": "FW25 uses ripstop nylons",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://hypebeast.com/2025/8/san-san-gear-fall-winter-2025-wayfinder-collection-lookbook-release-info",
+        "basis": "FW25: weather-resistant fibers and insulated shell-fleece hybrids",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "utility-pockets",
+        "source_url": "https://hypebeast.com/2025/8/san-san-gear-fall-winter-2025-wayfinder-collection-lookbook-release-info",
+        "basis": "FW25: articulated cargo pants with multi-pocket systems",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "zip",
+        "source_url": "https://hypebeast.com/2025/8/san-san-gear-fall-winter-2025-wayfinder-collection-lookbook-release-info",
+        "basis": "FW25: modular jackets with zip-off components",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.sansangear.com",
+        "basis": "Official store OUTER: jackets and puffers",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://www.sansangear.com",
+        "basis": "Official store BOTTOM: pants and shorts",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://www.sansangear.com",
+        "basis": "Official store accessories include bags",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.sansangear.com",
+        "basis": "Official store accessories include shoes",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Founded 2019 by Sang-yeop Lee (Hypebeast). Official FW26 copy: sculptural form with concealed functionality."
+  },
+  {
+    "name": "MATIN KIM",
+    "ko": "마뗑킴",
+    "ko_source": "https://www.matinkim.com",
+    "country": "South Korea",
+    "official_site": "matinkim.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://hypebeast.com/2025/1/katseye-fronts-coach-x-matin-kim-campaign-with-new-streetwear-inspired-collection",
+        "basis": "Hypebeast calls it a Seoul-based functional street style label",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.dazeddigital.com/fashion/article/65782/1/coach-and-matin-kim-enlist-k-pop-idols-katseye-for-their-new-campaign",
+        "basis": "Dazed calls it a Seoul-based streetwear label with utilitarian ethics",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "washed",
+        "source_url": "https://hypebeast.com/2025/1/katseye-fronts-coach-x-matin-kim-campaign-with-new-streetwear-inspired-collection",
+        "basis": "Coach collab (Matin Kim side): raw hems, washed fabrics (collab-specific)",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "relaxed",
+        "source_url": "https://hypebeast.com/2025/1/katseye-fronts-coach-x-matin-kim-campaign-with-new-streetwear-inspired-collection",
+        "basis": "Coach collab (Matin Kim side): relaxed cuts (collab-specific)",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.matinkim.com",
+        "basis": "Official store has an Outerwears category",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://www.matinkim.com",
+        "basis": "Official store has a Bags category",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.matinkim.com",
+        "basis": "Official store has a Shoes category",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Musinsa brand page: Since 2015. Official about: trendy yet comfortable clothes for everyday life."
+  },
+  {
+    "name": "LOW CLASSIC",
+    "ko": "로우클래식",
+    "ko_source": "https://www.musinsa.com/brand/lowclassic",
+    "country": "South Korea",
+    "official_site": "lowclassic.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://www.lowclassic.com/page/info.html",
+        "basis": "Official: balances simplicity with intricate construction; timeless design",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "wool",
+        "source_url": "https://www.lowclassic.com/product/lw-list.html?cate_no=358",
+        "basis": "Own store lists wool coats and wool-blend pieces",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "cotton",
+        "source_url": "https://www.lowclassic.com/product/lw-list.html?cate_no=358",
+        "basis": "Own store lists washed cotton pants, jackets and skirts",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.lowclassic.com/product/lw-list.html?cate_no=358",
+        "basis": "Own store sub-categories: Outer, Jacket, Coat",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://www.lowclassic.com/product/lw-list.html?cate_no=358",
+        "basis": "Own store has a Knits sub-category",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://www.lowclassic.com/product/lw-list.html?cate_no=358",
+        "basis": "Own store has Pants and Denim sub-categories",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.lowclassic.com/product/lw-list.html?cate_no=358",
+        "basis": "Own store has a Shoes sub-category",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://www.lowclassic.com/product/lw-list.html?cate_no=358",
+        "basis": "Own store has a Bag sub-category",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Seoul-based since 2009 (official); silhouettes described as sophisticated, comfortable, androgynous. Wallpaper* (AW18): launched 2009 by Lee Myungshin, Hwang Hyun-ji, Park Jin-seon."
+  },
+  {
+    "name": "LEMAIRE",
+    "country": "France",
+    "official_site": "lemaire.fr",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://www.highsnobiety.com/p/lemaire-ss24-collection",
+        "basis": "SS24 review: minimalist, elegant, drapey; clean lines",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://hypebeast.com/2025/1/lemaire-fw25-paris-fashion-week-collection",
+        "basis": "FW25 review: no-fuss, minimalistic, hushed luxury ethos",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "relaxed",
+        "source_url": "https://hypebeast.com/2025/1/lemaire-fw25-paris-fashion-week-collection",
+        "basis": "FW25: draped silhouettes, slouchy trousers for relaxed everyday dress",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "layered",
+        "source_url": "https://www.lemaire.fr/pages/about-lemaire",
+        "basis": "Official: each piece meant to be layered and reinterpreted over time",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "leather",
+        "source_url": "https://hypebeast.com/2025/1/lemaire-fw25-paris-fashion-week-collection",
+        "basis": "FW25: leather bombers and leather-on-leather looks",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.lemaire.fr/pages/about-lemaire",
+        "basis": "Official ready-to-wear includes coats and jackets",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://www.lemaire.fr/pages/about-lemaire",
+        "basis": "Official ready-to-wear includes trousers",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://www.lemaire.fr/pages/about-lemaire",
+        "basis": "Official ready-to-wear includes knitwear",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "shirts",
+        "source_url": "https://www.lemaire.fr/pages/about-lemaire",
+        "basis": "Official ready-to-wear includes shirts",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://www.lemaire.fr/pages/about-lemaire",
+        "basis": "Official accessories include bags",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.lemaire.fr/pages/about-lemaire",
+        "basis": "Official accessories include shoes",
+        "confidence": "high"
+      },
+      {
+        "kind": "color",
+        "value": "earth-tone",
+        "source_url": "https://hypebeast.com/2025/1/lemaire-fw25-paris-fashion-week-collection",
+        "basis": "FW25: soft earth tones and neutrals (black, brown, beige)",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 1991 by Christophe Lemaire, Paris; Sarah-Linh Tran co-artistic director since 2010 (official). Official copy: modular silhouettes balancing form and function."
+  },
+  {
+    "name": "OUR LEGACY",
+    "ko": "아워 레가시",
+    "ko_source": "https://www.musinsa.com/brand/ourlegacy",
+    "country": "Sweden",
+    "official_site": "ourlegacy.com",
+    "tags": [
+      {
+        "kind": "detail",
+        "value": "upcycled",
+        "source_url": "https://ourlegacy.com/info",
+        "basis": "Official info cites repurposing of materials in collections",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "upcycled",
+        "source_url": "https://hypebeast.com/2023/9/our-legacy-work-shop-natura-collection-release-info",
+        "basis": "WORK SHOP NATURA made from deadstock, residual and organic fabrics",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://ourlegacy.com/info",
+        "basis": "Footwear is a top-level category on the official site",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://ourlegacy.com/info",
+        "basis": "Bags is a top-level category on the official site",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Founded 2005 in Stockholm (official); custom-developed fabrics on reworked yet recognizable silhouettes. No reputable press source found that labels its mood in vocabulary terms (e.g. 'minimal'), so mood omitted."
+  },
+  {
+    "name": "AURALEE",
+    "ko": "오라리",
+    "ko_source": "https://www.musinsa.com/brand/auralee",
+    "country": "Japan",
+    "official_site": "auralee.jp",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://auralee.jp/about",
+        "basis": "Official: quiet elegance born of refined restraint; lasting, universal garments",
+        "confidence": "high"
+      },
+      {
+        "kind": "silhouette",
+        "value": "relaxed",
+        "source_url": "https://www.highsnobiety.com/p/auralee-fabrics/",
+        "basis": "Fabric-first garments shown through relaxed silhouettes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "wool",
+        "source_url": "https://www.highsnobiety.com/p/auralee-fabrics/",
+        "basis": "Signature SUPER LIGHT WOOL positioned as all-climate textile",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "cotton",
+        "source_url": "https://www.highsnobiety.com/p/auralee-fabrics/",
+        "basis": "High-density twill from extra-long-staple Egyptian cotton",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "muted",
+        "source_url": "https://www.highsnobiety.com/p/auralee-fabrics/",
+        "basis": "Highsnobiety notes a muted palette",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://auralee.jp/about",
+        "basis": "Official store categories include Outerwear",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://auralee.jp/about",
+        "basis": "Official store categories include Knit",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "shirts",
+        "source_url": "https://auralee.jp/about",
+        "basis": "Official store categories include Shirts and Tops",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://auralee.jp/about",
+        "basis": "Official store categories include Pants",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Tokyo label led by designer Ryota Iwai; fabric-first, sources raw fibers worldwide and develops fabrics with Japanese mills (Highsnobiety; official about)."
+  },
+  {
+    "name": "KAPITAL",
+    "ko": "캐피탈",
+    "ko_source": "https://www.musinsa.com/products/5322833",
+    "country": "Japan",
+    "official_site": "kapital.jp",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://hypebeast.com/2024/4/kapital-founder-toshikiyo-hirata-renowned-denim-patchwork-workwear-brand-death-news",
+        "basis": "Hypebeast calls KAPITAL a denim and workwear label",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "denim",
+        "source_url": "https://www.kapital.jp",
+        "basis": "Official collections titled CENTURY DENIM and DENIM GOOD REPAIR",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "patchwork",
+        "source_url": "https://www.highsnobiety.com/p/kapital-runway-show/",
+        "basis": "Described as famed for its patchwork denim",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "indigo",
+        "source_url": "https://hypebeast.com/2016/6/kapital-boro-jackets",
+        "basis": "Boro jackets in indigo-dyed patchwork fabric (product-specific)",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "jacket",
+        "source_url": "https://www.highsnobiety.com/p/kapital-lvmh-lcatterton-investment/",
+        "basis": "Signature reversible satin bombers and heavily patchworked jackets",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Brand formed 1985 by Toshikiyo Hirata after learning denim-making in Kojima (Hypebeast); son Kiro Hirata expanded it; L Catterton took majority stake in 2025. Musinsa ko source is a used-item listing on musinsa.com."
+  },
+  {
+    "name": "NEEDLES",
+    "ko": "니들스",
+    "ko_source": "https://www.musinsa.com/products/4201717",
+    "country": "Japan",
+    "official_site": "nepenthes.co.jp",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "heritage",
+        "source_url": "https://www.highsnobiety.com/tag/needles/",
+        "basis": "Adds new wrinkles to classic Americana and old Western styles",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://www.highsnobiety.com/tag/needles/",
+        "basis": "Draws on outdoor and workwear clothing",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "outdoor",
+        "source_url": "https://www.highsnobiety.com/tag/needles/",
+        "basis": "Draws on outdoor and workwear clothing",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "military",
+        "source_url": "https://hypebeast.com/2017/5/spotlight-needles",
+        "basis": "Blends old Western and military Americana with Japanese textiles",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "sportswear",
+        "source_url": "https://hypebeast.com/2017/5/spotlight-needles",
+        "basis": "Eccentric yet rugged sportswear; velour track jacket and pants",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "upcycled",
+        "source_url": "https://nepenthes.co.jp/brands/needles/",
+        "basis": "Official: REBUILD by NEEDLES (2010) reconstructs vintage and deadstock garments",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "deconstruction",
+        "source_url": "https://www.highsnobiety.com/tag/needles/",
+        "basis": "Rebuild upcycles old garments into deconstructed pieces",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "cotton",
+        "source_url": "https://hypebeast.com/2017/5/spotlight-needles",
+        "basis": "Key materials: deconstructed cotton, dungaree twill, poly ripstop, denim",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://hypebeast.com/2017/5/spotlight-needles",
+        "basis": "Notable pieces include velour track pants",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Official Nepenthes brand page: established 1995 by Nepenthes founder Keizo Shimizu (Hypebeast says 1988, Highsnobiety 1997). No standalone site found; official presence is nepenthes.co.jp/brands/needles/."
+  },
+  {
+    "name": "ENGINEERED GARMENTS",
+    "ko": "엔지니어드가먼츠",
+    "ko_source": "https://www.musinsa.com/brand/engineeredgarments",
+    "country": "United States",
+    "official_site": "engineeredgarments.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://hypebeast.com/2020/3/nepenthes-needles-engineered-garments-keizo-shimizu-daiki-suzuki-ssense-interview",
+        "basis": "Described as a lucid take on workwear and menswear essentials",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "military",
+        "source_url": "https://hypebeast.com/2020/3/nepenthes-needles-engineered-garments-keizo-shimizu-daiki-suzuki-ssense-interview",
+        "basis": "Range spans traditional suiting to military-inspired outerwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "military",
+        "source_url": "https://hypebeast.com/2023/8/engineered-garments-ss24-workaday-collection-info",
+        "basis": "SS24 Workaday: workwear and military styling from vintage US Army/Navy",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://hypebeast.com/2020/3/nepenthes-needles-engineered-garments-keizo-shimizu-daiki-suzuki-ssense-interview",
+        "basis": "Range spans traditional suiting to military-inspired outerwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "oversized",
+        "source_url": "https://hypebeast.com/2023/8/engineered-garments-ss24-workaday-collection-info",
+        "basis": "SS24: oversized overshirts and baggy pants (collection-specific)",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://hypebeast.com/2020/3/nepenthes-needles-engineered-garments-keizo-shimizu-daiki-suzuki-ssense-interview",
+        "basis": "Known for military-inspired outerwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "jacket",
+        "source_url": "https://hbx.com/kr/men/brands/engineered-garments",
+        "basis": "Retailer copy names Bedford jacket as a signature vintage-style piece",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://hbx.com/kr/men/brands/engineered-garments",
+        "basis": "Retailer copy names fatigue pants among signature pieces",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 1999 in New York by Daiki Suzuki, drawing on his years buying for Nepenthes (official about). Official copy stresses unique garment construction and attention to detail."
+  },
+  {
+    "name": "nanamica",
+    "ko": "나나미카",
+    "ko_source": "https://hbx.com/kr/men/brands/nanamica",
+    "country": "Japan",
+    "official_site": "nanamica.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "sportswear",
+        "source_url": "https://www.nanamica.com/about/",
+        "basis": "Official keywords UTILITY and SPORTS; fashion mixed with function",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "sportswear",
+        "source_url": "https://wallpaper.com/fashion/nanamica-new-york-boutique",
+        "basis": "Founder says designs draw on American sportswear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "outdoor",
+        "source_url": "https://wallpaper.com/fashion/nanamica-new-york-boutique",
+        "basis": "Conceived as apparel suiting both city and outdoor wear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://www.nanamica.com/about/",
+        "basis": "Official: cotton GORE-TEX co-developed with Japan Gore; ALPHADRY, Kodenshi down",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.nanamica.com/about/",
+        "basis": "Official categories include Coat and Jacket",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "shirts",
+        "source_url": "https://www.nanamica.com/about/",
+        "basis": "Official categories include Shirt",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://www.nanamica.com/about/",
+        "basis": "Official categories include Knit",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://www.nanamica.com/about/",
+        "basis": "Official categories include Bottom",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://www.nanamica.com/about/",
+        "basis": "Official categories include Bag",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Founded 2003 by Eiichiro Homma (Wallpaper*); also designs THE NORTH FACE Purple Label (official)."
+  },
+  {
+    "name": "and wander",
+    "ko": "앤드원더",
+    "ko_source": "https://www.musinsa.com/products/4634599",
+    "country": "Japan",
+    "official_site": "andwander.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "outdoor",
+        "source_url": "https://www.highsnobiety.com/p/and-wander-interview/",
+        "basis": "Aims to give people an opportunity to get in touch with nature",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "techwear",
+        "source_url": "https://www.highsnobiety.com/p/outdoor-clothing-brands/",
+        "basis": "In Highsnobiety techwear guide: very weatherproof builds, seriously technical pieces",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://hypebeast.com/2016/3/8-rising-brands-from-tokyo-fashion-week-you-should-know",
+        "basis": "Outdoor and activewear influences kept with streetwear sensibilities",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://www.highsnobiety.com/p/and-wander-interview/",
+        "basis": "Founders stress waterproof membranes, taped seams, sealed zips, shell fabrics",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://hypebeast.com/2021/8/and-wander-fall-winter-2021-collection-release-info",
+        "basis": "FW21: shell jackets and fleeces",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://hypebeast.com/2021/8/and-wander-fall-winter-2021-collection-release-info",
+        "basis": "FW21: trek pants",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://hypebeast.com/2017/6/and-wander-fall-winter-2017",
+        "basis": "FW17 range includes bags; FW21 adds backpacks",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "utility-pockets",
+        "source_url": "https://hypebeast.com/2021/8/and-wander-fall-winter-2021-collection-release-info",
+        "basis": "FW21 review: heavily-pocketed overshirts",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "earth-tone",
+        "source_url": "https://hypebeast.com/2021/8/and-wander-fall-winter-2021-collection-release-info",
+        "basis": "FW21 review: earth-inspired natural greys, whites and beiges",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 2011 in Tokyo by ex-ISSEY MIYAKE designers Keita Ikeuchi and Mihoko Mori (Highsnobiety, Hypebeast). andwander.com is the brand's online store (runs on mix.tokyo); no about page found."
+  },
+  {
+    "name": "GRAMICCI",
+    "ko": "그라미치",
+    "ko_source": "https://www.musinsa.com/brand/gramicci",
+    "country": "United States",
+    "official_site": "gramicci.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "outdoor",
+        "source_url": "https://gramicci.com/pages/about",
+        "basis": "Official: outdoor lifestyle and climbing apparel born from Yosemite climbers",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://gramicci.com/pages/about",
+        "basis": "Official: began with climbing shorts and G-Pants sewn in founder's garage",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "gusset",
+        "source_url": "https://gramicci.com/pages/about",
+        "basis": "Official: diamond crotch gusset from kung-fu trousers for full flexibility",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "integrated-belt",
+        "source_url": "https://gramicci.com/pages/about",
+        "basis": "Official: built-in nylon webbing belt adjustable one-handed",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Founded 1982 in Ventura, California by Mike Graham; later grew a following in Japan, now has US/UK/JP storefronts (official about). Out-of-vocab details 'gusset' and 'integrated-belt' are its signature identifiers."
+  },
+  {
+    "name": "Arc'teryx",
+    "ko": "아크테릭스",
+    "ko_source": "https://www.musinsa.com/products/4794632",
+    "country": "Canada",
+    "official_site": "arcteryx.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "outdoor",
+        "source_url": "https://arcteryx.com/ca/en/explore/whoweare",
+        "basis": "Official: technical gear for mountain pursuits; founded by Vancouver climbers",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "techwear",
+        "source_url": "https://www.highsnobiety.com/p/outdoor-clothing-brands/",
+        "basis": "Highsnobiety techwear guide calls it the Range Rover of techwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://arcteryx.com/ca/en/explore/whoweare",
+        "basis": "Official range centres on hardshell, softshell, windshell and insulated jackets",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "bags",
+        "source_url": "https://arcteryx.com/ca/en/explore/whoweare",
+        "basis": "Official range includes packs alongside apparel",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://arcteryx.com/ca/en/explore/whoweare",
+        "basis": "Official range includes footwear",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://hypebeast.com/2020/7/arcteryx-company-history-behind-the-hype-video",
+        "basis": "Long-running GORE-TEX partnership with W.L. Gore for weatherproof apparel",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "slim",
+        "source_url": "https://www.highsnobiety.com/p/outdoor-clothing-brands/",
+        "basis": "Credited with moving GORE-TEX jackets from baggy to slim silhouettes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://hypebeast.com/2020/7/arcteryx-company-history-behind-the-hype-video",
+        "basis": "Veilance-specific: refined sub-label with a more minimal, tailored approach",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://arcteryx.com/veilance",
+        "basis": "Veilance-specific: wool-blend trousers with refined tailoring",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "wool",
+        "source_url": "https://arcteryx.com/veilance",
+        "basis": "Veilance-specific: wool-blend jackets/trousers, bonded-wool overcoat",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "pleats",
+        "source_url": "https://arcteryx.com/veilance",
+        "basis": "Veilance-specific: pleated wool-blend trousers",
+        "confidence": "high"
+      },
+      {
+        "kind": "color",
+        "value": "black",
+        "source_url": "https://www.highsnobiety.com/p/veilance-isogon-mx-jacket-vision/",
+        "basis": "Veilance-specific: pieces usually all-black or muted greyscale",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "grey",
+        "source_url": "https://www.highsnobiety.com/p/veilance-isogon-mx-jacket-vision/",
+        "basis": "Veilance-specific: muted greyscale palette",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 1989 by Vancouver climbers (official Who we are); Veilance sub-label launched 2009 (Hypebeast); veilance.com redirects to arcteryx.com/veilance."
+  },
+  {
+    "name": "Salomon",
+    "ko": "살로몬",
+    "ko_source": "https://www.musinsa.com/products/1762406",
+    "country": "France",
+    "official_site": null,
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "outdoor",
+        "source_url": "https://hypebeast.com/2021/4/salomon-collaborations-interview-details-comme-des-garcons-palace",
+        "basis": "Annecy ski-hardware maker expanded into trail running, hiking, ski gear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "sportswear",
+        "source_url": "https://hypebeast.com/2021/4/salomon-collaborations-interview-details-comme-des-garcons-palace",
+        "basis": "Performance-first; XT-6 built for Ultra-Trail du Mont-Blanc, Sportstyle keeps race silhouettes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://hypebeast.com/2021/4/salomon-collaborations-interview-details-comme-des-garcons-palace",
+        "basis": "Framed as fashion's favourite footwear brand via trail shoes like XT-6",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://www.highsnobiety.com/p/salomon-gore-tex-xt-6-sneaker/",
+        "basis": "XT-6 GORE-TEX upper is waterproof and windproof",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.highsnobiety.com/p/salomon-ss25-slate/",
+        "basis": "SS25 review: shell jackets with exposed taped seams",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 1947 in Annecy, French Alps (Hypebeast, Highsnobiety). salomon.com returned 403 to fetching, so official_site not confirmed."
+  },
+  {
+    "name": "Stone Island",
+    "ko": "스톤아일랜드",
+    "ko_source": "https://www.musinsa.com/products/872231",
+    "country": "Italy",
+    "official_site": null,
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "military",
+        "source_url": "https://www.highsnobiety.com/p/stone-island-history/",
+        "basis": "Known for a military-inspired design language",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "sportswear",
+        "source_url": "https://www.highsnobiety.com/p/stone-island-40-year-anniversary/",
+        "basis": "Rivetti: brand set out to enter sportswear as men dropped suits",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://www.highsnobiety.com/p/stone-island-40-year-anniversary/",
+        "basis": "Uses advanced fabrics such as Kevlar, Dyneema, Primaloft; invests in fabric research",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "nylon",
+        "source_url": "https://www.wallpaper.com/fashion-beauty/inside-stone-island-hq-ravarino-italy",
+        "basis": "Materials over the years include Kevlar and nylon metal",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "garment-dyed",
+        "source_url": "https://www.highsnobiety.com/p/stone-island-40-year-anniversary/",
+        "basis": "Pioneered object-dyeing of finished garments; 60,000 dye recipes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "reflective",
+        "source_url": "https://www.highsnobiety.com/p/stone-island-history/",
+        "basis": "Osti-era innovations include reflective and heat-reactive garments",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.highsnobiety.com/p/stone-island-history/",
+        "basis": "Outerwear innovations: reversible and dual-layer jackets with removable linings",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 1982 by Massimo Osti (Highsnobiety, Wallpaper*); HQ in Ravarino, Emilia-Romagna; compass badge on sleeve. stoneisland.com returned 403 to fetching, so official_site not confirmed."
+  },
+  {
+    "name": "C.P. Company",
+    "ko": "씨피 컴퍼니",
+    "ko_source": "https://www.musinsa.com/products/3747734",
+    "country": "Italy",
+    "official_site": "cpcompany.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "military",
+        "source_url": "https://www.cpcompany.com",
+        "basis": "Official: hybrid style merging military, workwear and sportswear influences",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://www.cpcompany.com",
+        "basis": "Official: hybrid style merging military, workwear and sportswear influences",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "sportswear",
+        "source_url": "https://www.cpcompany.com",
+        "basis": "Official site title: the original Italian sportswear brand",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "garment-dyed",
+        "source_url": "https://www.cpcompany.com",
+        "basis": "Official: garment dyeing, first developed in the mid-1970s, is a signature",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "washed",
+        "source_url": "https://www.wallpaper.com/fashion/cp-company-50th-anniversary",
+        "basis": "Osti washed and garment-dyed everything for a used, worn-in look",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://www.cpcompany.com",
+        "basis": "Official: ongoing research into cutting-edge fabrics and textile technologies",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.wallpaper.com/fashion/fab-40-cp-company",
+        "basis": "Signature Goggle jacket (1988) with goggles built into the hood",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded by Massimo Osti in Bologna; Wallpaper* gives 1971 (as Chester Perry, renamed 1978) in one article and 1975 in another. Signature Goggle jacket tied to Mille Miglia race."
+  },
+  {
+    "name": "Carhartt WIP",
+    "ko": "칼하트WIP",
+    "ko_source": "https://www.musinsa.com/products/1443147",
+    "country": "Germany",
+    "official_site": "carhartt-wip.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://www.carhartt-wip.com/en-de/i/history",
+        "basis": "Official: adapts and modifies core products of the American workwear brand Carhartt",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "heritage",
+        "source_url": "https://www.carhartt-wip.com/en-de/i/history",
+        "basis": "Official history traces lineage to Carhartt's 1889 overalls and 1923 chore coat",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.highsnobiety.com/p/carhartt-wip-archives-streetwear-anniversary/",
+        "basis": "Called the bedrock of streetwear; ties to skate and hip-hop scenes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "cotton",
+        "source_url": "https://us.carhartt-wip.com/en-us/products/og-detroit-jacket-black-black-stone-canvas-376",
+        "basis": "OG Detroit Jacket: 100% organic cotton Dearborn canvas",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "utility-pockets",
+        "source_url": "https://us.carhartt-wip.com/en-us/products/double-knee-pant-black-stone-canvas-332",
+        "basis": "Double Knee Pant: tool pockets, hammer loop, rivets, reinforced knees",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "washed",
+        "source_url": "https://us.carhartt-wip.com/en-us/products/og-detroit-jacket-black-black-stone-canvas-376",
+        "basis": "OG Detroit Jacket canvas chalk-washed for sun-faded effect (product-specific)",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "jacket",
+        "source_url": "https://www.carhartt-wip.com/en-de/i/history",
+        "basis": "Official history centres chore coats and jackets such as the Detroit",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://us.carhartt-wip.com/en-us/products/double-knee-pant-black-stone-canvas-332",
+        "basis": "Double Knee Pant is a core workwear trouser",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Official history: established 1994 by Edwin Faeh; press (Dazed, Highsnobiety) dates the European Carhartt licence to 1989. Operating company Work in Progress Textilhandels GmbH, Weil am Rhein, Germany (official imprint). Distinct from Carhartt US mainline."
+  },
+  {
+    "name": "Stüssy",
+    "ko": "스투시",
+    "ko_source": "https://www.musinsa.com/products/591328",
+    "country": "USA",
+    "official_site": "stussy.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.highsnobiety.com/tag/stussy/",
+        "basis": "Called one of the most famous streetwear brands of all time",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "surf",
+        "source_url": "https://www.highsnobiety.com/p/shawn-stussy-biography/",
+        "basis": "Grew from Shawn Stussy's signed surfboards and West Coast surf culture",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "tees",
+        "source_url": "https://www.highsnobiety.com/p/shawn-stussy-biography/",
+        "basis": "Early line was the Stussy name printed on black Hanes T-shirts",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "jacket",
+        "source_url": "https://www.highsnobiety.com/tag/stussy/",
+        "basis": "Signature items include varsity jackets and Tribe embroidered jackets",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Californian-born; Shawn Stussy signed surfboards from ~1980, brand formally launched 1984 with Frank Sinatra Jr. (Highsnobiety). stussy.com has no about page and its product pages returned 429, so no material tags."
+  },
+  {
+    "name": "COMME des GARÇONS",
+    "ko": "꼼데가르송",
+    "ko_source": "https://www.musinsa.com/products/1982078",
+    "country": "Japan",
+    "official_site": "comme-des-garcons.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "avant-garde",
+        "source_url": "https://hypebeast.com/2015/9/8-comme-des-garcons-diffusion-labels-integral-to-rei-kawakubos-vision",
+        "basis": "HOMME PLUS called extremely avant-garde, challenging gender norms and good taste",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://www.dazeddigital.com/fashion/article/35770/1/comme-des-garcons-met-ball-rei-kawakubo-dover-street-market",
+        "basis": "Homme Plus titles like 'Broken Tailoring' reflect interest in traditional menswear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://www.highsnobiety.com/p/comme-des-garcons-homme-briefing/",
+        "basis": "CDG HOMME described as workwear-oriented sub-label overseen by Junya Watanabe",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "black",
+        "source_url": "https://www.dazeddigital.com/fashion/article/35770/1/comme-des-garcons-met-ball-rei-kawakubo-dover-street-market",
+        "basis": "Black called Kawakubo's defining palette (house-wide, not line-specific)",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "patchwork",
+        "source_url": "https://hypebeast.com/2015/9/8-comme-des-garcons-diffusion-labels-integral-to-rei-kawakubos-vision",
+        "basis": "CDG HOMME: classic pieces reinterpreted, with occasional patchwork",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "jacket",
+        "source_url": "https://www.highsnobiety.com/p/comme-des-garcons-homme-briefing/",
+        "basis": "CDG HOMME recent collections include wearable bomber jackets",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://www.highsnobiety.com/p/comme-des-garcons-homme-briefing/",
+        "basis": "CDG HOMME recent collections include boxy sweaters",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Tags describe COMME des GARÇONS HOMME PLUS (Kawakubo's avant-garde men's line; 1978 per Dazed, 1984 per Hypebeast) and COMME des GARÇONS HOMME (workwear-leaning, made in Japan); official site has no descriptive text."
+  },
+  {
+    "name": "Yohji Yamamoto",
+    "ko": "요지야마모토",
+    "ko_source": "https://www.musinsa.com/products/1514033",
+    "country": "Japan",
+    "official_site": "yohjiyamamoto.co.jp",
+    "tags": [
+      {
+        "kind": "color",
+        "value": "black",
+        "source_url": "https://i-d.co/article/yohji-yamamoto-ultra-issue-cover/",
+        "basis": "Worked only in the deepest, darkest shades of black",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "black",
+        "source_url": "https://www.highsnobiety.com/p/yohji-yamamoto-ys-for-men/",
+        "basis": "Menswear in Yamamoto's signature shade of black",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "oversized",
+        "source_url": "https://i-d.co/article/yohji-yamamoto-ultra-issue-cover/",
+        "basis": "Enveloping silhouettes; generously sized clothing",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "oversized",
+        "source_url": "https://hypebeast.com/2016/6/yohji-yamamoto-2017-spring-summer-menswear-collection",
+        "basis": "SS17 menswear: long draping coats, baggy trousers, oversized silhouettes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://i-d.co/article/yohji-yamamoto-ultra-issue-cover/",
+        "basis": "1981 Paris debut drew on European workwear and tailoring",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "deconstruction",
+        "source_url": "https://hypebeast.com/the-hypebeast-hundred-2015/yohji-yamamoto",
+        "basis": "FW15: all-black range with layered, deconstructed cuts",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Y's founded 1972 in Tokyo; Paris debut AW81 (i-D). Pour Homme is the top-tier, more experimental menswear line (Highsnobiety). Official site has no style text."
+  },
+  {
+    "name": "ISSEY MIYAKE / HOMME PLISSÉ ISSEY MIYAKE",
+    "ko": "이세이 미야케 / 옴므 플리세 이세이 미야케",
+    "ko_source": "https://www.musinsa.com/brands/isseymiyake",
+    "country": "Japan",
+    "official_site": "isseymiyake.com",
+    "tags": [
+      {
+        "kind": "detail",
+        "value": "pleats",
+        "source_url": "https://www.isseymiyake.com/blogs/hommeplisse-concept",
+        "basis": "HOMME PLISSÉ built on Issey Miyake's signature garment-pleating technique",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://www.isseymiyake.com/blogs/hommeplisse-concept",
+        "basis": "HOMME PLISSÉ garments wrinkle-free, quick-drying, light to wear",
+        "confidence": "high"
+      },
+      {
+        "kind": "silhouette",
+        "value": "relaxed",
+        "source_url": "https://hypebeast.com/2021/4/homme-plisse-issey-miyake-interview-how-its-made-what-the-tech",
+        "basis": "HOMME PLISSÉ: roomy, draped separates",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "trousers",
+        "source_url": "https://www.highsnobiety.com/p/homme-plisse-issey-miyake-buy-online/",
+        "basis": "HOMME PLISSÉ best known for pleated pants",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "jacket",
+        "source_url": "https://www.highsnobiety.com/p/homme-plisse-issey-miyake-buy-online/",
+        "basis": "HOMME PLISSÉ picks include pleated blazer and jersey jackets",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://hypebeast.com/2022/8/issey-miyake-japanese-fashion-designer-dead-legacy-history-archive",
+        "basis": "Miyake's results often minimal and refined despite experimental ideas",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "avant-garde",
+        "source_url": "https://hypebeast.com/2022/8/issey-miyake-japanese-fashion-designer-dead-legacy-history-archive",
+        "basis": "Concepts came from an avant-garde perspective",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "archive",
+        "source_url": "https://hypebeast.com/2022/8/issey-miyake-japanese-fashion-designer-dead-legacy-history-archive",
+        "basis": "Built an archive of shape-shifting clothing, influential and collectible",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "One object: detail/material/silhouette/category tags describe HOMME PLISSÉ (launched Nov 2013 per official history); mood tags describe Issey Miyake's work generally. Miyake Design Studio founded 1970. Korean '옴므 플리세 이세이 미야케' also seen at https://www.musinsa.com/products/3196424."
+  },
+  {
+    "name": "Maison Margiela",
+    "ko": "메종 마르지엘라",
+    "ko_source": "https://www.musinsa.com/products/7081036",
+    "country": "France",
+    "official_site": null,
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "avant-garde",
+        "source_url": "https://www.highsnobiety.com/p/best-maison-margiela-sneakers/",
+        "basis": "House style described as unmistakable and avant-garde",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "deconstruction",
+        "source_url": "https://i-d.co/article/20-things-you-need-to-know-about-martin-margiela/",
+        "basis": "Pioneered deconstructed fashion, leaving raw stitched seams visible",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "upcycled",
+        "source_url": "https://i-d.co/article/20-things-you-need-to-know-about-martin-margiela/",
+        "basis": "Artisanal collections reworked existing garments, e.g. old gloves or ties",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "oversized",
+        "source_url": "https://www.wallpaper.com/fashion-beauty/miami-exhibition-in-the-void-exploring-martin-margiela-legacy",
+        "basis": "Archive exhibition: upscaled, oversized pieces such as A/W 2000 jeans",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.highsnobiety.com/p/best-maison-margiela-sneakers/",
+        "basis": "Signature Tabi split-toe and Replica German Army Trainer",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 1988 by Martin Margiela with Jenny Meirens (i-D). maisonmargiela.com returned 403 to fetching, so official site not confirmed and no official-source tags."
+  },
+  {
+    "name": "Rick Owens",
+    "ko": "릭오웬스",
+    "ko_source": "https://www.musinsa.com/products/2895424",
+    "country": "France",
+    "official_site": "rickowens.eu",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "avant-garde",
+        "source_url": "https://www.dazeddigital.com/fashion/article/38420/1/ten-of-rick-owens-most-memorable-shows",
+        "basis": "Called the radical prince of avant-garde fashion",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "black",
+        "source_url": "https://www.dazeddigital.com/fashion/article/34382/1/your-ultimate-guide-to-rick-owens",
+        "basis": "Mostly monochrome: black in many shades, plus greys and whites",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "grey",
+        "source_url": "https://www.dazeddigital.com/fashion/article/38420/1/ten-of-rick-owens-most-memorable-shows",
+        "basis": "Black and grey cited as his signature palette",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "leather",
+        "source_url": "https://hypebeast.com/hb100/2016/rick-owens",
+        "basis": "Specialism lies in leather; sharp-cut jackets",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "jacket",
+        "source_url": "https://www.dazeddigital.com/fashion/article/34382/1/your-ultimate-guide-to-rick-owens",
+        "basis": "Washed-leather biker jacket from debut called foundation of his work",
+        "confidence": "medium"
+      },
+      {
+        "kind": "silhouette",
+        "value": "layered",
+        "source_url": "https://www.dazeddigital.com/fashion/article/38420/1/ten-of-rick-owens-most-memorable-shows",
+        "basis": "Models swathed in layers of misshapen fabric",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "draping",
+        "source_url": "https://www.dazeddigital.com/fashion/article/34382/1/your-ultimate-guide-to-rick-owens",
+        "basis": "Draping central to his approach; AW16 every piece hand-draped",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.highsnobiety.com/p/rick-owens-sneakers/",
+        "basis": "Geobasket called the house's most iconic shoe; Ramones a signature",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Label launched 1994 in LA (menswear from 2002), now Paris-based; DRKSHDW is a diffusion line (Dazed). Official e-shop product pages returned 429, so no official-source tags."
+  },
+  {
+    "name": "Helmut Lang",
+    "ko": "헬무트 랭",
+    "ko_source": "https://www.musinsa.com/brand/helmutlang",
+    "country": "Austria",
+    "official_site": null,
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://i-d.co/article/the-a-z-of-helmut-lang/",
+        "basis": "Called the chief architect of 90s minimalism",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://www.wallpaper.com/fashion-beauty/fashion-beauty-events/helmut-lang-exhibition-mak-vienna",
+        "basis": "Cool, razor-sharp minimalism with lean lines",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://www.wallpaper.com/fashion-beauty/fashion-beauty-events/helmut-lang-exhibition-mak-vienna",
+        "basis": "Sharply tailored, clean-cut menswear-inspired jackets",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "archive",
+        "source_url": "https://www.dazeddigital.com/fashion/article/33406/1/a-major-collection-of-archive-helmut-lang-is-going-on-sale",
+        "basis": "Archive runway pieces from 1990s to his exit sold as collectibles",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "denim",
+        "source_url": "https://i-d.co/article/the-a-z-of-helmut-lang/",
+        "basis": "Iconic denim; painter jeans reissued",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://i-d.co/article/the-a-z-of-helmut-lang/",
+        "basis": "Drew on utility wear and uniforms, parachute straps, technical fabrics",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "leather",
+        "source_url": "https://www.wallpaper.com/fashion-beauty/fashion-beauty-events/helmut-lang-exhibition-mak-vienna",
+        "basis": "Retrospective shows leather cut into strips and the Astro Biker Jacket",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "straps",
+        "source_url": "https://i-d.co/article/the-a-z-of-helmut-lang/",
+        "basis": "Bondage/fetish touches, straps disguised within suits",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "reflective",
+        "source_url": "https://i-d.co/article/best-helmut-lang-designer-clothes-collector/",
+        "basis": "1994 AW: reflective jeans",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "monochrome",
+        "source_url": "https://www.wallpaper.com/fashion-beauty/fashion-beauty-events/helmut-lang-exhibition-mak-vienna",
+        "basis": "Mostly monochrome, punctuated by fluorescent colour",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Vienna studio 1977, label founded in Paris 1986; Lang left the brand 2004 (i-D). Tags describe Lang-era archive. helmutlang.com returned 403, so official site not confirmed."
+  },
+  {
+    "name": "UNDERCOVER",
+    "ko": "언더커버",
+    "ko_source": "https://www.musinsa.com/products/4551990",
+    "country": "Japan",
+    "official_site": "undercoverism.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://hypebeast.com/2016/9/exploring-jun-takahashi-and-undercover",
+        "basis": "Rebelliously street, punk-centric narrative tied to Harajuku's NOWHERE",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.musinsa.com/content/1414851121577146273",
+        "basis": "Musinsa: punk elements as a street brand, crossing street and high fashion",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "punk",
+        "source_url": "https://www.highsnobiety.com/p/jun-takahashi-history/",
+        "basis": "Punk roots; motto 'We make noise, not clothes'; bondage/gothic rebellion",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "avant-garde",
+        "source_url": "https://hypebeast.com/2016/9/exploring-jun-takahashi-and-undercover",
+        "basis": "Avant-garde element always at play",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://hypebeast.com/2025/10/hb20-undercovers-inimitable-intuition",
+        "basis": "Elegant tailoring paired with raw, subversive graphics",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "deconstruction",
+        "source_url": "https://hypebeast.com/2025/10/hb20-undercovers-inimitable-intuition",
+        "basis": "Intricate detailing and deconstructed silhouettes",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "tees",
+        "source_url": "https://www.undercoverism.com/",
+        "basis": "Official e-shop has a men's T-SHIRTS category",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "outerwear",
+        "source_url": "https://www.undercoverism.com/",
+        "basis": "Official e-shop has a men's OUTERWEAR category",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Founded 1990 by Jun Takahashi; first show Tokyo AW94-95; Paris from 2002 (official HISTORY OF U page)."
+  },
+  {
+    "name": "visvim",
+    "ko": "비즈빔",
+    "ko_source": "https://www.musinsa.com/products/407191",
+    "country": "Japan",
+    "official_site": "visvim.tv",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "heritage",
+        "source_url": "https://www.visvim.tv/about/",
+        "basis": "Official: works with craftsmen to protect culture and techniques handed down",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://hypebeast.com/2015/9/hiroki-nakamura-visvim-staying-power-streetwear",
+        "basis": "Concept described as Japanese Americana workwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "preppy",
+        "source_url": "https://www.visvim.tv/dissertation/philosophy/a_timeless_universal_harmony.html",
+        "basis": "Official essay cites Traditional American and Ivy style as foundations",
+        "confidence": "high"
+      },
+      {
+        "kind": "color",
+        "value": "indigo",
+        "source_url": "https://www.visvim.tv/dissertation/brands/indigo_camping_trailer.html",
+        "basis": "Official: natural indigo-dyed products in its experimental line",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "natural-dye",
+        "source_url": "https://www.visvim.tv/dissertation/brands/indigo_camping_trailer.html",
+        "basis": "Official: natural dyeing and mud-dyeing on garments and footwear",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "leather",
+        "source_url": "https://hypebeast.com/2015/9/hiroki-nakamura-visvim-staying-power-streetwear",
+        "basis": "Naturally tanned leathers, shell cordovan, elk",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://hypebeast.com/2015/9/hiroki-nakamura-visvim-staying-power-streetwear",
+        "basis": "Founded around the FBT hybrid moccasin",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Founded 2000 by Hiroki Nakamura (Hypebeast); published by Cubism Inc. (official)."
+  },
+  {
+    "name": "KIKO KOSTADINOV",
+    "ko": "키코 코스타디노브",
+    "ko_source": "https://www.musinsa.com/content/1475303478341926052",
+    "country": "United Kingdom",
+    "official_site": "kikokostadinov.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://www.dazeddigital.com/fashion/article/30104/1/the-designer-who-sent-masked-men-down-the-csm-runway",
+        "basis": "CSM graduate collection drew on contemporary workwear",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "workwear",
+        "source_url": "https://i-d.co/article/kiko-kostadinov-focuses-on-function-for-springsummer-17/",
+        "basis": "SS17: focused on function, subverting utilitarian dress references",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "techwear",
+        "source_url": "https://hypebeast.com/2023/1/kiko-kostadinov-fall-winter-2023-paris-fashion-week-menswear-collection",
+        "basis": "FW23 review refers to label's usual technical-focused streetwear approach",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://hypebeast.com/2023/1/kiko-kostadinov-fall-winter-2023-paris-fashion-week-menswear-collection",
+        "basis": "FW23: reworked tailored suiting, engineered trench coats and blazers",
+        "confidence": "medium"
+      },
+      {
+        "kind": "color",
+        "value": "bright-colors",
+        "source_url": "https://www.highsnobiety.com/p/kiko-kostadinov-brand-rise/",
+        "basis": "Increasingly lurid patterns; ASICS shoes ever more colorful",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://hypebeast.com/2025/2/kiko-kostadinov-asics-gel-kiril-iii-release-date-information",
+        "basis": "Favorite ASICS collaborator; workwear-inspired Gel-Kiril 3",
+        "confidence": "medium"
+      }
+    ],
+    "notes": "Bulgarian-born, London-based; CSM MA 2016 (Highsnobiety). Official shop pages returned 429, so no official-source tags."
+  },
+  {
+    "name": "Acne Studios",
+    "ko": "아크네 스튜디오",
+    "ko_source": "https://www.acnestudios.com/kr/ko/about/about.html",
+    "country": "Sweden",
+    "official_site": "acnestudios.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "minimal",
+        "source_url": "https://www.highsnobiety.com/p/how-to-wear-acne-studios/",
+        "basis": "Minimalist design language rooted in Scandinavian restraint",
+        "confidence": "medium"
+      },
+      {
+        "kind": "mood",
+        "value": "tailoring",
+        "source_url": "https://www.acnestudios.com/us/en/about/about.html",
+        "basis": "Official about: emphasis on tailoring and eclectic materials",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "denim",
+        "source_url": "https://www.acnestudios.com/us/en/about/about.html",
+        "basis": "Official about lists denim among core categories",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "knitwear",
+        "source_url": "https://www.acnestudios.com/us/en/man/",
+        "basis": "Official e-shop has a men's Knitwear category",
+        "confidence": "high"
+      },
+      {
+        "kind": "category",
+        "value": "footwear",
+        "source_url": "https://www.acnestudios.com/us/en/about/about.html",
+        "basis": "Official about lists footwear among categories",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Stockholm-based; founded 1996 by Jonny Johansson within creative collective ACNE (Hypebeast); began with 100 pairs of raw jeans with red stitching (Dazed: 1997)."
+  },
+  {
+    "name": "SATISFY",
+    "ko": "새티스파이",
+    "ko_source": "https://www.musinsa.com/cms/news/view/14700",
+    "country": "France",
+    "official_site": "satisfyrunning.com",
+    "tags": [
+      {
+        "kind": "mood",
+        "value": "sportswear",
+        "source_url": "https://satisfyrunning.com",
+        "basis": "Official: running apparel and technical equipment to help runners unlock the High",
+        "confidence": "high"
+      },
+      {
+        "kind": "mood",
+        "value": "street",
+        "source_url": "https://www.highsnobiety.com/p/satisfy-running-interview/",
+        "basis": "Founder's punk, skateboarding and counterculture interests shape the brand",
+        "confidence": "medium"
+      },
+      {
+        "kind": "material",
+        "value": "technical-fabric",
+        "source_url": "https://satisfyrunning.com",
+        "basis": "Official: technical running equipment; in-house TechSilk and FuzzFleece fabrics",
+        "confidence": "high"
+      },
+      {
+        "kind": "material",
+        "value": "cotton",
+        "source_url": "https://satisfyrunning.com",
+        "basis": "Official MothTech line: it's OK to run in cotton",
+        "confidence": "high"
+      },
+      {
+        "kind": "detail",
+        "value": "washed",
+        "source_url": "https://www.highsnobiety.com/p/satisfy-running-interview/",
+        "basis": "MothTech: moth holes body-mapped onto overwashed cotton",
+        "confidence": "medium"
+      },
+      {
+        "kind": "detail",
+        "value": "distressed",
+        "source_url": "https://www.highsnobiety.com/p/satisfy-running-interview/",
+        "basis": "Moth holes inspired by vintage band tees",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "tees",
+        "source_url": "https://www.highsnobiety.com/p/satisfy-running-interview/",
+        "basis": "Capsule includes tank top and t-shirt; official nav lists Tops",
+        "confidence": "medium"
+      },
+      {
+        "kind": "category",
+        "value": "shorts",
+        "source_url": "https://satisfyrunning.com",
+        "basis": "Official: shorts billed as the heart of your kit",
+        "confidence": "high"
+      }
+    ],
+    "notes": "Launched 2015 (official homepage); Paris atelier, founder Brice Partouche (Highsnobiety)."
+  }
+]

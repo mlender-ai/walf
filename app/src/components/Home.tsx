@@ -5,11 +5,49 @@ import { Avatar, Btn, CandRow, DOG, Hair, Icon, MockBanner, MockPill, ProductIma
 import { TAB_SPACE } from './TabBar';
 import { C, R } from '@/lib/theme';
 import { openLink } from '@/lib/links';
-import type { Display, PastItem, RequestView } from '@/lib/types';
+import type { Display, Item, PastItem, RequestView } from '@/lib/types';
+
+// ── V2 두 진입로: 찾아줘(사진으로 정확한 옷 찾기) · 기다려줘(아는 옷의 가격·사이즈 기다리기) ──
+export function Entries({ canFind, watchLimit }: { canFind: boolean; watchLimit?: { max: number; used: number } }) {
+  const full = !!watchLimit && watchLimit.used >= watchLimit.max;
+  return (
+    <View style={{ gap: 10 }}>
+      {canFind ? <EntryRow primary icon="camera" title="찾아줘" desc="사진 한 장이면 왈프가 찾아볼게요." onPress={() => router.push('/request/new')} /> : null}
+      <EntryRow icon="bell" title="기다려줘" desc={full ? `지켜보는 옷이 ${watchLimit!.max}벌이에요. 하나를 멈추면 더 맡길 수 있어요.` : '원하는 가격이 될 때까지 왈프가 지켜볼게요.'}
+        disabled={full} onPress={() => router.push('/watch/new')} />
+    </View>
+  );
+}
+function EntryRow({ title, desc, icon, primary, disabled, onPress }: { title: string; desc: string; icon: string; primary?: boolean; disabled?: boolean; onPress: () => void }) {
+  const fg = primary ? C.white : C.black;
+  return (
+    <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={`${title}. ${desc}`} accessibilityState={{ disabled: !!disabled }}
+      style={({ pressed }) => [s.entry, primary ? { backgroundColor: C.black } : { borderWidth: 1, borderColor: C.gray300 }, disabled && { opacity: 0.4 }, pressed && { opacity: 0.85 }]}>
+      <Icon name={icon} size={22} color={fg} />
+      <View style={{ flex: 1 }}>
+        <T size={16} w={800} color={fg} ls={-0.4}>{title}</T>
+        <T size={13} lh={18} color={primary ? 'rgba(255,255,255,0.78)' : C.gray500} style={{ marginTop: 1 }}>{desc}</T>
+      </View>
+      <Icon name="chev" size={18} color={fg} />
+    </Pressable>
+  );
+}
+/** 홈 아래 — 내가 찾는 옷 요약 한 줄(목록은 추적함 탭) */
+export function ItemsRow({ items }: { items: Item[] }) {
+  const open = items.filter(x => !x.ended);
+  if (!items.length) return null;
+  const head = open[0] || items[0];
+  return (
+    <Pressable onPress={() => router.navigate('/tracking')} accessibilityRole="button" style={s.last}>
+      <View style={{ flex: 1 }}><T size={12} color={C.gray500}>내가 찾는 옷 · {open.length ? `${open.length}벌 진행 중` : '모두 끝남'}</T><T size={14} w={700} numberOfLines={1}>{head.title} · {head.stateLabel}</T></View>
+      <T size={13} w={600} color={C.gray500}>전체 보기</T><Icon name="chev" size={18} color={C.gray500} />
+    </Pressable>
+  );
+}
 
 // ── S01 첫 방문 홈 ────────────────────────────────────────────
 // 1차 시안 360 폭 기준: 강아지 1.194w, 헤드라인 바닥 = 강아지 발끝
-export function FirstVisit({ last }: { last?: PastItem }) {
+export function FirstVisit({ last, items = [], watchLimit }: { last?: PastItem; items?: Item[]; watchLimit?: { max: number; used: number } }) {
   const { width } = useWindowDimensions();
   const w = Math.min(width, 440);
   const dog = w * 1.194, heroH = w * 1.2;
@@ -24,10 +62,10 @@ export function FirstVisit({ last }: { last?: PastItem }) {
         </View>
       </View>
       <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
-        <T size={14.5} lh={22}>{'사진이나 링크만 주세요.\n7일 동안 국내 판매처와 중고 매물을 대신 살펴볼게요.'}</T>
-        <Btn label="왈프에게 맡기기" onPress={() => router.push('/request/new')} style={{ marginTop: 18 }} />
-        <T size={12} w={500} color={C.gray500} style={{ textAlign: 'center', marginTop: 12 }}>무료 베타  ·  한 번에 한 벌  ·  하루 한 번 탐색</T>
-        {last ? (
+        <T size={14.5} lh={22}>{'사진이나 링크만 주세요.\n어떤 옷인지 찾고, 원하는 가격이 될 때까지 지켜볼게요.'}</T>
+        <View style={{ marginTop: 18 }}><Entries canFind watchLimit={watchLimit} /></View>
+        <T size={12} w={500} color={C.gray500} style={{ textAlign: 'center', marginTop: 12 }}>무료 베타  ·  찾아줘 한 벌씩  ·  기다려줘 {watchLimit?.max ?? 3}벌까지</T>
+        {items.length ? <ItemsRow items={items} /> : last ? (
           <Pressable onPress={() => router.push({ pathname: '/past/[id]', params: { id: String(last.id) } })} accessibilityRole="button" style={s.last}>
             <View style={{ flex: 1 }}><T size={12} color={C.gray500}>지난 의뢰 · {last.display.label}</T><T size={14} w={700} numberOfLines={1}>{last.title}</T></View>
             <T size={13} w={600} color={C.gray500}>결과 보기</T><Icon name="chev" size={18} color={C.gray500} />
@@ -53,7 +91,8 @@ export function StatusModule({ d, children }: { d: Display; children?: React.Rea
 }
 
 // ── S04 의뢰 진행 홈 ──────────────────────────────────────────
-export function ActiveHome({ r, refreshing, onRefresh }: { r: RequestView; refreshing: boolean; onRefresh: () => void }) {
+export function ActiveHome({ r, refreshing, onRefresh, items = [], watchLimit }: { r: RequestView; refreshing: boolean; onRefresh: () => void; items?: Item[]; watchLimit?: { max: number; used: number } }) {
+  const watches = items.filter(x => x.kind === 'watch' && !x.ended);
   const lead = r.candidates.leads[0];
   const showLead = r.display.key === 'lead_found' && lead;
   const done = r.schedule.days.filter(d => d.state === 'done').length;
@@ -87,7 +126,17 @@ export function ActiveHome({ r, refreshing, onRefresh }: { r: RequestView; refre
         ))}
       </View>
       <Btn label="추적함에서 자세히 보기" kind="sec" onPress={() => router.navigate('/tracking')} style={{ marginTop: 20 }} />
-      <T size={12} color={C.gray500} style={{ textAlign: 'center', marginTop: 16 }}>지금은 한 번에 한 벌만 맡길 수 있어요. 이 의뢰가 끝나면 새 옷을 맡길 수 있어요.</T>
+      <View style={{ marginTop: 32 }}>
+        <View style={s.rowB}><T size={17} w={800} ls={-0.5}>기다려줘</T><T size={12.5} color={C.gray500}>{watches.length}/{watchLimit?.max ?? 3}벌 지켜보는 중</T></View>
+        {watches.slice(0, 3).map(w => (
+          <Pressable key={w.id} onPress={() => router.push({ pathname: '/watch/[id]', params: { id: String(w.id) } })} accessibilityRole="button" style={s.wrow}>
+            <View style={{ flex: 1 }}><T size={12} color={C.gray500}>{w.stateLabel}{w.isMock ? ' · 모의' : ''}</T><T size={14} w={700} numberOfLines={1}>{w.title}</T><T size={12} color={C.gray500} numberOfLines={1}>{w.sub}</T></View>
+            <Icon name="chev" size={18} color={C.gray500} />
+          </Pressable>
+        ))}
+        <View style={{ marginTop: 12 }}><Entries canFind={false} watchLimit={watchLimit} /></View>
+      </View>
+      <T size={12} color={C.gray500} style={{ textAlign: 'center', marginTop: 16 }}>찾아줘는 한 번에 한 벌이에요. 가격을 기다리는 옷은 기다려줘로 따로 맡길 수 있어요.</T>
     </ScrollView>
   );
 }
@@ -113,5 +162,7 @@ const s = StyleSheet.create({
   act: { flexDirection: 'row', gap: 10, paddingVertical: 12, alignItems: 'flex-start' },
   actor: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: R.tag, borderWidth: 1, borderColor: C.gray300 },
   last: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 24, padding: 14, borderRadius: R.card, borderWidth: 1, borderColor: C.gray300 },
+  entry: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 68, paddingHorizontal: 16, paddingVertical: 12, borderRadius: R.card },
+  wrow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.surface },
 });
 export { Tags };

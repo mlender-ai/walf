@@ -15,7 +15,8 @@ export default function HomeTab() {
       {me && error ? <ErrorStrip message={error.message} onRetry={refresh} /> : null}
       {!ready || (!me && loading) ? <Loading /> :
         !me ? <ErrorBox message={error?.message || '잠시 후 다시 시도해 주세요.'} onRetry={reinit} onServer={() => router.navigate('/my')} /> :
-          me.active ? <ActiveHome r={me.active} refreshing={loading} onRefresh={refresh} /> : <FirstVisit last={me.past[0]} />}
+          me.active ? <ActiveHome r={me.active} refreshing={loading} onRefresh={refresh} items={me.items} watchLimit={me.watchLimit} />
+            : <FirstVisit last={me.past[0]} items={me.items} watchLimit={me.watchLimit} />}
     </View>
   );
 }

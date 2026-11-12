@@ -4,7 +4,7 @@
 import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
-import { now, DAY, HOUR, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
+import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
 import { normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
 import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type Snapshot } from './sources.ts';
 
@@ -299,6 +299,9 @@ function applyEval(db: DB, w0: Row, ev: Eval, t: number, nextAt: number | null) 
   const outbox: (() => void)[] = [];
   tx(db, () => {
     let alerted = w.alerted, episode = w.alert_episode;
+    // 가격·재고 변화를 먼저 남기고 판정 결과를 뒤에 남긴다(최신순 목록에서 결과가 위)
+    if (prev.total != null && ev.total != null && prev.total !== ev.total) event(db, w, 'walf', 'price', '가격이 바뀌었어요', `${won(prev.total)} → ${won(ev.total)}`, t);
+    if (prev.stock && prev.stock !== ev.stock && ev.stock !== 'unknown') event(db, w, 'walf', 'stock', ev.stock === 'in_stock' ? '재고가 들어왔어요' : '품절됐어요', ev.option, t);
     if (ev.state === 'met' && !w.alerted) {
       episode += 1; alerted = 1;
       const ship = ev.shippingKnown ? `배송비 포함 총 ${won(ev.total)}` : `${won(ev.total)}(배송비 미확인)`;
@@ -309,8 +312,6 @@ function applyEval(db: DB, w0: Row, ev: Eval, t: number, nextAt: number | null) 
       alerted = 0; // 조건이 깨지면 다시 맞을 때 한 번 더 알린다(재입고·가격 재하락)
       event(db, w, 'walf', 'unmet', '조건이 다시 맞지 않아요', ev.reasons[0] || null, t);
     }
-    if (prev.total != null && ev.total != null && prev.total !== ev.total) event(db, w, 'walf', 'price', '가격이 바뀌었어요', `${won(prev.total)} → ${won(ev.total)}`, t);
-    if (prev.stock && prev.stock !== ev.stock && ev.stock !== 'unknown') event(db, w, 'walf', 'stock', ev.stock === 'in_stock' ? '재고가 들어왔어요' : '품절됐어요', ev.option, t);
     if (ATTENTION.includes(ev.state) && prev.state !== ev.state) event(db, w, 'walf', 'attention', '가격은 내려왔지만 확인할 게 있어요', `${ev.reasons[0]} · 확인 전에는 구매 가능 알림을 보내지 않아요`, t);
     run(db, `UPDATE watches SET last_checked_at=?, next_check_at=COALESCE(?, next_check_at), last_state=?, last_result=?, fail_streak=0, alerted=?, alert_episode=?, met_at=CASE WHEN ?='met' THEN COALESCE(met_at, ?) ELSE met_at END, updated_at=? WHERE id=?`,
       t, nextAt, ev.state, JSON.stringify(ev), alerted, episode, ev.state, t, now(), w.id);
@@ -368,13 +369,13 @@ export function watchView(db: DB, w: Row, base: string, policy: Pick<WatchPolicy
     const ok = rows[0].ok === 1;
     const pick = rows.find(o => (!w.size || sameSize(o.size, w.size)) && (!w.color || !o.color || sameColor(w.color, o.color))) || (rows.length === 1 ? rows[0] : null);
     const total = pick?.price != null ? pick.price + (pick.shipping ?? 0) : null;
-    return { at: rows[0].checked_at, label: `${kDate(rows[0].checked_at)} ${kTime(rows[0].checked_at)}`, ok, error: ok ? null : rows[0].error?.replace(/^\w+:\s*/, ''),
+    return { at: rows[0].checked_at, label: `${kDate(rows[0].checked_at).replace(/\(.\)$/, '')} ${kClock(rows[0].checked_at)}`, ok, error: ok ? null : rows[0].error?.replace(/^\w+:\s*/, ''),
       price: pick?.price ?? null, shipping: pick?.shipping ?? null, shippingKnown: pick ? pick.shipping != null : false, total, stock: pick?.stock || (ok ? 'option_missing' : null),
       option: pick?.option_label || null, source: rows[0].source, isMock: !!rows[0].is_mock, meets: total != null && total <= w.target_price && pick?.stock === 'in_stock' };
   });
   const src = sourceInfo(w.source);
   const listing = w.url ? one(db, 'SELECT * FROM listings WHERE url_key=?', urlKey(w.url)) : undefined;
-  const events = all(db, 'SELECT * FROM watch_events WHERE watch_id=? ORDER BY at DESC, id DESC LIMIT 50', w.id).map(e => ({ id: e.id, at: e.at, label: kWhen(e.at, t), actor: D.ACTOR_LABEL[e.actor] || e.actor, kind: e.kind, title: e.title, detail: e.detail, isMock: !!e.is_mock }));
+  const events = all(db, 'SELECT * FROM watch_events WHERE watch_id=? ORDER BY at DESC, id DESC LIMIT 50', w.id).map(e => ({ id: e.id, at: e.at, label: kWhen(e.at, t), clock: kClock(e.at), actor: D.ACTOR_LABEL[e.actor] || e.actor, kind: e.kind, title: e.title, detail: e.detail, isMock: !!e.is_mock }));
   return {
     id: w.id, status: w.status, isMock: !!w.is_mock, display: watchDisplay(w, policy, t),
     product: { title: w.title, brand: w.brand || p?.brand || null, url: w.url && !w.url.startsWith('mock://') ? w.url : null, photoUrl: w.photo ? `${base}/uploads/${w.photo}` : p?.image || null,
