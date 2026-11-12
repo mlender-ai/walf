@@ -1,12 +1,18 @@
 // AI 보조 — 맡긴 사진·링크·이름으로 어떤 상품인지 후보를 좁히고(식별), 확정된 상품을 국내 판매처에서 찾아본다(탐색).
 // 결과는 언제나 “AI 제안 · 검수 전”이다. 왈프 팀이 확인하기 전에는 사용자에게 보이지 않고, 구매 가능으로 표시하지 않는다.
 import Anthropic from '@anthropic-ai/sdk';
+import fs from 'node:fs';
+import path from 'node:path';
 import sharp from 'sharp';
+import { cleanStyle, STYLE_KINDS, type Style } from './catalog.ts';
 
 export type Seller = { id: number; name: string; domain: string };
 export type IdentifyInput = { productName?: string | null; brand?: string | null; productUrl?: string | null; note?: string | null; size?: string | null; color?: string | null; photoPath?: string | null };
-export type Identity = { brand: string; name: string; color: string; category: string; confidence: 'high' | 'medium' | 'low'; reasons: string[]; refs: string[] };
-export type IdentifyResult = { identities: Identity[]; missing: string[]; summary: string };
+/** matched·uncertain 은 “속성: 근거” 한 줄씩(예: “브랜드: 공식몰 사진과 로고 자수 위치가 같아요”, “시즌: 페이지에 시즌 표기가 없어요”) */
+export type Identity = { brand: string; name: string; color: string; category: string; confidence: 'high' | 'medium' | 'low'; reasons: string[]; refs: string[];
+  season: string; code: string; matched: string[]; uncertain: string[] };
+/** style: 사진에서 본 소재·실루엣·무드 등(통제 어휘, catalog.ts) — 정확한 상품을 못 찾았을 때 비슷한 옷을 고르는 데 쓴다 */
+export type IdentifyResult = { identities: Identity[]; missing: string[]; summary: string; style: Style };
 export type SearchInput = { brand: string; name: string; color?: string | null; size?: string | null; maxPrice?: number | null; usedOk: boolean; day: number; sellers: Seller[]; known: string[] };
 export type Listing = { seller: string; url: string; title: string; price: number | null; size: string; condition: 'new' | 'used' | 'unknown'; match: 'same_likely' | 'similar' | 'unknown'; stock: 'listed' | 'sold_out' | 'unknown'; reason: string; urlSeen: boolean | null };
 export type SellerNote = { seller: string; searched: boolean; note: string };
@@ -41,13 +47,21 @@ const pick = <T extends string>(v: unknown, ok: readonly T[], dflt: T): T => (ok
 export const urlKey = (u: string) => { try { const x = new URL(u); return x.host.toLowerCase().replace(/^(www|m)\./, '') + x.pathname.replace(/\/+$/, '') + x.search; } catch { return u; } };
 const onDomain = (u: string, domain: string) => { try { const h = new URL(u).host.toLowerCase(); return h === domain || h.endsWith('.' + domain); } catch { return false; } };
 
-export function cleanIdentify(raw: any): IdentifyResult {
-  const identities = (Array.isArray(raw?.identities) ? raw.identities : []).map((x: any): Identity => ({
-    brand: str(x?.brand, 60), name: str(x?.name, 120), color: str(x?.color, 40), category: str(x?.category, 40),
-    confidence: pick(x?.confidence, ['high', 'medium', 'low'] as const, 'low'),
-    reasons: strs(x?.reasons, 5, 200), refs: strs(x?.refs, 5, 1000).filter(isHttp),
-  })).filter((x: Identity) => x.name).slice(0, 3);
-  return { identities, missing: strs(raw?.missing, 4, 200), summary: str(raw?.summary, 300) };
+/** seen: 응답 안에서 실제로 본 주소. 주면 그 밖의 근거 주소는 빼고, 뺐다는 사실을 uncertain 에 남긴다 */
+export function cleanIdentify(raw: any, seen?: Set<string> | null): IdentifyResult {
+  const identities = (Array.isArray(raw?.identities) ? raw.identities : []).map((x: any): Identity => {
+    const refs = strs(x?.refs, 5, 1000).filter(isHttp);
+    const kept = seen && seen.size ? refs.filter(u => seen.has(urlKey(u))) : refs;
+    const uncertain = strs(x?.uncertain, 5, 200);
+    if (kept.length < refs.length) uncertain.push(`근거 주소: ${refs.length - kept.length}개는 검색 결과에서 확인되지 않아 뺐어요`);
+    return {
+      brand: str(x?.brand, 60), name: str(x?.name, 120), color: str(x?.color, 40), category: str(x?.category, 40),
+      confidence: pick(x?.confidence, ['high', 'medium', 'low'] as const, 'low'),
+      reasons: strs(x?.reasons, 5, 200), refs: kept, season: str(x?.season, 40), code: str(x?.code, 40),
+      matched: strs(x?.matched, 6, 200), uncertain: uncertain.slice(0, 6),
+    };
+  }).filter((x: Identity) => x.name).slice(0, 3);
+  return { identities, missing: strs(raw?.missing, 4, 200), summary: str(raw?.summary, 300), style: cleanStyle(raw?.style) };
 }
 
 /** 판매처 도메인이 아닌 주소(해외·다른 사이트)는 버리고, 검색 결과에 없던 주소는 표시해 둔다 */
@@ -95,6 +109,9 @@ const IDENTIFY_SYSTEM = `너는 국내 중고·리셀 의류 탐색 서비스 WA
 - 확실하지 않으면 confidence를 low로 두고, 판단에 더 필요한 정보(예: 케어라벨·태그 사진, 구매 링크)를 missing에 적는다.
 - 상품명은 판매 페이지에서 실제로 쓰는 표기를 따른다. 찾지 못한 모델명을 지어내지 않는다.
 - refs에는 검색 결과나 열어 본 페이지에서 실제로 확인한 주소만 넣는다.
+- 후보마다 확인한 속성(matched)과 확인하지 못한 속성(uncertain)을 “속성: 근거” 한 줄씩 나눠 적는다. 속성은 브랜드·모델·품번·시즌·색상·디테일 중에서. 시즌·품번을 확인하지 못했으면 빈 문자열로 두고 uncertain에 적는다.
+- 브랜드와 모델을 페이지로 확인했을 때만 confidence=high. 비슷한 디자인의 다른 상품일 수 있으면 medium 이하.
+- style에는 사진 속 옷 자체의 특징을 통제 어휘로 적는다(정확한 상품을 못 찾아도 적는다). mood: techwear·archive·minimal·workwear·street·outdoor·tailoring·avant-garde·military·sportswear·heritage·preppy / silhouette: oversized·relaxed·slim·boxy·cropped·layered / material: nylon·wool·cotton·denim·leather·technical-fabric·knit·linen / detail: utility-pockets·zip·pleats·deconstruction·washed·patchwork·reflective / category: outerwear·jacket·knitwear·trousers·shirts·tees·bags·footwear / color: 영어 색 이름. 사람(얼굴·체형)은 판단하지 않는다.
 - 결과는 반드시 submit_identification 도구로 한 번 제출한다. 모든 문장은 한국어로, 운영자가 바로 읽을 수 있게 짧게 쓴다.`;
 
 const SEARCH_SYSTEM = `너는 국내 중고·리셀 의류 탐색 서비스 WALF의 매물 탐색 보조다. 왈프 팀이 확인한 상품을 지정된 국내 판매처에서 찾는다. 네 결과는 왈프 팀 운영자가 검수한 뒤에만 사용자에게 전해진다.
@@ -116,9 +133,12 @@ const IDENTIFY_TOOL = {
   description: '상품 식별 결과를 왈프 팀에 제출한다. 모든 확인이 끝난 뒤 한 번만 호출한다.',
   input_schema: obj({
     identities: { type: 'array', description: '유력한 순서, 최대 3개', items: obj({ brand: S, name: { type: 'string', description: '판매 페이지 표기 그대로의 모델명' }, color: S, category: S,
-      confidence: { type: 'string', enum: ['high', 'medium', 'low'] }, reasons: SA, refs: { type: 'array', items: S, description: '확인한 페이지 주소' } }) },
+      season: { type: 'string', description: '확인한 시즌(예: 2026FW), 모르면 빈 문자열' }, code: { type: 'string', description: '확인한 품번, 모르면 빈 문자열' },
+      confidence: { type: 'string', enum: ['high', 'medium', 'low'] }, reasons: SA, refs: { type: 'array', items: S, description: '확인한 페이지 주소' },
+      matched: { type: 'array', items: S, description: '확인한 속성 — “속성: 근거”' }, uncertain: { type: 'array', items: S, description: '확인하지 못한 속성 — “속성: 이유”' } }) },
     missing: { type: 'array', items: S, description: '판단에 더 필요한 정보' },
     summary: { type: 'string', description: '운영자에게 한두 문장 요약' },
+    style: obj(Object.fromEntries(STYLE_KINDS.map(k => [k, SA]))),
   }),
 };
 const searchTool = (names: string[]) => ({
@@ -200,7 +220,7 @@ export function claudeProvider(opts: { model?: string; effort?: string } = {}): 
         { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 4, max_content_tokens: 8000 },
       ];
       const out = await ask(IDENTIFY_SYSTEM, content, tools, IDENTIFY_TOOL);
-      return { data: cleanIdentify(out.input), usage: out.usage };
+      return { data: cleanIdentify(out.input, out.seen), usage: out.usage };
     },
     async search(i) {
       let sellers = i.sellers.filter(s => s.domain);
@@ -245,17 +265,28 @@ export function aiErrorText(e: any): string {
 }
 
 // ── 모의(QA·자동 테스트 전용) ─────────────────────────────────────
+/** 테스트 사례(fixtures/find-mock.json): 상품명·메모에 trigger 가 들어 있으면 그 사례의 정해진 식별 결과를 돌려준다 */
+type FindFixture = { trigger: string; summary: string; identities: Partial<Identity>[]; missing?: string[]; style?: Style };
+function findFixtures(file = path.resolve(import.meta.dirname, '..', 'fixtures', 'find-mock.json')): FindFixture[] {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return []; }
+}
+
 /** 실제로 아무것도 보지 않는다. 결과는 모두 “모의”로 저장되고 어드민·앱에 모의 표시가 붙는다. */
 export function mockProvider(): AiProvider {
   const usage: Usage = { model: 'mock', inputTokens: 0, outputTokens: 0, searches: 0 };
+  const fixtures = findFixtures();
   return {
     kind: 'mock', label: '모의 AI(실제 분석 아님)',
     async identify(i) {
+      const text = `${i.productName || ''} ${i.note || ''}`;
+      const fx = fixtures.find(f => text.includes(f.trigger));
+      if (fx) return { usage, data: cleanIdentify({ ...fx, summary: `모의 AI 결과(테스트 사례) — ${fx.summary}` }) };
       const named = i.productName || '';
       return { usage, data: {
         identities: [{ brand: i.brand || '', name: named || '모의 식별 결과', color: named ? '' : i.color || '', category: '의류', confidence: named ? 'medium' : 'low',
-          reasons: [named ? '모의 결과예요 — 사용자가 쓴 이름을 그대로 옮겼어요' : '모의 결과예요 — 사진을 실제로 보지 않았어요'], refs: [] }],
-        missing: named ? [] : ['정확한 모델명을 알 수 있는 태그 사진'], summary: '모의 AI 결과 — 실제 분석이 아니에요',
+          reasons: [named ? '모의 결과예요 — 사용자가 쓴 이름을 그대로 옮겼어요' : '모의 결과예요 — 사진을 실제로 보지 않았어요'], refs: [],
+          season: '', code: '', matched: [], uncertain: ['모델: 모의 결과라 확인하지 않았어요'] }],
+        missing: named ? [] : ['정확한 모델명을 알 수 있는 태그 사진'], summary: '모의 AI 결과 — 실제 분석이 아니에요', style: {},
       } };
     },
     async search(i) {
