@@ -12,6 +12,7 @@ import { createAiWorker, recoverAiJobs, ensureAiJobs } from './aijobs.ts';
 import { loadSeedFile } from './catalog.ts';
 import { limitsFromEnv } from './cost.ts';
 import { createChecker, policyFromEnv, tickWatches } from './watch.ts';
+import { createOfferSearcher, recoverOfferSearches, searchEnvFrom } from './findsearch.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 // .env (있으면) — 이미 설정된 환경변수가 우선
@@ -48,7 +49,10 @@ app.use((req, res, next) => {
 app.use('/uploads', express.static(uploads, { maxAge: '7d', immutable: true, fallthrough: false }));
 app.use('/api', userApi(db, { uploads, pushConfigured: process.env.WALF_PUSH_DISABLED !== '1', policy }), apiErrors);
 const checker = createChecker(db, policy);
-app.use('/admin', adminRouter(db, { uploads, password, secret: process.env.WALF_SECRET || crypto.randomBytes(32).toString('hex'), qaTools: process.env.WALF_QA_TOOLS === '1', ai, limits, policy, checker }));
+// 찾아줘 판매처 탐색(식별과 별도): 무료 소스만(공식몰 자체 검색 등), AI 호출 없음. 결과는 검수 전까지 사용자에게 보이지 않는다
+const searchEnv = searchEnvFrom({ mockAllowed: policy.mockAllowed });
+const searcher = createOfferSearcher(db, searchEnv);
+app.use('/admin', adminRouter(db, { uploads, password, secret: process.env.WALF_SECRET || crypto.randomBytes(32).toString('hex'), qaTools: process.env.WALF_QA_TOOLS === '1', ai, limits, policy, checker, search: { env: searchEnv, step: searcher.step } }));
 app.get('/', (_q, res) => res.redirect('/admin'));
 
 const every = Number(process.env.WALF_TICK_MS || 30_000);
@@ -64,6 +68,9 @@ if (ai) {
 const w0 = tickWatches(db, policy);
 if (w0.recovered) console.log(`가격 확인 ${w0.recovered}건을 다시 대기열에 넣었어요(서버 재시작).`);
 checker.start(Number(process.env.WALF_WATCH_POLL_MS || 10_000));
+const s0 = recoverOfferSearches(db);
+if (s0) console.log(`판매처 탐색 ${s0}건을 다시 대기열에 넣었어요(서버 재시작).`);
+searcher.start(Number(process.env.WALF_SEARCH_POLL_MS || 10_000));
 
 app.listen(PORT, '0.0.0.0', () => {
   const lan = Object.values(os.networkInterfaces()).flat().find(i => i && i.family === 'IPv4' && !i.internal)?.address;
@@ -71,4 +78,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  admin  http://localhost:${PORT}/admin   db ${path.relative(root, dbFile)}   QA도구 ${process.env.WALF_QA_TOOLS === '1' ? '켜짐' : '꺼짐'}`);
   console.log(`  AI     ${ai ? ai.label : '꺼짐 — server/.env 에 ANTHROPIC_API_KEY 가 없어 운영자가 직접 확인해요'} · 월 예산 $${limits.monthlyUsd} · 의뢰별 ${limits.perRequestCalls}회`);
   console.log(`  기다려줘 활성 ${policy.maxActive}개/사용자 · ${policy.checkEveryMs / 3600_000}시간마다 확인 · 테스트 가격 소스 ${policy.mockAllowed ? '켜짐' : '꺼짐'}`);
+  console.log(`  판매처 탐색 공식몰 ${searchEnv.malls.length}곳 · 네이버 쇼핑 API ${searchEnv.env.WALF_NAVER_CLIENT_ID ? '켜짐' : '키 없음(대기)'} · AI 웹 검색 쓰지 않음 · 테스트 판매처 ${searchEnv.mockAllowed ? '켜짐' : '꺼짐'}`);
 });

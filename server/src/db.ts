@@ -274,7 +274,58 @@ CREATE INDEX IF NOT EXISTS ix_obs_target ON price_observations(target_key, check
 CREATE INDEX IF NOT EXISTS ix_check_status ON price_checks(status, id);
 CREATE INDEX IF NOT EXISTS ix_style_kind ON style_tags(kind, value);
 `;
-export const SCHEMA_VERSION = 2;
+// ── V2.1: 판매처 탐색(식별과 분리) · 실제 상품 후보 ─────────────────
+// AI가 어떤 옷인지 식별한 것(product_identities)과 실제로 판매 중인 상품 페이지를 찾은 것(offers)은 다른 결과다.
+// 판매처 탐색은 허용된 데이터 소스만 쓰고, 소스마다 무엇을 했는지(검색함·건너뜀·연동 대기)를 report 에 남긴다.
+const SCHEMA_V3 = `
+CREATE TABLE IF NOT EXISTS offer_searches(
+  id INTEGER PRIMARY KEY,
+  request_id INTEGER REFERENCES requests(id) ON DELETE CASCADE,
+  watch_id INTEGER REFERENCES watches(id) ON DELETE CASCADE,  -- 기다려줘 새 매물 탐색(Gate C)
+  product_id INTEGER REFERENCES products(id),
+  purpose TEXT NOT NULL,                -- find(찾아줘 판매처 탐색) | discovery(기다려줘 새 매물)
+  target TEXT NOT NULL,                 -- 탐색 대상(JSON: 브랜드·이름·품번·시즌·색·식별 근거)
+  target_basis TEXT NOT NULL,           -- ai_draft(AI 제안·검수 전) | operator_published(운영자 공개) | user_confirmed(사용자 확인)
+  search_key TEXT NOT NULL,             -- 같은 대상·같은 소스면 같은 열쇠 — 하루 안에 다시 검색하지 않는다
+  status TEXT NOT NULL,                 -- queued | running | done | failed | cancelled
+  queries TEXT, report TEXT,            -- JSON: 검색 조건 · 소스별 처리 결과
+  summary TEXT, error TEXT,
+  reused_from INTEGER, requested_by TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+  is_mock INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER
+);
+-- 실제 상품 후보: 판매처의 상품 페이지 하나. relation=same 은 찾는 옷의 판매처 후보, similar 는 대체 추천(같은 상품이라고 말하지 않는다)
+CREATE TABLE IF NOT EXISTS offers(
+  id INTEGER PRIMARY KEY,
+  search_id INTEGER NOT NULL REFERENCES offer_searches(id) ON DELETE CASCADE,
+  request_id INTEGER REFERENCES requests(id) ON DELETE CASCADE,
+  listing_id INTEGER REFERENCES listings(id),
+  relation TEXT NOT NULL,               -- same | similar
+  rank INTEGER NOT NULL, group_key TEXT,
+  source TEXT NOT NULL, seller TEXT NOT NULL, url TEXT NOT NULL, url_key TEXT NOT NULL,
+  brand TEXT, name TEXT, model_code TEXT, season TEXT, image_url TEXT,
+  price INTEGER, sale_price INTEGER, currency TEXT NOT NULL DEFAULT 'KRW', shipping INTEGER,
+  condition TEXT NOT NULL DEFAULT 'unknown',  -- new | used | unknown
+  options TEXT,                         -- JSON [{color,size,stock,price}]
+  stock TEXT NOT NULL DEFAULT 'unknown',      -- 원하는 사이즈(없으면 페이지 전체) 기준: in_stock | sold_out | unknown
+  want_size TEXT NOT NULL DEFAULT 'any',      -- ok | sold_out | missing | unknown | any
+  want_color TEXT NOT NULL DEFAULT 'any',     -- ok | other | unknown | any
+  verdict TEXT NOT NULL,                -- 자동 판정: same_code | likely | unverified | different (사진 비교 없음)
+  checks TEXT,                          -- JSON [{field,result,text}] — 일치·불일치·확인 못 함 근거
+  similar_points TEXT, diff_points TEXT,  -- JSON — 원래 옷과 비슷한 점·다른 점
+  recommender TEXT NOT NULL, recommender_version TEXT NOT NULL, score REAL,
+  detail TEXT NOT NULL,                 -- fetched(상품 페이지를 읽음) | listed_only(검색 결과만) | failed
+  detail_note TEXT, queries TEXT, fetched_at INTEGER,
+  review_state TEXT NOT NULL DEFAULT 'pending',  -- pending | confirmed_same | rejected (운영자 검수)
+  reviewed_by TEXT, reviewed_at INTEGER, review_note TEXT,
+  is_mock INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_osearch_req ON offer_searches(request_id, id);
+CREATE INDEX IF NOT EXISTS ix_osearch_status ON offer_searches(status, id);
+CREATE INDEX IF NOT EXISTS ix_osearch_key ON offer_searches(search_key, finished_at);
+CREATE INDEX IF NOT EXISTS ix_offer_search ON offers(search_id, rank);
+`;
+export const SCHEMA_VERSION = 3;
 
 export const SELLERS: [string, string, string][] = [
   ['무신사', 'new', 'musinsa.com'], ['29CM', 'new', '29cm.co.kr'], ['W컨셉', 'new', 'wconcept.co.kr'],
@@ -332,6 +383,8 @@ export function openDb(file: string, opts: OpenOpts = {}): DB {
   add('product_identities', 'verify_url', 'TEXT');
   // 같은 알림을 두 번 만들지 않는다(서버 재시작·동시 실행에도) — 열쇠가 있는 알림만
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_noti_dedupe ON notifications(user_id, dedupe_key) WHERE dedupe_key IS NOT NULL');
+  // V2.1 — 새 표만 더한다(기존 데이터는 그대로)
+  db.exec(SCHEMA_V3);
   if (version < 2) backfillProducts(db);
   if (version < SCHEMA_VERSION) db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
   return db;

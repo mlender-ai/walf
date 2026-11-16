@@ -10,10 +10,15 @@ import * as A from './aijobs.ts';
 import * as F from './find.ts';
 import * as W from './watch.ts';
 import * as C from './cost.ts';
+import fs from 'node:fs';
+import path from 'node:path';
 import { STYLE_LABEL, styleLabel } from './catalog.ts';
 import { SOURCES } from './sources.ts';
+import * as S from './findsearch.ts';
+import { itemPrice, totalPrice, type ProductOffer } from './offers.ts';
 
-type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null; limits?: C.Limits; policy?: W.WatchPolicy; checker?: { step: (t?: number) => Promise<number | null> } };
+type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null; limits?: C.Limits; policy?: W.WatchPolicy; checker?: { step: (t?: number) => Promise<number | null> };
+  search?: { env: S.SearchEnv; step: () => Promise<number | null> } };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const MOCK = '<span class="mk">모의</span>';
 
@@ -47,7 +52,55 @@ ul{list-style:none;margin:0;padding:0}details summary{cursor:pointer;font-weight
 .ai .id{background:#fff;border:1px solid var(--g3);border-radius:10px;padding:12px 14px;margin:10px 0}.ai .id ul{list-style:disc;padding-left:18px;margin:6px 0}
 .ai .id ul li{margin:2px 0}.tg.aip{border:1.2px dashed #111;background:#fff}.fd{border-top:1px solid var(--g3);padding:12px 0}.fd:first-of-type{border-top:0}
 .aibar{display:flex;gap:10px;align-items:center;padding:10px 14px;border-radius:10px;background:var(--sf);margin-bottom:14px}
+.of{display:grid;grid-template-columns:84px 1fr 220px;gap:14px;padding:12px 0;border-top:1px solid var(--sf)}.of img,.of .noimg{width:84px;height:96px;object-fit:cover;border-radius:8px;background:var(--cv)}
+.of .noimg{display:flex;align-items:center;justify-content:center;color:var(--g5);font-size:11px;text-align:center}.ck{margin:6px 0 0;font-size:12.5px}.ck li{margin:1px 0}.ck .m{font-weight:700}.ck .x{text-decoration:line-through;color:var(--g5)}
+.ob h3{margin-top:16px}.aibar .sp{flex:1}
 `;
+const VERDICT_LABEL: Record<string, string> = { same_code: '같은 상품 · 품번 일치', likely: '같은 상품일 가능성 높음', unverified: '같은 상품인지 확인 못 함', different: '다른 상품(제외)' };
+const DETAIL_LABEL: Record<string, string> = { fetched: '상품 페이지 확인', listed_only: '검색 결과만', failed: '상품 페이지 읽기 실패' };
+const WANT_SIZE: Record<string, string> = { ok: '재고 있음', sold_out: '품절', missing: '옵션 없음', unknown: '재고 모름', any: '사이즈 무관' };
+const CHECK_MARK: Record<string, string> = { match: '✓', mismatch: '✕', unknown: '?', not_checked: '–' };
+
+/** 의뢰 상세: 찾아줘 판매처 탐색(AI 식별과 별도) — 소스별로 무엇을 했는지와 실제 상품 후보를 같은 상품·가능성·확인 못 함·다른 상품으로 나눠 보여 준다 */
+function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
+  const e = cfg.search?.env;
+  if (!e) return '';
+  const img = (o: ProductOffer) => !o.imageUrl ? '<div class="noimg">이미지<br>없음</div>'
+    : o.imageUrl.startsWith('mock://image/') ? `<img src="/admin/mock-image/${esc(o.imageUrl.slice(13))}" alt="테스트 이미지">`
+    : `<img src="${esc(o.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
+  const won = (n: number | null) => n == null ? '—' : `${n.toLocaleString('ko-KR')}원`;
+  const card = (o: ProductOffer) => {
+    const sizes = [...new Set(o.options.map(x => `${x.size || '?'}${x.color ? `(${x.color})` : ''} ${x.stock === 'in_stock' ? '있음' : x.stock === 'sold_out' ? '품절' : '모름'}`))];
+    return `<div class="of">${img(o)}<div><p style="margin:0"><span class="tg ${o.verdict === 'same_code' ? 'v' : o.verdict === 'likely' ? 'o' : 'x'}">${VERDICT_LABEL[o.verdict]}</span> <span class="tg p">${DETAIL_LABEL[o.detail]}</span>${o.isMock ? MOCK : ''}</p>
+      <p style="margin:4px 0 0"><b>${esc(o.seller)}</b> · <a href="${o.url.startsWith('mock://') ? '#' : esc(o.url)}" target="_blank" rel="noopener noreferrer">${esc(o.name || o.url)}</a></p>
+      <ul class="ck">${o.checks.map(c => `<li class="${c.result === 'match' ? 'm' : c.result === 'mismatch' ? 'x' : ''}">${CHECK_MARK[c.result]} ${esc(c.text)}</li>`).join('')}</ul>
+      ${o.diffPoints.length ? `<p class="sub" style="margin:4px 0 0">다른 점·주의: ${o.diffPoints.map(esc).join(' · ')}</p>` : ''}${o.detailNote ? `<p class="sub" style="margin:2px 0 0">${esc(o.detailNote)}</p>` : ''}</div>
+      <div><dl class="kv" style="grid-template-columns:70px 1fr"><dt>판매가</dt><dd>${won(o.price)}${o.salePrice ? ` → <b>${won(o.salePrice)}</b>` : ''}</dd><dt>배송비</dt><dd>${o.shipping == null ? '모름' : won(o.shipping)}</dd>
+      <dt>총액</dt><dd>${totalPrice(o) != null ? won(totalPrice(o)) : itemPrice(o) != null ? `${won(itemPrice(o))} + 배송비 모름` : '—'}</dd><dt>상태</dt><dd>${{ new: '새 상품', used: '중고', unknown: '모름' }[o.condition]}</dd>
+      <dt>원하는 옵션</dt><dd>${esc(rq.size || '사이즈 무관')} · ${WANT_SIZE[o.wantSize]}</dd></dl>${sizes.length ? `<p class="sub" style="margin:4px 0 0">옵션: ${esc(sizes.join(' · '))}</p>` : ''}</div></div>`;
+  };
+  const searches = S.latestSearches(db, rq.id, 3);
+  const s = searches[0];
+  const button = `<form method="post" action="/admin/requests/${rq.id}/offers/search" style="display:inline"><button class="btn s sm">판매처 탐색 ${s ? '다시 ' : ''}실행</button></form>`;
+  if (!s) {
+    const tg = S.targetsOf(db, rq.id, e.malls)[0];
+    const why = !tg ? '탐색할 식별 결과가 없어요(AI 식별 전이거나 후보가 모두 숨김이에요).' : !S.usableSources(e, tg).length ? `지금 쓸 수 있는 소스가 없어요 — ${esc(tg.brand || '브랜드 미상')}의 공식몰이 등록되지 않았고, 다른 소스는 연동 대기예요.` : '곧 자동으로 탐색해요.';
+    return `<section class="ob" data-offers="none"><h2>판매처 탐색 <span class="sub">· 실제 판매 상품 후보(AI 식별과 별도)</span></h2><p class="sub">${why}</p>${tg ? button : ''}</section>`;
+  }
+  const r = S.searchResultOf(db, s);
+  const busy = ['queued', 'running'].includes(s.status);
+  const id = r.identification;
+  const rows = r.sources.map(x => `<tr><td><b>${esc(x.label)}</b>${x.cost === 'paid' ? ' <span class="sub">유료</span>' : ''}</td><td><span class="st">${esc(x.status)}</span></td><td>${S.OUTCOME_LABEL[x.outcome]}${x.outcome === 'ok' || x.outcome === 'empty' ? ` · 검색 결과 ${x.hits}건(검색어별 합계) · ${x.ms}ms` : ''}</td>
+    <td class="sub">${esc(x.reason)}${x.queries.length ? `<br>검색어: ${x.queries.map(esc).join(' / ')}` : ''}${x.errors.length ? `<br>오류: ${x.errors.map(esc).join(' / ')}` : ''}</td></tr>`).join('');
+  const group = (title: string, xs: ProductOffer[], open = true) => xs.length ? `<details ${open ? 'open' : ''}><summary>${title} ${xs.length}</summary>${xs.map(card).join('')}</details>` : '';
+  return `<section class="ob" data-offers="${esc(s.status)}:${r.sale.state}"><h2>판매처 탐색 <span class="sub">· 실제 판매 상품 후보(AI 식별과 별도) · 검수 전에는 사용자에게 보이지 않아요</span>${s.is_mock ? MOCK : ''}</h2>
+    <div class="aibar"><b>탐색 대상</b><span>${esc([id.brand, id.name].filter(Boolean).join(' '))}${id.modelCode ? ` · 품번 ${esc(id.modelCode)}` : ''}</span><span class="sub">${esc(id.basisLabel)} · ${busy ? (s.status === 'queued' ? '대기 중' : '탐색 중') : s.status === 'failed' ? `실패 · ${esc(s.error)}` : `${kWhen(s.finished_at, t)} 완료${s.reused_from ? ` · #${s.reused_from} 결과 다시 씀(소스를 다시 열지 않음)` : ''}`}</span><span class="sp"></span>${busy ? '' : button}</div>
+    ${s.summary ? `<p><b>${esc(s.summary)}</b></p>` : ''}
+    <details ${r.sale.state === 'none' ? 'open' : ''}><summary>소스별 처리 ${r.sources.filter(x => x.outcome !== 'not_run').length}곳 검색 · ${r.sources.filter(x => x.outcome === 'not_run').length}곳 검색하지 않음</summary><table><thead><tr><th>소스</th><th>상태</th><th>이번 탐색</th><th>근거·검색어</th></tr></thead><tbody>${rows}</tbody></table></details>
+    ${group('같은 상품 · 품번 일치', r.sale.same)}${group('같은 상품일 가능성 높음', r.sale.likely)}${group('같은 상품인지 확인 못 함', r.sale.unverified)}${group('다른 상품(제외)', r.sale.different, false)}
+    <ul class="sub" style="list-style:disc;padding-left:18px;margin-top:10px">${r.limits.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+    ${searches.length > 1 ? `<p class="sub">이전 탐색: ${searches.slice(1).map(x => `#${x.id} ${esc(x.status)} ${kWhen(x.finished_at || x.created_at, t)} · ${esc(x.summary || '')}`).join(' / ')}</p>` : ''}</section>`;
+}
 const FONT = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">';
 
 function page(title: string, body: string, op?: string, tab = '') {
@@ -129,6 +182,10 @@ export function adminRouter(db: DB, cfg: Cfg) {
       ['기다려줘 확인 필요', '상품 페이지가 없거나, 등록한 옷과 같은 페이지인지·배송비·색상·재고를 확인하지 못했거나, 연속으로 확인 못 한 것', q(`SELECT * FROM watches WHERE status='needs_info'
           OR (status='active' AND (last_state IN ('stock_unknown','shipping_unknown','color_unknown','unverified','mismatch','sale_only') OR page_identity IN ('unverified','mismatch') OR fail_streak>=?)) ORDER BY updated_at`, cfg.policy?.unreachableAfter ?? 3)
         .map(w => `<div class="q"><a href="/admin/watches#w${w.id}"><b>W${w.id} ${esc(w.title)}</b>${w.is_mock ? MOCK : ''}</a><span class="sub">${w.status === 'needs_info' ? '상품 페이지 필요' : w.fail_streak >= (cfg.policy?.unreachableAfter ?? 3) ? `연속 ${w.fail_streak}번 확인 실패` : esc(JSON.parse(w.last_result || '{}').reasons?.[0] || '')}</span></div>`).join('')],
+      ['판매처 탐색: 같은 상품 후보', '품번·모델명으로 찾은 판매 페이지(사진 비교 없음) — 검수 전에는 사용자에게 보이지 않아요', q(`SELECT r.*, s.summary, s.status sst, s.error FROM offer_searches s JOIN requests r ON r.id=s.request_id
+          WHERE s.id IN (SELECT MAX(id) FROM offer_searches WHERE purpose='find' AND status IN ('done','failed') GROUP BY request_id) AND r.status IN ('submitted','active')
+          AND (s.status='failed' OR EXISTS (SELECT 1 FROM offers o WHERE o.search_id=s.id AND o.verdict IN ('same_code','likely') AND o.review_state='pending')) ORDER BY s.id DESC`)
+        .map(x => link(x, x.sst === 'failed' ? `<b>탐색 실패</b> · ${esc(String(x.error || '').slice(0, 60))}` : esc(x.summary))).join('')],
       ['예산·상한으로 멈춘 AI 작업', '비용 화면에서 확인한 뒤 계속하거나 직접 확인하세요', q(`SELECT j.*, r.product_name, r.identified_name, r.product_url, r.is_mock rm, r.id rid FROM ai_jobs j JOIN requests r ON r.id=j.request_id WHERE j.status IN ('held','interrupted') ORDER BY j.id`)
         .map(j => link({ ...j, id: j.rid, is_mock: j.rm }, `AI ${j.kind === 'identify' ? '식별' : '탐색'} ${j.status === 'held' ? '보류' : '중단'} · ${esc(String(j.error || '').slice(0, 60))}`)).join('')],
     ];
@@ -335,7 +392,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
       <div class="row"><form method="post" action="/admin/requests/${rq.id}/qa/shift"><button class="btn s sm">일정 24시간 당기기(다음 날로)</button></form><form method="post" action="/admin/requests/${rq.id}/qa/expire"><button class="btn s sm">지금 7일 종료 처리</button></form>${qaPush}</div></section>`
       : qaPush ? `<section class="warn"><h2>QA 도구 <span class="mk">QA</span></h2><div class="row">${qaPush}</div></section>` : '';
 
-    const body = `${head}${ident}
+    const body = `${head}${ident}${offersHtml(db, rq, cfg, t)}
       <section><h2>2 · 탐색 작업</h2><p class="sub">AI가 매일 국내 판매처를 먼저 찾아보고, 왈프 팀이 검수해서 기록해요.</p>${runsHtml}</section>
       ${findsBox && !hasPending ? `<section>${findsBox}</section>` : ''}
       <section><h2>3 · 후보와 매물 ${cands.length ? `<span class="sub">${cands.length}</span>` : ''}</h2><p class="sub">공개한 후보만 사용자에게 보여요. 판매자 제보는 “구매 가능 확인” 전까지 푸시를 보내지 않아요(PRD).</p>
@@ -434,6 +491,29 @@ export function adminRouter(db: DB, cfg: Cfg) {
     F.publishFind(db, id, { items, discover: disc }, OP(req));
     return [id, '찾아줘 결과를 사용자에게 공개했어요.'];
   }));
+
+  // ── V2.1: 판매처 탐색 ──
+  r.post('/requests/:id/offers/search', async (req, res, next) => {
+    const id = Number(req.params.id);
+    try {
+      D.getRequest(db, id);
+      if (!cfg.search) throw new HttpError(409, 'search_off', '판매처 탐색이 꺼져 있어요.');
+      const q = S.queueFindSearch(db, cfg.search.env, id, { by: OP(req), force: true });
+      if (!q.id) return res.redirect(`/admin/requests/${id}?e=${encodeURIComponent(q.skipped || '탐색을 시작하지 못했어요.')}`);
+      await cfg.search.step(); // 무료 소스만 — 바로 한 번 돌린다(다른 탐색이 돌고 있으면 대기열에서 이어진다)
+      back(res, id, '판매처 탐색을 실행했어요. 결과는 아래 “판매처 탐색”에 있어요.');
+    } catch (e: any) {
+      if (e instanceof HttpError) return res.redirect(`/admin/requests/${id}?e=${encodeURIComponent(e.message)}`);
+      next(e);
+    }
+  });
+  // 테스트 판매처 이미지(직접 그린 SVG) — 테스트 소스가 켜졌을 때만
+  const MOCK_IMG = path.resolve(import.meta.dirname, '..', 'fixtures', 'search-images');
+  r.get('/mock-image/:name', (req, res) => {
+    const name = String(req.params.name);
+    if (!cfg.search?.env.mockAllowed || !/^[a-z0-9-]+\.svg$/.test(name) || !fs.existsSync(path.join(MOCK_IMG, name))) return res.status(404).end();
+    res.type('image/svg+xml').set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'").send(fs.readFileSync(path.join(MOCK_IMG, name)));
+  });
 
   // ── V2: 기다려줘 ──
   const flash = (req: express.Request) => `${req.query.m ? `<div class="flash">${esc(req.query.m)}</div>` : ''}${req.query.e ? `<div class="flash err">${esc(req.query.e)}</div>` : ''}`;

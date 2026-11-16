@@ -7,6 +7,7 @@ import { HttpError } from './domain.ts';
 import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
 import { colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
 import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type Snapshot } from './sources.ts';
+import { compareProduct, type Verdict } from './sameproduct.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -207,32 +208,12 @@ export function confirmShipping(db: DB, id: number, fee: unknown, operator: stri
 // 사용자가 A 상품을 등록하고 B 상품 페이지를 연결해도 A의 조건 충족 알림이 나가면 안 된다.
 // 자동으로는 품번이 같거나 상품명 핵심 단어가 대부분 같을 때만 “같음”으로 보고, 다른 브랜드·다른 품번은 “다름”, 나머지는 운영자 확인을 기다린다.
 export const PAGE_OK = ['page_defined', 'matched', 'operator_confirmed'];
-const words = (s: unknown) => String(s ?? '').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const compact = (s: unknown) => words(s).replace(/\s+/g, '');
-const CODE_RE = /[a-z]{1,5}[-_]?[a-z]{0,5}\d{2,}(?:[-_][a-z0-9]+)*/gi;
-const STOP = new Set(['the', 'and', 'with', 'for', 'new', '신상', '정품', '새상품', '상품', '공용', '남녀공용']);
+const PAGE_OF: Record<Verdict, string> = { same_code: 'matched', likely: 'matched', different: 'mismatch', unverified: 'unverified' };
 export function pageIdentity(w: { page_identity?: string | null; identity_note?: string | null; title: string; brand?: string | null }, prod: { name?: string | null; brand?: string | null; model_code?: string | null } | undefined,
   s: { title: string | null; brand: string | null }): { identity: string; note: string } {
   if (w.page_identity === 'page_defined' || w.page_identity === 'operator_confirmed') return { identity: w.page_identity, note: w.identity_note || '' };
-  const title = s.title || '';
-  const tw = words(`${title} ${s.brand || ''}`), tc = tw.replace(/\s+/g, '');
-  const code = prod?.model_code;
-  if (code) {
-    const c = compact(code);
-    if (c && tc.includes(c)) return { identity: 'matched', note: `품번 ${code}이(가) 페이지 상품명에 있어요` };
-    const other = (title.match(CODE_RE) || []).find(x => compact(x).length >= 5 && compact(x) !== c);
-    if (other) return { identity: 'mismatch', note: `품번이 달라요(등록 ${code} · 페이지 ${other})` };
-  }
-  const brand = w.brand || prod?.brand;
-  const bk = compact(brand);
-  if (bk && s.brand && !compact(s.brand).includes(bk) && !bk.includes(compact(s.brand)) && !tc.includes(bk)) return { identity: 'mismatch', note: `브랜드가 달라요(페이지: ${s.brand})` };
-  const brandWords = new Set(words(brand).split(' '));
-  const tokens = [...new Set(words(w.title || prod?.name).split(' '))].filter(x => x.length >= 2 && !brandWords.has(x) && !STOP.has(x) && !colorsIn(x).length && !/^(xxs|xs|s|m|l|xl|xxl|free|\d{2,3})$/.test(x));
-  if (tokens.length >= 2) {
-    const hit = tokens.filter(x => tw.includes(x)).length;
-    if (hit / tokens.length >= 0.8) return { identity: 'matched', note: `상품명 핵심 단어 ${hit}/${tokens.length}개가 페이지 상품명과 같아요` };
-  }
-  return { identity: 'unverified', note: '등록한 옷과 같은 상품 페이지인지 자동으로 확인하지 못했어요(표기·언어 차이 등). 왈프 팀이 확인해요' };
+  const r = compareProduct({ brand: w.brand || prod?.brand, name: w.title || prod?.name, modelCode: prod?.model_code }, s);
+  return { identity: PAGE_OF[r.verdict], note: r.note };
 }
 /** 판정 전에 페이지 동일성을 정하고 바뀌었으면 기록한다 */
 function settleIdentity(db: DB, w: Row, s: { title: string | null; brand: string | null }, t: number) {

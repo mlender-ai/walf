@@ -171,3 +171,7 @@
 | `server/seed/brand-styles.json` | 브랜드 37개·태그(출처 있음, 검수 전) |
 | `server/fixtures/*.json` | 모의 식별 사례·테스트 가격 시나리오·테스트 스타일 |
 | `app/src/app/find/[id].tsx` · `watch/new.tsx` · `watch/[id].tsx` · `(tabs)/tracking.tsx` | 찾아줘 결과 · 기다려줘 등록 · 상세 · 내가 찾는 옷 |
+
+## 11. V2.1 — 찾아줘 판매처 탐색(Gate A, 2026-11-16)
+
+AI 식별과 판매 매물 탐색을 나눴어요. 7단계 파이프라인·실제 상품 후보 구조(`offer_searches`·`offers`, 스키마 v3)·소스별 접근 판단·검증 결과·한계는 [WALF_V21_GATE_A.md](WALF_V21_GATE_A.md)에 있어요. 같은 상품 판정 규칙은 `server/src/sameproduct.ts`로 옮겨 기다려줘와 함께 써요(동작 같음).
