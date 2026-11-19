@@ -5,7 +5,7 @@ import { type DB } from './db.ts';
 import { HttpError } from './domain.ts';
 import * as S from './findsearch.ts';
 import { card, meetsWatch, type OfferCard } from './offerreview.ts';
-import { offerOf } from './offers.ts';
+import { currentSimilar, offerOf } from './offers.ts';
 import { feedbackMap, priorityOptions, recordSignal, savedSet } from './feedback.ts';
 import { now, kWhen } from './time.ts';
 
@@ -65,7 +65,7 @@ export function updateDiscovery(db: DB, userId: number, watchId: number, patch: 
 export function watchExtrasView(db: DB, w: Row, base: string, e: S.SearchEnv, userId: number, t = now()) {
   const size = w.size ? String(w.size).toUpperCase() : null;
   const saved = savedSet(db, userId, w.id);
-  const rows = all(db, `SELECT * FROM offers WHERE watch_id=? AND published=1 ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, search_id DESC, rank`, w.id).map(offerOf);
+  const rows = all(db, `SELECT * FROM offers WHERE watch_id=? AND published=1 AND ${currentSimilar('watch_id')} ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, search_id DESC, rank`, w.id).map(offerOf);
   const last = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='discovery' ORDER BY id DESC LIMIT 1`, w.id);
   const lastDone = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='discovery' AND status='done' ORDER BY id DESC LIMIT 1`, w.id);
   // “새로 찾음”: 마지막 탐색에서 이 기다려줘가 처음 본 페이지

@@ -4,7 +4,7 @@
 import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
-import { offerOf, type ProductOffer, type StoredOffer } from './offers.ts';
+import { currentSimilar, offerOf, type ProductOffer, type StoredOffer } from './offers.ts';
 import { logReview } from './reviewlog.ts';
 import { feedbackMap, priorityOptions } from './feedback.ts';
 import { now, kWhen } from './time.ts';
@@ -189,8 +189,8 @@ function partState(db: DB, requestId: number, purpose: 'find' | 'similar', publi
 }
 /** 찾아줘 결과 화면의 판매처(같은 상품)·대체 상품 — 운영자가 공개한 것만. 검수 전 후보는 개수도 보여 주지 않는다(“확인 중”만) */
 export function offersView(db: DB, r: Row, base: string) {
-  // 같은 등급 안에서는 가장 최근 탐색·추천(선호를 바꿨으면 그 기준)의 순서가 먼저, 예전 추천에서 남은 공개분은 뒤에
-  const rows = (db.prepare(`SELECT * FROM offers WHERE request_id=? AND published=1 ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, search_id DESC, rank`).all(r.id) as Row[]).map(offerOf);
+  // 대체 상품은 가장 최근 추천(선호를 바꿨으면 그 기준)만. 같은 등급 안에서는 최근 탐색의 순서대로
+  const rows = (db.prepare(`SELECT * FROM offers WHERE request_id=? AND published=1 AND ${currentSimilar('request_id')} ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, search_id DESC, rank`).all(r.id) as Row[]).map(offerOf);
   const size = r.size ? String(r.size).toUpperCase() : null;
   const cards = rows.map(o => card(o, size, base));
   const exact = cards.filter(c => c.tier === 'exact'), possible = cards.filter(c => c.tier === 'possible');

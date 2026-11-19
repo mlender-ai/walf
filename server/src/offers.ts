@@ -111,6 +111,13 @@ export function saveOffers(db: DB, searchId: number, owner: { requestId?: number
   });
 }
 
+/**
+ * 대체 상품은 가장 최근에 끝난 추천 결과만 보여 준다(SQL 조건, offers 표 기준). 선호를 바꿔 다시 고르면 예전 추천에만 있던 옷은 화면에서 빠진다.
+ * 검수 결과는 지우지 않는다 — 다시 같은 페이지를 고르면 saveOffers 가 그 검수를 이어받는다
+ */
+export const currentSimilar = (owner: 'request_id' | 'watch_id') =>
+  `(relation<>'similar' OR search_id=(SELECT MAX(s.id) FROM offer_searches s WHERE s.${owner}=offers.${owner} AND s.purpose='similar' AND s.status='done'))`;
+
 export type StoredOffer = ProductOffer & { id: number; searchId: number; requestId: number | null; watchId: number | null; rank: number; listingId: number | null;
   reviewState: 'pending' | 'approved' | 'rejected'; publishTier: 'exact' | 'possible' | 'alternative' | null; published: boolean; publishedAt: number | null;
   reviewedBy: string | null; reviewedAt: number | null; reviewNote: string | null };

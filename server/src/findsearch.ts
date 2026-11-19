@@ -370,7 +370,9 @@ export function queueSimilarSearch(db: DB, e: SearchEnv, requestId: number, opts
   const key = crypto.createHash('sha256').update(json(['similar', t.style, compact(t.brand), compact(t.name), compact(t.modelCode), ids.sort(), t.isMock, r.size || '', t.priority || ''])).digest('hex').slice(0, 32);
   const t0 = now();
   if (!opts.force) {
-    const cur = one(db, `SELECT id FROM offer_searches WHERE request_id=? AND search_key=? AND (status IN ('queued','running') OR (status IN ('done','failed') AND COALESCE(finished_at, created_at)>?)) ORDER BY id DESC LIMIT 1`, requestId, key, t0 - e.reuseMs);
+    // 지금 보이는(가장 최근) 추천이 같은 조건일 때만 건너뛴다 — 선호를 바꿨다가 되돌리면 그 기준으로 다시 고른다
+    const cur = one(db, `SELECT id FROM offer_searches WHERE request_id=? AND search_key=? AND (status IN ('queued','running') OR (status IN ('done','failed') AND COALESCE(finished_at, created_at)>?))
+      AND id=(SELECT MAX(id) FROM offer_searches WHERE request_id=? AND purpose='similar')`, requestId, key, t0 - e.reuseMs, requestId);
     if (cur) return { id: cur.id, skipped: '같은 조건의 추천이 이미 있어요' };
   }
   const id = Number(run(db, `INSERT INTO offer_searches(request_id, product_id, purpose, target, target_basis, search_key, status, requested_by, is_mock, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -487,7 +489,8 @@ export function queueWatchSimilar(db: DB, e: SearchEnv, watchId: number, opts: {
   if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요(패션 브레인 연결 전)' };
   const key = crypto.createHash('sha256').update(json(['watch-similar', w.id, t.style, compact(t.name), ids.sort(), w.size || '', t.priority || ''])).digest('hex').slice(0, 32);
   const t0 = now();
-  if (!opts.force && one(db, `SELECT id FROM offer_searches WHERE watch_id=? AND search_key=? AND (status IN ('queued','running') OR COALESCE(finished_at, created_at)>?)`, w.id, key, t0 - e.reuseMs))
+  if (!opts.force && one(db, `SELECT id FROM offer_searches WHERE watch_id=? AND search_key=? AND (status IN ('queued','running') OR COALESCE(finished_at, created_at)>?)
+    AND id=(SELECT MAX(id) FROM offer_searches WHERE watch_id=? AND purpose='similar')`, w.id, key, t0 - e.reuseMs, w.id))
     return { skipped: '같은 조건의 추천이 이미 있어요' };
   const id = Number(run(db, `INSERT INTO offer_searches(watch_id, product_id, purpose, target, target_basis, search_key, status, requested_by, is_mock, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     w.id, w.product_id ?? null, 'similar', json(t), t.basis, key, 'queued', opts.by ?? null, t.isMock ? 1 : 0, t0).lastInsertRowid);

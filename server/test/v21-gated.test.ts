@@ -90,6 +90,26 @@ test('[선호] 무엇이 중요한지에 따라 대체 상품 순서가 바뀐�
   assert.deepEqual(F.findView(db, D.getRequest(db, id), 'http://h').priorities.find((p: any) => p.selected)?.id, 'material_detail');
 });
 
+test('[다시 고르기] 선호를 바꿔 다시 고르면 화면에는 새 추천만 — 새 기준에서 빠진 옷은 내려가고, 선호를 되돌리면 다시 골라 예전 검수를 이어받는다', async () => {
+  const { db, u, id } = await setup('[테스트:유사]');
+  S.queueSimilarSearch(db, env(), id); await runAll(db);
+  for (const o of offersOf(db, S.latestSearches(db, id, 1, 'similar')[0].id).slice(0, 3)) R.reviewOffer(db, o.id, 'alternative', {}, '운영자');
+  F.publishFind(db, id, { items: [{ aiIdentityId: F.findDraft(db, id).identities[0].id, tier: 'skip' }], discover: [] }, '운영자');
+  const names = () => F.findView(db, D.getRequest(db, id), 'http://h').alternatives.items.map((c: any) => c.name);
+  const DEFAULT = ['울 집업 블루종 브라운', '코튼 캔버스 워크 자켓 브라운', '나일론 코치 자켓 네이비'];
+  assert.deepEqual(names(), DEFAULT);
+  FB.setPriority(db, u.id, { requestId: id }, 'material_detail');
+  S.queueSimilarSearch(db, env(), id); await runAll(db);
+  assert.deepEqual(names(), ['울 집업 블루종 브라운', '코튼 캔버스 워크 자켓 브라운'], '소재·디테일 기준에서 빠진 나일론 코치 자켓은 내려간다(새로 고른 울 셔켓은 검수 전이라 아직 안 보임)');
+  assert.equal(D.findTiers(db, id).alternatives, 2);
+  FB.setPriority(db, u.id, { requestId: id }, null);
+  const back = S.queueSimilarSearch(db, env(), id);
+  assert.ok(back.id && !back.skipped, '되돌린 기준으로 다시 고른다(같은 조건 재검색 막기는 지금 보이는 추천에만)');
+  await runAll(db);
+  assert.deepEqual(names(), DEFAULT, '예전 검수를 이어받아 다시 보인다');
+  assert.equal(S.queueSimilarSearch(db, env(), id).skipped, '같은 조건의 추천이 이미 있어요', '같은 기준이면 다시 고르지 않는다');
+});
+
 test('[피드백] 추천 상품에만 직접 평가(마음에 들어요·비슷하지만 아니에요·관심 없어요) — 열어 보기·저장은 만족으로 치지 않는다 · 상품·모델·버전·순위와 함께 남는다', async () => {
   const { db, u, id } = await setup();
   S.queueFindSearch(db, env(), id); S.queueSimilarSearch(db, env(), id); await runAll(db);

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { type DB, tx, WANTED_CHANNELS } from './db.ts';
 import { now, DAY, HUNT_MS, kDate, kTime, kWhen, kRelDay, kDayNum, won } from './time.ts';
 import { uploadUrl } from './media.ts';
+import { currentSimilar } from './offers.ts';
 import { sendPush } from './push.ts';
 
 export class HttpError extends Error {
@@ -627,7 +628,7 @@ export function display(db: DB, r: Row, t = now()): Display {
 /** 사용자에게 공개된 찾아줘 결과 개수(MATCH·LIKELY·DISCOVER·대체 상품) */
 export function findTiers(db: DB, requestId: number) {
   const rows = all(db, `SELECT tier, is_mock FROM product_identities WHERE request_id=? AND status='published'`, requestId);
-  const alts = all(db, `SELECT is_mock FROM offers WHERE request_id=? AND published=1 AND publish_tier='alternative'`, requestId);
+  const alts = all(db, `SELECT is_mock FROM offers WHERE request_id=? AND published=1 AND publish_tier='alternative' AND ${currentSimilar('request_id')}`, requestId);
   const n = (t: string) => rows.filter(x => x.tier === t).length;
   return { match: n('match'), likely: n('likely'), discover: n('discover'), alternatives: alts.length, mock: rows.some(x => x.is_mock) || alts.some(x => x.is_mock) };
 }
