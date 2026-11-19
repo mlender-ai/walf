@@ -184,3 +184,14 @@ test('[QA] 조회가 실패하면 성공·조건 충족 알림을 보내지 않�
   assert.ok(!kinds.some(k => /met|discovery/.test(k)), '실패한 조회로 조건 충족 알림 없음');
   assert.equal(watch(db, id).last_state, 'check_failed');
 });
+
+// ── 6 · 실제 공식몰 데모에서 찾은 결함 ──
+test('[품번 띄어쓰기] 카페24 검색 목록의 상품명(주소 조각, “w jkt26 073 …”)도 품번이 정확히 같으면 같은 품번으로 본다 · 일부만 같으면 아니다', async () => {
+  const { compareProduct, joinSpacedCode } = await import('../src/sameproduct.ts');
+  const t = { brand: 'BADBLOOD', modelCode: 'W-JKT26-073', name: 'Shield-M Reversible Track Top' };
+  assert.equal(joinSpacedCode('W-JKT26-073', 'w jkt26 073 shield m reversible track top black'), 'w-jkt26-073 shield m reversible track top black');
+  assert.equal(compareProduct(t, { title: 'w jkt26 073 shield m reversible track top black', brand: 'BADBLOOD' }).verdict, 'same_code', '2026-11-20 데모: 같은 상품을 다른 상품으로 판정하던 결함');
+  assert.equal(compareProduct(t, { title: 'w jkt26 029 shield m reversible track top navy', brand: 'BADBLOOD' }).verdict, 'different', '품번이 다르면 다른 상품');
+  assert.notEqual(compareProduct(t, { title: 'w jkt26 07 shield m track top', brand: 'BADBLOOD' }).verdict, 'same_code', '품번 일부만 같으면 같은 상품 아님');
+  assert.equal(compareProduct(t, { title: '[w-jkt26-073] Shield-M Reversible Track Top - Black', brand: 'BADBLOOD' }).verdict, 'same_code', '상세 페이지 상품명은 그대로');
+});
