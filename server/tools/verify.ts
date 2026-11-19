@@ -22,7 +22,7 @@ const ok = unit.ok && e2e.every(x => x.ok) && cost.ok;
 const lines = [
   `# 회귀 확인 요약 — ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`,
   '',
-  `- 커밋: \`${git(['rev-parse', '--short', 'HEAD'])}\`${git(['status', '--porcelain']) ? ' (커밋 안 된 변경 있음)' : ''} · 브랜치 \`${git(['branch', '--show-current'])}\` · Node ${process.version}`,
+  `- 커밋: \`${git(['rev-parse', '--short', 'HEAD'])}\`${git(['status', '--porcelain', '--untracked-files=no']) ? ' (커밋 안 된 변경 있음)' : ''} · 브랜치 \`${git(['branch', '--show-current'])}\` · Node ${process.version}`,
   `- 결과: **${ok ? '모두 통과' : '실패 있음'}**`,
   '',
   '| 확인 | 결과 | 시간 |',
