@@ -3,14 +3,15 @@
 // 실제 의뢰에는 테스트 데이터(Fixture)를 쓰지 않고, 모의 의뢰에는 실제 판매처를 열지 않는다.
 import fs from 'node:fs';
 import path from 'node:path';
-import { SOURCES, fetchPage, robotsOk, safeFetch, SourceError, type Fetcher, type Snapshot, type Stock } from './sources.ts';
+import { SOURCES, fetchPage, robotsOk, safeFetch, SourceError, type Access, type Fetcher, type Snapshot, type Stock } from './sources.ts';
 import { normSize } from './catalog.ts';
 import { compact } from './sameproduct.ts';
 
 export type SearchQuery = { text: string; kind: 'code' | 'brand_code' | 'brand_name' | 'name' | 'alias_name' };
 export type RawHit = { source: string; seller: string; url: string; title: string; brand: string | null; price: number | null; imageUrl: string | null;
   condition: 'new' | 'used' | 'unknown'; query: string; rank: number; isMock: boolean };
-export type Availability = { status: 'SUPPORTED' | 'TEST_ONLY' | 'PENDING_EXTERNAL_SETUP' | 'PENDING_INTEGRATION' | 'UNSUPPORTED'; usable: boolean; reason: string };
+/** access: 왜 열지 않는지(판매처 레지스트리의 이용 권한 판정) — 사용자 문구를 고르는 데 쓴다 */
+export type Availability = { status: 'SUPPORTED' | 'TEST_ONLY' | 'PENDING_EXTERNAL_SETUP' | 'PENDING_INTEGRATION' | 'UNSUPPORTED'; usable: boolean; reason: string; access?: Access };
 export type Mall = { brand: string; aliases?: string[]; domain: string; platform: 'cafe24'; checked: string; basis: string };
 export type SourceCtx = {
   isMock: boolean; mockAllowed: boolean; env: Record<string, string | undefined>; malls: Mall[];
@@ -117,13 +118,13 @@ const closed = (id: string, label: string, kind: SearchSource['kind'], cost: Sea
   ({ id, label, kind, cost, availability: () => a, pick: () => [], async search() { return []; } });
 // 네이버 쇼핑 검색 API는 2026-07-31 서비스가 끝났다(developers.naver.com/notice/article/32564). 옮겨 간 NAVER API HUB 검색 목록에도 쇼핑이 없다.
 // 다른 공식 경로가 생기기 전까지 닫아 두고, “연결 준비 중”으로 보여 주지 않는다(docs/WALF_SOURCE_ACCESS_MATRIX.md).
-export const naverSource = closed('naver_shopping', '네이버 쇼핑 검색 API', 'retail', 'free', { status: 'UNSUPPORTED', usable: false,
+export const naverSource = closed('naver_shopping', '네이버 쇼핑 검색 API', 'retail', 'free', { status: 'UNSUPPORTED', usable: false, access: 'discontinued',
   reason: '공식 API가 2026-07-31 종료됐어요(네이버 개발자센터 공지 32564) · 대신 쓸 공식 경로 없음' });
 export const aiWebSource = closed('ai_web', 'AI 웹 검색(Claude)', 'any', 'paid', { status: 'PENDING_EXTERNAL_SETUP', usable: false,
   reason: '유료 호출 — API 키·월 예산을 정하기 전에는 판매처 탐색에 쓰지 않아요(7일 탐색의 AI 탐색과 같은 비용 상한으로 연결 예정)' });
 /** sources.ts 의 판매처 판단(약관·robots.txt)을 그대로 따른다 */
-const marketplaces = SOURCES.filter(s => !['page', 'mock'].includes(s.id)).map(s => closed(s.id, s.label, s.kind === 'new' ? 'retail' : s.kind === 'used' ? 'used' : 'resale', 'free',
-  { status: s.status as Availability['status'], usable: false, reason: `${s.reason} (${s.checked})` }));
+const marketplaces = SOURCES.filter(s => !['page', 'mock'].includes(s.id) && s.listed !== false).map(s => closed(s.id, s.label, s.kind === 'new' ? 'retail' : s.kind === 'used' ? 'used' : s.kind === 'any' ? 'any' : 'resale', 'free',
+  { status: s.status as Availability['status'], usable: false, access: s.access, reason: `${s.reason} (${s.checked})` }));
 
 export const SEARCH_SOURCES: SearchSource[] = [mockSource, officialSource, naverSource, aiWebSource, ...marketplaces];
 

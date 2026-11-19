@@ -415,7 +415,7 @@ export function coverageOf(db: DB, requestId: number, e?: SearchEnv): Coverage |
   const real = rows.filter(x => x.ran && x.id !== 'mock').map(name);
   const test = rows.some(x => x.ran && x.id === 'mock');
   const pending = rows.filter(x => !x.ran && x.id !== 'mock' && x.cost !== 'paid' && ['PENDING_EXTERNAL_SETUP', 'PENDING_INTEGRATION'].includes(x.status)).map(name);
-  const later = pending.length ? ` ${pending.slice(0, 3).join('·')}${pending.length > 3 ? ` 등 ${pending.length}곳` : ''}은 연결을 준비하고 있어 ${last ? '찾지 않았어요' : '아직 찾지 않아요'}.` : '';
+  const later = pending.length ? ` ${pending.slice(0, 3).join('·')}${pending.length > 3 ? ' 등' : ''} ${pending.length}곳은 이용 조건을 확인하고 있어 ${last ? '찾지 않았어요' : '아직 찾지 않아요'}.` : '';
   const note = test && !real.length ? '테스트 판매처(가상의 상점·가격)에서만 찾았어요. 실제 판매처 결과가 아니에요.'
     : !real.length ? `이 옷은 아직 자동으로 찾아볼 수 있는 실제 판매처가 없어요.${later}`
     : `지금 자동으로 찾아보는 실제 판매처는 ${real.join('·')} ${real.length}곳${real.length === 1 ? '뿐' : ''}이에요.${later}`;

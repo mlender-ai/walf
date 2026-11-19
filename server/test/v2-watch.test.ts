@@ -266,9 +266,10 @@ test('실제 페이지 조회 함수가 실패를 던지면 그 사유를 그대
   const db = openDb(':memory:');
   const u = D.upsertUser(db, 'device-watch-0009');
   let calls = 0;
-  const checker = W.createChecker(db, policy, { fetchPage: async () => { calls++; throw new SourceError('robots', 'robots.txt가 이 페이지 수집을 막고 있어요'); }, fixture: () => { throw new Error('x'); } });
-  const a = W.createWatch(db, u.id, { productUrl: 'https://shop.example.com/product/1', targetPrice: 150000 }, policy);
-  W.tickWatches(db, policy); await checker.step();
+  const checker = W.createChecker(db, { ...policy, pageHosts: [{ domain: 'shop.example.com', label: '테스트 상점', checked: '2026-11-20', basis: 'test' }] }, { fetchPage: async () => { calls++; throw new SourceError('robots', 'robots.txt가 이 페이지 수집을 막고 있어요'); }, fixture: () => { throw new Error('x'); } });
+  const p2 = { ...policy, pageHosts: [{ domain: 'shop.example.com', label: '테스트 상점', checked: '2026-11-20', basis: 'test' }] };
+  const a = W.createWatch(db, u.id, { productUrl: 'https://shop.example.com/product/1', targetPrice: 150000 }, p2);
+  W.tickWatches(db, p2); await checker.step();
   assert.equal(calls, 1);
   assert.match(JSON.parse(watch(db, a).last_result).error, /robots/);
 });

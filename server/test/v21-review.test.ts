@@ -338,7 +338,7 @@ test('[제품] 결과 화면: 테스트 판매처뿐이면 그렇게 · 실제 �
     .run(real.id, 'match', 1, 'BADBLOOD', 'Mystic Nylon Track Jacket', 'W-JKT26-055', 'published', 0, T0);
   const rc = S.coverageOf(real.db, real.id, env())!;
   assert.equal(rc.kind, 'real'); assert.deepEqual(rc.real, ['BADBLOOD 공식몰']);
-  assert.match(rc.note, /^지금 자동으로 찾아보는 실제 판매처는 BADBLOOD 공식몰 1곳뿐이에요\. KREAM·중고나라·후루츠패밀리 등 \d곳은 연결을 준비하고 있어 아직 찾지 않아요\.$/);
+  assert.match(rc.note, /^지금 자동으로 찾아보는 실제 판매처는 BADBLOOD 공식몰 1곳뿐이에요\. KREAM·중고나라 2곳은 이용 조건을 확인하고 있어 아직 찾지 않아요\.$/);
   // 공식몰이 등록되지 않은 브랜드 — 찾아볼 수 있는 실제 판매처가 없다고
   assert.match(S.coverageOf(real.db, real.id, env({ malls: [] }))!.note, /^이 옷은 아직 자동으로 찾아볼 수 있는 실제 판매처가 없어요/);
 });

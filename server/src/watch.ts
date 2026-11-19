@@ -6,7 +6,7 @@ import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
 import { brandKey, colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
-import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type Snapshot } from './sources.ts';
+import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type PageHost, type Snapshot } from './sources.ts';
 import { compareProduct, type Verdict } from './sameproduct.ts';
 import { uploadUrl } from './media.ts';
 import { logReview } from './reviewlog.ts';
@@ -18,7 +18,8 @@ const run = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).run(...p);
 const parse = (s: string | null, d: any = null) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 
 // ── 정책(설정 가능) ──────────────────────────────────────────
-export type WatchPolicy = { maxActive: number; checkEveryMs: number; renewAfterMs: number; unreachableAfter: number; maxAttempts: number; leaseMs: number; mockAllowed: boolean };
+/** pageHosts: 링크 자동 확인 허용 목록(없으면 seed/page-hosts.json + 공식몰 목록) */
+export type WatchPolicy = { maxActive: number; checkEveryMs: number; renewAfterMs: number; unreachableAfter: number; maxAttempts: number; leaseMs: number; mockAllowed: boolean; pageHosts?: PageHost[] };
 export function policyFromEnv(env = process.env): WatchPolicy {
   const n = (v: string | undefined, d: number) => (v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
   return {
@@ -66,7 +67,7 @@ export function createWatch(db: DB, userId: number, input: NewWatch, policy: Wat
   // 링크만 주고 상품명을 따로 쓰지 않았으면 그 페이지가 곧 등록한 상품이다. 상품명·찾아줘 상품이 있으면 페이지를 읽은 뒤 같은 상품인지 본다
   const pageIdentity = url && !typedName && !prod ? 'page_defined' : 'pending';
   const size = clean(input.size, 20), color = clean(input.color, 30), brand = clean(input.brand, 60) || prod?.brand || null;
-  const src = url ? sourceFor(url, { mockAllowed: policy.mockAllowed }) : null;
+  const src = url ? sourceFor(url, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts }) : null;
   const isMock = !!opts.isMock || src?.source.id === 'mock' || !!prod?.is_mock || !!req?.is_mock;
   const t = now();
   return tx(db, () => {
@@ -160,7 +161,7 @@ export function attachUrl(db: DB, id: number, url: string, operator: string, pol
   if (!['needs_info', 'active', 'paused'].includes(w.status)) throw new HttpError(409, 'bad_state');
   const u = clean(url, 1000);
   if (!u || !(/^https?:\/\//i.test(u) || (policy.mockAllowed && u.startsWith('mock://')))) throw new HttpError(400, 'bad_url', 'http(s) 상품 페이지 주소를 넣어 주세요.');
-  const src = sourceFor(u, { mockAllowed: policy.mockAllowed });
+  const src = sourceFor(u, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts });
   if (!src.ok) throw new HttpError(400, 'unsupported', src.reason!);
   const t = now();
   tx(db, () => {
@@ -243,7 +244,7 @@ function withShipping(s: Snapshot, l: Row | undefined): Snapshot {
 // ── 스케줄 · 조회 작업 ───────────────────────────────────────
 /** 스케줄러 한 번: 30일 연장 묻기 · 확인할 때가 된 페이지를 대기열에 · 끊긴 작업 회수 */
 export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
-  let renew = 0, queued = 0, recovered = 0;
+  let renew = 0, queued = 0, recovered = 0, parked = 0;
   for (const w of all(db, `SELECT * FROM watches WHERE status='active' AND renew_at<=?`, t)) {
     tx(db, () => {
       run(db, `UPDATE watches SET status='renew_due', updated_at=? WHERE id=?`, t, w.id);
@@ -254,6 +255,8 @@ export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
   }
   const slot = slotOf(t, policy.checkEveryMs);
   for (const w of all(db, `SELECT * FROM watches WHERE status='active' AND url IS NOT NULL AND source IS NOT NULL AND next_check_at<=?`, t)) {
+    const src = sourceFor(w.url, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts });
+    if (!src.ok) { parkWatch(db, w, src.reason!, t); parked++; continue; }
     const key = targetKeyOf(w.source, w.url);
     const n = Number(run(db, `INSERT OR IGNORE INTO price_checks(target_key, url, source, slot, status, is_mock, created_at) VALUES (?,?,?,?,?,?,?)`, key, w.url, w.source, slot, 'queued', w.is_mock, t).changes);
     queued += n;
@@ -266,7 +269,15 @@ export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
   // 서버가 꺼져 끊긴 조회(임대 시간 지남) — 페이지 읽기는 비용이 없으니 다시 대기열로, 단 3번까지
   recovered += Number(run(db, `UPDATE price_checks SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'queued' END, error=CASE WHEN attempts>=? THEN '여러 번 끊겨 중단' ELSE error END
     WHERE status='running' AND lease_until<?`, policy.maxAttempts, policy.maxAttempts, t).changes);
-  return { renew, queued, recovered };
+  return { renew, queued, recovered, parked };
+}
+
+/** 허용 목록 밖 링크의 기다려줘 — 페이지를 열지 않고 확인 필요로 돌린다(링크는 남겨 왈프 팀이 보고, 허용된 페이지로 바꿔 줄 수 있게) */
+function parkWatch(db: DB, w: Row, reason: string, t: number) {
+  tx(db, () => {
+    run(db, `UPDATE watches SET status='needs_info', source=NULL, info_note=?, next_check_at=NULL, updated_at=? WHERE id=?`, reason, t, w.id);
+    event(db, w, 'walf', 'needs_info', '확인이 필요해요', reason, t);
+  });
 }
 
 export type Deps = { fetchPage: (url: string) => Promise<Snapshot>; fixture: (url: string, step: number) => Snapshot };
@@ -283,6 +294,13 @@ export function createChecker(db: DB, policy: WatchPolicy, deps: Deps = { fetchP
       if (!c) return null;
       const got = run(db, `UPDATE price_checks SET status='running', attempts=attempts+1, lease_until=?, started_at=? WHERE id=? AND status='queued'`, t + policy.leaseMs, t, c.id).changes;
       if (!got) return null;
+      // 대기열에 들어간 뒤 허용 목록에서 빠진 판매처는 열지 않는다(조회 실패로 세지 않고 왈프 팀 확인으로 돌린다)
+      const allowed = c.source === 'mock' || sourceFor(c.url, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts });
+      if (allowed !== true && !allowed.ok) {
+        run(db, `UPDATE price_checks SET status='failed', finished_at=?, error=? WHERE id=?`, t, allowed.reason, c.id);
+        for (const w of all(db, `SELECT * FROM watches WHERE status='active' AND url IS NOT NULL AND source=?`, c.source).filter(w => targetKeyOf(w.source, w.url) === c.target_key)) parkWatch(db, w, allowed.reason!, t);
+        return c.id;
+      }
       let snap: Snapshot | null = null, err: SourceError | null = null;
       try {
         if (c.source === 'mock') {

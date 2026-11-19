@@ -17,9 +17,12 @@ const parse = (s: string | null, d: any) => { try { return s ? JSON.parse(s) : d
 
 export type DiscoverySource = { id: string; label: string; status: string; usable: boolean; selected: boolean; reason: string; paid: boolean;
   /** 사용자에게 보여 줄 쉬운 설명(조항·내부 사정은 reason 에 — 어드민용) */ note: string };
-const noteOf = (status: string, usable: boolean, paid: boolean, isMock: boolean, reason: string) => usable ? '찾아볼 수 있어요'
+const noteOf = (status: string, usable: boolean, paid: boolean, isMock: boolean, reason: string, access?: string) => usable ? '찾아볼 수 있어요'
   : reason === '이 기다려줘에서 끈 판매처예요' ? '꺼 두었어요'
-  : status === 'UNSUPPORTED' && /종료/.test(reason) ? '서비스가 종료돼 찾을 수 없어요'
+  : access === 'discontinued' ? '서비스가 종료돼 찾을 수 없어요'
+  : access === 'partner_required' ? '제휴·허가 전이라 자동으로 찾지 않아요 · 필요하면 왈프 팀이 직접 확인해요'
+  : access === 'link_only' ? '자동으로 찾지 않아요 · 링크를 주시면 왈프 팀이 확인해요'
+  : access === 'unverified' ? '이용 조건을 확인하고 있어요'
   : status === 'UNSUPPORTED' ? '이용약관상 자동으로 찾을 수 없어요 · 필요하면 왈프 팀이 직접 확인해요'
   : status === 'PENDING_INTEGRATION' ? '약관·연동을 확인하고 있어요'
   : status === 'PENDING_EXTERNAL_SETUP' ? (paid ? '유료 기능이라 아직 쓰지 않아요' : '연결을 준비하고 있어요')
@@ -35,7 +38,7 @@ export function discoverySources(db: DB, e: S.SearchEnv, w: Row): DiscoverySourc
   return e.sources.map(x => {
     const a = t ? x.availability(t, ctx) : { status: 'SUPPORTED', usable: false, reason: '상품 이름을 몰라 찾을 수 없어요' };
     return { id: x.id, label: x.label, status: a.status, usable: a.usable, selected: a.usable && (!picked || picked.includes(x.id)), reason: a.reason, paid: x.cost === 'paid',
-      note: noteOf(a.status, a.usable, x.cost === 'paid', !!w.is_mock, a.reason) };
+      note: noteOf(a.status, a.usable, x.cost === 'paid', !!w.is_mock, a.reason, a.access) };
   }).filter(x => x.id !== 'mock' || w.is_mock);  // 실제 기다려줘에는 테스트 판매처를 보여 주지 않는다
 }
 
