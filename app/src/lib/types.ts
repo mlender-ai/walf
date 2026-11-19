@@ -49,13 +49,18 @@ export type FindView = { requestId: number; status: string; state: 'pending' | '
   /** 식별 결과와 따로: 같은 상품을 파는 곳(운영자가 공개한 것만) */
   sale: OfferPart & { exact: OfferCard[]; possible: OfferCard[]; searchedSources: string[]; notSearchedCount: number; note: string };
   /** 비슷한 디자인의 실제 판매 상품(같은 상품 아님) */
-  alternatives: OfferPart & { items: OfferCard[] } };
+  alternatives: OfferPart & { items: OfferCard[] };
+  priority: string | null; priorities: PriorityOption[] };
 export type OfferPart = { state: 'not_started' | 'searching' | 'reviewing' | 'ready' | 'none' | 'failed'; searchedLabel: string | null };
 /** 판매처 후보·대체 상품 카드 — 가격·재고는 basisLabel 시각 기준이고 바뀔 수 있다(“구매 가능” 확정 아님) */
 export type OfferCard = {
   id: number; tier: 'exact' | 'possible' | 'alternative'; seller: string; brand: string | null; name: string | null; imageUrl: string | null; url: string | null; isMock: boolean;
   price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'used' | 'unknown';
-  sizeLabel: string | null; basisLabel: string; confirmed: string[]; unconfirmed: string[]; similarPoints: string[]; diffPoints: string[]; teamNote: string | null };
+  sizeLabel: string | null; basisLabel: string; confirmed: string[]; unconfirmed: string[]; similarPoints: string[]; diffPoints: string[]; teamNote: string | null;
+  /** 내 평가(비슷한 디자인만): like | not_quite | not_interested | null */
+  feedback?: string | null };
+/** 무엇이 중요한지(선택) — 대체 상품 정렬에 반영 */
+export type PriorityOption = { id: 'silhouette' | 'material_detail' | 'brand_archive' | 'vibe'; label: string; selected: boolean };
 
 export type WatchDisplay = { key: string; label: string; title: string; desc: string; eyebrow?: string; notice?: string; isMock: boolean };
 export type PricePoint = { at: number; label: string; ok: boolean; error: string | null; price: number | null; shipping: number | null; shippingKnown: boolean; total: number | null;
@@ -77,6 +82,6 @@ export type WatchView = {
     items: (OfferCard & { isNew: boolean; meetsTarget: boolean })[]; lastLabel: string | null; nextLabel: string | null; searchedSources: string[];
     sources: { id: string; label: string; status: string; usable: boolean; selected: boolean; reason: string; paid: boolean; note: string }[]; note: string };
   /** 기다리는 동안 볼 비슷한 디자인(같은 상품 아님) — 저장해도 기다려줘는 계속 */
-  alternatives?: { available: boolean; state: string; items: (OfferCard & { saved: boolean })[]; note: string };
+  alternatives?: { available: boolean; state: string; items: (OfferCard & { saved: boolean })[]; note: string; priority: string | null; priorities: PriorityOption[] };
 };
 export type Alert = { id: number; kind: string; title: string; body: string; link: string | null; read: boolean; createdAt: number; isMock: boolean; push: string };

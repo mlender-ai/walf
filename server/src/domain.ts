@@ -1,5 +1,7 @@
+import crypto from 'node:crypto';
 import { type DB, tx, WANTED_CHANNELS } from './db.ts';
 import { now, DAY, HUNT_MS, kDate, kTime, kWhen, kRelDay, kDayNum, won } from './time.ts';
+import { uploadUrl } from './media.ts';
 import { sendPush } from './push.ts';
 
 export class HttpError extends Error {
@@ -20,6 +22,9 @@ export const ACTOR_LABEL: Record<string, string> = { walf: '왈프', team: '왈�
 export function deleteUser(db: DB, userId: number) {
   const photos: string[] = [];
   tx(db, () => {
+    // 운영자 검수 기록(상품·판매처 판단)은 평가 데이터로 남기되, 이 사용자의 의뢰·기다려줘와의 연결은 끊는다
+    run(db, 'UPDATE review_log SET request_id=NULL WHERE request_id IN (SELECT id FROM requests WHERE user_id=?)', userId);
+    run(db, 'UPDATE review_log SET watch_id=NULL WHERE watch_id IN (SELECT id FROM watches WHERE user_id=?)', userId);
     for (const r of all(db, 'SELECT * FROM requests WHERE user_id=?', userId)) {
       if (OPEN_STATUSES.includes(r.status)) closeOut(db, r, 'cancelled', 'account_deleted');
       if (r.photo) photos.push(r.photo);
@@ -31,9 +36,12 @@ export function deleteUser(db: DB, userId: number) {
       } else run(db, 'DELETE FROM requests WHERE id=?', r.id);
     }
     for (const w of all(db, 'SELECT photo FROM watches WHERE user_id=? AND photo IS NOT NULL', userId)) photos.push(w.photo);
+    // 추천 피드백·저장·행동 기록은 지운다(운영자 검수 기록의 연결은 위에서 끊었다)
+    run(db, 'DELETE FROM offer_signals WHERE user_id=?', userId);
+    run(db, 'DELETE FROM offer_saves WHERE user_id=?', userId);
     run(db, 'DELETE FROM watches WHERE user_id=?', userId); // 기다려줘·감시 기록(watch_events)도 함께. 상품 페이지 가격 기록은 개인 정보가 아니라 남는다
     run(db, 'DELETE FROM notifications WHERE user_id=?', userId);
-    if (one(db, 'SELECT COUNT(*) n FROM requests WHERE user_id=?', userId)!.n) run(db, `UPDATE users SET device_id='deleted:'||id||':'||?, push_token=NULL, deleted_at=? WHERE id=?`, now(), now(), userId);
+    if (one(db, 'SELECT COUNT(*) n FROM requests WHERE user_id=?', userId)!.n) run(db, `UPDATE users SET device_id='deleted:'||id||':'||?, push_token=NULL, token_hash=NULL, deleted_at=? WHERE id=?`, now(), now(), userId);
     else run(db, 'DELETE FROM users WHERE id=?', userId);
   });
   return photos;
@@ -47,6 +55,27 @@ export function upsertUser(db: DB, deviceId: string, platform?: string) {
   return one(db, 'SELECT * FROM users WHERE device_id=?', deviceId)!;
 }
 export function userByDevice(db: DB, deviceId: string) { return one(db, 'SELECT * FROM users WHERE device_id=?', deviceId); }
+
+// ── 기기 세션 ────────────────────────────────────────────────
+// 처음 세션을 열 때 서버가 토큰을 발급하고(해시만 저장), 그 뒤로는 기기 ID + 토큰이 함께 맞아야 그 사용자로 요청할 수 있다.
+// 토큰이 이미 있는 기기 ID로 토큰 없이 세션을 열면 거절한다(기기 ID만 알아낸 사람이 남의 계정을 가져가지 못하게).
+const tokenHash = (t: string) => crypto.createHash('sha256').update(`walf-session|${t}`).digest('hex');
+export function tokenOk(u: Row, token: string | null | undefined) {
+  if (!u.token_hash) return true;  // 토큰 발급 전(이전 버전) 계정 — 다음 세션 열기 때 발급된다
+  if (!token || token.length < 20 || token.length > 200) return false;
+  const a = Buffer.from(tokenHash(token)), b = Buffer.from(u.token_hash);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+export function openSession(db: DB, deviceId: string, platform: string | undefined, token: string | null | undefined): { user: Row; token?: string } {
+  const u = upsertUser(db, deviceId, platform);
+  if (u.token_hash) {
+    if (!tokenOk(u, token)) throw new HttpError(401, 'device_claimed', '이 기기 ID는 다른 세션이 쓰고 있어요. 앱이 새 기기로 다시 시작해요.');
+    return { user: u };
+  }
+  const fresh = crypto.randomBytes(32).toString('base64url');
+  run(db, 'UPDATE users SET token_hash=?, token_at=? WHERE id=?', tokenHash(fresh), now(), u.id);
+  return { user: one(db, 'SELECT * FROM users WHERE id=?', u.id)!, token: fresh };
+}
 
 export function getRequest(db: DB, id: number) {
   const r = one(db, 'SELECT * FROM requests WHERE id=?', id);
@@ -622,7 +651,7 @@ export function candidateView(db: DB, r: Row, c: Row, base = '') {
   const verified = k.kind === 'offer';
   return {
     id: c.id, kind: k.kind, source: c.source, sourceLabel: c.source === 'report' ? '수배글을 본 판매자 제보' : '왈프 팀 탐색',
-    seller: c.seller, url: c.url, title: c.title, photoUrl: c.photo ? `${base}/uploads/${c.photo}` : null,
+    seller: c.seller, url: c.url, title: c.title, photoUrl: uploadUrl(base, c.photo),
     size: c.size, condition: c.condition, conditionLabel: c.condition === 'new' ? '새 상품' : `중고${c.condition_note ? ' · ' + c.condition_note : ''}`,
     price: c.price, shipping: c.shipping, total: k.total, priceLabel: c.price != null ? won(c.price) : '가격 미기재',
     totalLabel: k.total != null ? `배송비 ${won(c.shipping || 0)} · 총 ${won(k.total)}` : '',
@@ -669,7 +698,7 @@ export function requestView(db: DB, r: Row, base = '', t = now()) {
   });
   return {
     id: r.id, status: r.status, isMock: !!r.is_mock, display: display(db, r, t),
-    product: { name: r.product_name, brand: r.brand, url: r.product_url, note: r.note, photoUrl: r.photo ? `${base}/uploads/${r.photo}` : null,
+    product: { name: r.product_name, brand: r.brand, url: r.product_url, note: r.note, photoUrl: uploadUrl(base, r.photo),
       identifiedName: r.identified_name, identifiedBrand: r.identified_brand, title: shortName(r), brandLabel: r.identified_brand || r.brand || null },
     conditions: { size: r.size, color: r.color, maxPrice: r.max_price, usedOk: !!r.used_ok,
       label: [r.size, r.color, r.max_price ? `${Math.round(r.max_price / 10000 * 10) / 10}만원 이하` : null, r.used_ok ? '중고 OK' : '새 상품만'].filter(Boolean).join(' · ') },

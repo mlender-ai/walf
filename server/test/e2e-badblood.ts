@@ -16,8 +16,13 @@ let srvLog = ''; srv.stdout.on('data', d => srvLog += d); srv.stderr.on('data', 
 const steps: string[] = [];
 const ok = (s: string) => { steps.push('PASS  ' + s); console.log('PASS ', s); };
 const DEV = { 'x-walf-device': 'e2e-device-badblood-01' };
+const TOKENS = new Map<string, string>();
 async function api(method: string, p: string, body?: any, headers: Record<string, string> = DEV) {
-  const r = await fetch(B + '/api' + p, { method, headers: { ...headers, ...(body && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}) }, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined });
+  // 기기 세션: 세션을 열 때 받은 토큰을 그 기기 요청마다 함께 보낸다(앱과 같게)
+  const dev = p === '/session' ? body?.deviceId : headers['x-walf-device'];
+  const tok = dev ? TOKENS.get(dev) : undefined;
+  const r = await fetch(B + '/api' + p, { method, headers: { ...headers, ...(tok ? { 'x-walf-token': tok } : {}), ...(body && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}) }, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined });
+  if (p === '/session' && r.ok) { const t = (await r.clone().json().catch(() => ({})) as any).token; if (t) TOKENS.set(dev, t); }
   const j: any = await r.json().catch(() => ({}));
   return { status: r.status, j };
 }

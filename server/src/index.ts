@@ -13,6 +13,7 @@ import { loadSeedFile } from './catalog.ts';
 import { limitsFromEnv } from './cost.ts';
 import { createChecker, policyFromEnv, tickWatches } from './watch.ts';
 import { createOfferSearcher, ensureDiscoveries, recoverOfferSearches, searchEnvFrom } from './findsearch.ts';
+import { setMediaSecret, verifyUpload } from './media.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 // .env (있으면) — 이미 설정된 환경변수가 우선
@@ -25,6 +26,9 @@ const dbFile = path.resolve(root, process.env.WALF_DB || 'data/walf.db');
 const uploads = path.resolve(root, process.env.WALF_UPLOADS || 'data/uploads');
 fs.mkdirSync(path.dirname(dbFile), { recursive: true }); fs.mkdirSync(uploads, { recursive: true });
 const password = process.env.WALF_ADMIN_PASSWORD;
+// 어드민 로그인·CSRF·사진 주소 서명에 쓰는 비밀값. 없으면 시작할 때마다 새로 만든다(재시작하면 로그인·사진 주소가 만료된다)
+const secret = process.env.WALF_SECRET || crypto.randomBytes(32).toString('hex');
+setMediaSecret(secret);
 if (!password) { console.error('WALF_ADMIN_PASSWORD 가 없어요. server/.env.example 을 .env 로 복사해 설정하세요.'); process.exit(1); }
 
 if (password === 'change-me' || password.length < 12) console.warn('⚠ 어드민 비밀번호가 예시 값이거나 너무 짧아요. 같은 네트워크에 공개하기 전에 server/.env 의 WALF_ADMIN_PASSWORD 를 12자 이상으로 바꾸세요.');
@@ -46,13 +50,19 @@ app.use((req, res, next) => {
   res.on('finish', () => { if (!req.path.startsWith('/uploads')) console.log(`${new Date().toISOString().slice(11, 19)} ${req.ip?.replace('::ffff:', '')} ${req.method} ${req.path} → ${res.statusCode} ${Date.now() - t}ms${req.get('content-length') ? ` (${Math.round(Number(req.get('content-length')) / 1024)}KB)` : ''}`); });
   next();
 });
-app.use('/uploads', express.static(uploads, { maxAge: '7d', immutable: true, fallthrough: false }));
+// 사용자 사진은 공개 정적 경로로 열지 않는다 — 서버가 서명한 주소(만료 있음)로만(media.ts)
+app.get('/uploads/:name', (req, res) => {
+  const name = String(req.params.name);
+  if (!verifyUpload(name, req.query.exp, req.query.sig)) return res.status(403).json({ error: 'forbidden', message: '사진을 볼 수 있는 주소가 아니거나 주소가 만료됐어요. 화면을 새로 열어 주세요.' });
+  res.set('Cache-Control', 'private, max-age=3600');
+  res.sendFile(path.join(uploads, name), err => { if (err && !res.headersSent) res.status(404).end(); });
+});
 // 찾아줘 판매처 탐색(식별과 별도)·기다려줘 새 매물 탐색: 무료 소스만(공식몰 자체 검색 등), AI 호출 없음. 결과는 검수 전까지 사용자에게 보이지 않는다
 const searchEnv = searchEnvFrom({ mockAllowed: policy.mockAllowed });
 const searcher = createOfferSearcher(db, searchEnv, [() => ensureDiscoveries(db, searchEnv, policy.checkEveryMs)]);
 app.use('/api', userApi(db, { uploads, pushConfigured: process.env.WALF_PUSH_DISABLED !== '1', policy, search: searchEnv }), apiErrors);
 const checker = createChecker(db, policy);
-app.use('/admin', adminRouter(db, { uploads, password, secret: process.env.WALF_SECRET || crypto.randomBytes(32).toString('hex'), qaTools: process.env.WALF_QA_TOOLS === '1', ai, limits, policy, checker, search: { env: searchEnv, step: searcher.step } }));
+app.use('/admin', adminRouter(db, { uploads, password, secret, qaTools: process.env.WALF_QA_TOOLS === '1', ai, limits, policy, checker, search: { env: searchEnv, step: searcher.step } }));
 app.get('/', (_q, res) => res.redirect('/admin'));
 
 const every = Number(process.env.WALF_TICK_MS || 30_000);

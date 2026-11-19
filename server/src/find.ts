@@ -7,6 +7,7 @@ import { now, kWhen } from './time.ts';
 import { curate, requestStyle, styleWords, upsertProduct, type Curated } from './catalog.ts';
 import { FASHION_BRAIN } from './curation.ts';
 import { logPublished, offersView, publishPendingOffers } from './offerreview.ts';
+import { logReview } from './reviewlog.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -78,6 +79,16 @@ export function publishFind(db: DB, requestId: number, input: PublishInput, oper
     disc.forEach((c, i) => ins.run(requestId, null, 'discover', i + 1, c.brand, c.scope ? `${c.brand} ${c.scope}` : c.brand, null, null, null, null,
       json(c.reasons), json([]), json(c.sources), json([`스타일 근거: ${c.status === 'verified' ? '왈프 팀 확인' : c.status === 'fixture' ? '테스트 데이터' : '출처 있음 · 검수 전'}`]), 'published', operator, mock ? 1 : 0, t));
     tiers = publishPendingOffers(db, requestId, t);
+    // 검수 기록: 서버 판정과 운영자 결정(등급·이름 수정·확인 근거)을 나란히 남긴다(평가 데이터)
+    for (const x of input.items) {
+      const a = draft.identities.find(v => v.id === Number(x.aiIdentityId));
+      if (!a) continue;
+      const edited = ((x.name || '').trim() !== '' && norm(x.name) !== norm(identityName(a))) || (x.brand != null && norm(x.brand) !== norm(a.brand));
+      logReview(db, { operator, subject: 'identity', subjectId: a.id, requestId, action: x.tier, at: t, isMock: mock, reason: x.verifyReason?.trim() || null,
+        auto: { tier: a.tier, confidence: a.confidence, brand: a.brand, name: identityName(a), modelCode: a.model_code || null, season: a.season || null, refs: a.refs.length, uncertain: a.uncertain },
+        before: edited ? { brand: a.brand, name: identityName(a) } : null, after: edited ? { brand: x.brand ?? a.brand, name: (x.name || '').trim() || identityName(a) } : null });
+    }
+    for (const c of disc) logReview(db, { operator, subject: 'discover', requestId, action: 'publish', at: t, isMock: mock, auto: { brand: c.brand, scope: c.scope, score: c.score, reasons: c.reasons, status: c.status } });
     D.log(db, requestId, 'team', 'find_ready', '찾아줘 결과', hasMatch ? '같은 옷을 확인했어요 · 결과를 확인해 주세요' : items.length ? `유력 후보 ${items.length}개를 골랐어요`
       : tiers.includes('alternative') ? '같은 옷은 못 찾았어요 · 비슷한 디자인의 옷을 골랐어요' : '같은 옷은 못 찾았어요 · 비슷한 스타일의 브랜드를 골랐어요', { operator, isMock: mock });
     if (tiers.length) logPublished(db, r, tiers, operator, mock);
@@ -130,6 +141,8 @@ export function findView(db: DB, r: Row, base = '') {
     discoverKind: 'brand' as const, similarProducts: { status: FASHION_BRAIN.status, items: offers.alternatives.items },
     // 식별 결과와 따로: 판매처(같은 상품) · 대체 상품(비슷한 디자인). 운영자가 공개한 것만
     sale: offers.sale, alternatives: offers.alternatives,
+    // 무엇이 중요한지(선택) — 대체 상품 정렬에 반영
+    priority: offers.priority, priorities: offers.priorities,
     styleWords: style, productId: r.product_id ?? null, canHunt: r.status === 'submitted',
     isMock: rows.some(x => x.is_mock) || !!r.is_mock || [...offers.sale.exact, ...offers.sale.possible, ...offers.alternatives.items].some(c => c.isMock),
   };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Icon, MockPill, ProductImage, T, Tag, TextBtn } from '@/components/ui';
 import { C, R } from '@/lib/theme';
@@ -13,10 +13,20 @@ const COND = { new: '새 상품', used: '중고', unknown: '' };
  * 판매처 후보·대체 상품 한 장. 가격·재고는 페이지를 읽은 시각 기준이라 “구매 가능”이라고 말하지 않는다.
  * exact: 왈프 팀이 같은 상품으로 확인 · possible: 확인 못 한 점을 함께 · alternative: 비슷한 점과 다른 점(같은 상품 아님)
  */
-export function OfferCard({ o, extra = [], note, footer }: { o: Offer; extra?: TagT[]; note?: React.ReactNode; footer?: React.ReactNode }) {
+const FEEDBACK: [string, string][] = [['like', '마음에 들어요'], ['not_quite', '비슷하지만 아니에요'], ['not_interested', '관심 없어요']];
+
+export function OfferCard({ o, extra = [], note, footer, onFeedback, onOpen }: { o: Offer; extra?: TagT[]; note?: React.ReactNode; footer?: React.ReactNode;
+  /** 비슷한 디자인 카드의 내 평가 — 같은 걸 다시 누르면 지운다(cleared) */ onFeedback?: (kind: string) => void; onOpen?: () => void }) {
   const item = o.salePrice ?? o.price;
   const facts = o.tier === 'alternative' ? o.similarPoints : o.confirmed;
-  const open = () => { if (o.url) WebBrowser.openBrowserAsync(o.url).catch(() => {}); };
+  const open = () => { if (o.url) { onOpen?.(); WebBrowser.openBrowserAsync(o.url).catch(() => {}); } };
+  // “관심 없어요”를 고른 추천은 한 줄로 접는다(되돌릴 수 있다)
+  if (o.tier === 'alternative' && onFeedback && o.feedback === 'not_interested') return (
+    <View style={[s.card, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }]}>
+      <T size={12.5} color={C.gray500} style={{ flex: 1 }} numberOfLines={1}>관심 없다고 했어요 · {o.name}</T>
+      <TextBtn label="되돌리기" color={C.black} onPress={() => onFeedback('cleared')} a11y={`${o.name} 관심 없음 되돌리기`} />
+    </View>
+  );
   return (
     <View style={s.card}>
       <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -48,6 +58,14 @@ export function OfferCard({ o, extra = [], note, footer }: { o: Offer; extra?: T
         <View style={s.box}><T size={12} w={700}>확인하지 못한 점 · 참고</T>{[...o.unconfirmed, ...o.diffPoints].slice(0, 4).map((d, i) => <T key={i} size={12.5} lh={18} color={C.gray500}>{d}</T>)}</View>
       ) : null}
       {note}
+      {o.tier === 'alternative' && onFeedback ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }} accessibilityLabel="이 추천 어땠어요?">
+          {FEEDBACK.map(([k, label]) => (
+            <Pressable key={k} onPress={() => onFeedback(o.feedback === k ? 'cleared' : k)} hitSlop={6} accessibilityRole="button" accessibilityState={{ selected: o.feedback === k }}
+              style={[s.chip, o.feedback === k && s.chipOn]}><T size={12} w={600} color={o.feedback === k ? C.white : C.black}>{label}</T></Pressable>
+          ))}
+        </View>
+      ) : null}
       <T size={11.5} color={C.gray500} style={{ marginTop: 10 }}>{o.basisLabel}</T>
       {o.url ? <TextBtn label="판매 페이지 열기" onPress={open} color={C.black} a11y={`${o.seller} 판매 페이지 열기`} />
         : o.isMock ? <T size={12} color={C.gray500} style={{ marginTop: 6 }}>테스트 상품이라 판매 페이지가 없어요</T> : null}
@@ -61,4 +79,6 @@ const s = StyleSheet.create({
   img: { width: 88, height: 104, borderRadius: R.thumb },
   row: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
   box: { marginTop: 10, padding: 10, gap: 3, borderRadius: R.thumb, borderWidth: 1, borderStyle: 'dashed', borderColor: C.gray500 },
+  chip: { height: 32, paddingHorizontal: 11, borderRadius: 999, borderWidth: 1, borderColor: C.gray300, justifyContent: 'center' },
+  chipOn: { backgroundColor: C.black, borderColor: C.black },
 });

@@ -8,7 +8,7 @@ import { brandKey, colorsIn, normSize, requestStyle, sameColor, styleWords, type
 import { urlKey, SourceError, type Snapshot } from './sources.ts';
 import { codesIn, compact, compareProduct, nameTokens, type Check, type Verdict } from './sameproduct.ts';
 import { cleanOffer, itemPrice, offersOf, RULES_RECOMMENDER, saveOffers, totalPrice, type ProductOffer } from './offers.ts';
-import { SIMILAR_PROVIDERS, RANKER, curateOffers, type SimilarProductProvider } from './curation.ts';
+import { SIMILAR_PROVIDERS, curateOffers, isPriority, rankerOf, type Priority, type SimilarProductProvider } from './curation.ts';
 import { SEARCH_SOURCES, loadMalls, mallFor, pacer, type RawHit, type SearchQuery, type SearchSource, type SourceCtx } from './searchsources.ts';
 import { now } from './time.ts';
 
@@ -347,16 +347,17 @@ export function createOfferSearcher(db: DB, e: SearchEnv, more: (() => void)[] =
 
 // ── 대체 상품(비슷한 디자인의 실제 판매 상품) ─────────────────────
 // 같은 상품을 못 찾았거나 기다리는 동안 볼 대안. 찾는 옷의 디자인(사진에서 읽은 스타일)으로 고르고, 정렬은 curation.ts(디자인·실루엣 우선)가 한다.
-export type SimilarTarget = SearchTarget & { style: Style };
+export type SimilarTarget = SearchTarget & { style: Style; priority?: Priority | null };
 /** 대체 상품을 고를 기준: 식별 결과가 있으면 그 상품(같은 상품은 빼려고), 없으면 사진에서 읽은 디자인만. 디자인을 못 읽었으면 고르지 않는다 */
 export function similarTargetOf(db: DB, requestId: number, malls: SourceCtx['malls'] = []): SimilarTarget | null {
   const r = one(db, 'SELECT * FROM requests WHERE id=?', requestId);
   const style = requestStyle(db, requestId);
   if (!r || !Object.keys(style).length) return null;
   const t = targetsOf(db, requestId, malls)[0];
-  if (t) return { ...t, style };
+  const priority = isPriority(r.priority) ? r.priority : null;
+  if (t) return { ...t, style, priority };
   const job = one(db, `SELECT is_mock FROM ai_jobs WHERE request_id=? AND kind='identify' AND status='done' ORDER BY id DESC LIMIT 1`, requestId);
-  return { brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'style_only', ref: `request:${requestId}`, aliases: [], isMock: !!job?.is_mock || !!r.is_mock, style };
+  return { brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'style_only', ref: `request:${requestId}`, aliases: [], isMock: !!job?.is_mock || !!r.is_mock, style, priority };
 }
 const providersOf = (e: SearchEnv) => e.similar || SIMILAR_PROVIDERS;
 export function queueSimilarSearch(db: DB, e: SearchEnv, requestId: number, opts: { by?: string | null; force?: boolean } = {}): { id?: number; skipped?: string } {
@@ -366,7 +367,7 @@ export function queueSimilarSearch(db: DB, e: SearchEnv, requestId: number, opts
   if (!t) return { skipped: '사진에서 읽은 디자인(스타일)이 없어 비슷한 옷을 고를 수 없어요' };
   const ids = providersOf(e).filter(p => p.availability({ isMock: t.isMock, mockAllowed: e.mockAllowed }).usable).map(p => `${p.id}@${p.version}`);
   if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요(패션 브레인 연결 전)' };
-  const key = crypto.createHash('sha256').update(json(['similar', t.style, compact(t.brand), compact(t.name), compact(t.modelCode), ids.sort(), t.isMock, r.size || ''])).digest('hex').slice(0, 32);
+  const key = crypto.createHash('sha256').update(json(['similar', t.style, compact(t.brand), compact(t.name), compact(t.modelCode), ids.sort(), t.isMock, r.size || '', t.priority || ''])).digest('hex').slice(0, 32);
   const t0 = now();
   if (!opts.force) {
     const cur = one(db, `SELECT id FROM offer_searches WHERE request_id=? AND search_key=? AND (status IN ('queued','running') OR (status IN ('done','failed') AND COALESCE(finished_at, created_at)>?)) ORDER BY id DESC LIMIT 1`, requestId, key, t0 - e.reuseMs);
@@ -396,10 +397,11 @@ async function runSimilarSearch(db: DB, e: SearchEnv, s: Row) {
     rep.ms = Date.now() - t0;
     rep.queries = [`디자인: ${styleWords(t.style).join(' · ')}`];
   }
-  const { offers, dropped } = curateOffers(raw, { style: t.style, brand: t.brand, name: t.name || null, modelCode: t.modelCode, size, limit: 6, mockAllowed: e.mockAllowed });
+  const { offers, dropped } = curateOffers(raw, { style: t.style, brand: t.brand, name: t.name || null, modelCode: t.modelCode, size, limit: 6, mockAllowed: e.mockAllowed, priority: t.priority ?? null });
+  const ranker = rankerOf(t.priority);
   const out = [`제외: 같은 상품 ${dropped.same} · 제품군 다름 ${dropped.category} · 디자인 점수 낮음 ${dropped.low} · 디자인 정보 없음 ${dropped.noStyle} · 형식 오류 ${dropped.invalid}`];
-  const summary = offers.length ? `비슷한 디자인 ${offers.length}개(정렬 ${RANKER}) · ${out[0]}` : `고를 만한 비슷한 디자인이 없어요 · ${out[0]}`;
-  run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, finished_at=? WHERE id=?`, json([{ text: styleWords(t.style).join(' · '), kind: 'style' }]), json(report), summary, now(), s.id);
+  const summary = offers.length ? `비슷한 디자인 ${offers.length}개(정렬 ${ranker}) · ${out[0]}` : `고를 만한 비슷한 디자인이 없어요 · ${out[0]}`;
+  run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, ranker=?, finished_at=? WHERE id=?`, json([{ text: styleWords(t.style).join(' · '), kind: 'style' }]), json(report), summary, ranker, now(), s.id);
   saveOffers(db, s.id, { requestId: s.request_id, watchId: s.watch_id }, offers);
   return { identification: { basis: t.basis, basisLabel: BASIS_LABEL[t.basis], brand: t.brand, name: t.name, modelCode: t.modelCode, season: t.season, color: t.color, note: '' },
     sale: { state: 'none' as const, same: [], likely: [], unverified: [], different: [] }, sources: report, limits: [], isMock: t.isMock };
@@ -479,10 +481,11 @@ export function queueWatchSimilar(db: DB, e: SearchEnv, watchId: number, opts: {
   const style = w.request_id ? requestStyle(db, w.request_id) : {};
   if (!Object.keys(style).length) return { skipped: '디자인 정보가 없어 비슷한 옷을 고를 수 없어요(사진으로 찾아줘에서 넘어온 기다려줘만)' };
   const base = watchTargetOf(db, w, e.malls);
-  const t: SimilarTarget = { ...(base || { brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'watch' as const, ref: `watch:${w.id}`, aliases: [], isMock: !!w.is_mock }), style };
+  const t: SimilarTarget = { ...(base || { brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'watch' as const, ref: `watch:${w.id}`, aliases: [], isMock: !!w.is_mock }), style,
+    priority: isPriority(w.priority) ? w.priority : null };
   const ids = providersOf(e).filter(p => p.availability({ isMock: t.isMock, mockAllowed: e.mockAllowed }).usable).map(p => `${p.id}@${p.version}`);
   if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요(패션 브레인 연결 전)' };
-  const key = crypto.createHash('sha256').update(json(['watch-similar', w.id, t.style, compact(t.name), ids.sort(), w.size || ''])).digest('hex').slice(0, 32);
+  const key = crypto.createHash('sha256').update(json(['watch-similar', w.id, t.style, compact(t.name), ids.sort(), w.size || '', t.priority || ''])).digest('hex').slice(0, 32);
   const t0 = now();
   if (!opts.force && one(db, `SELECT id FROM offer_searches WHERE watch_id=? AND search_key=? AND (status IN ('queued','running') OR COALESCE(finished_at, created_at)>?)`, w.id, key, t0 - e.reuseMs))
     return { skipped: '같은 조건의 추천이 이미 있어요' };

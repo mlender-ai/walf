@@ -28,8 +28,13 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const steps: string[] = [];
 const ok = (s: string) => { steps.push('PASS  ' + s); console.log('PASS ', s); };
 const A = { 'x-walf-device': 'e2e-v21-device-find-01' };
+const TOKENS = new Map<string, string>();
 async function api(method: string, p: string, body?: any, headers: Record<string, string> = A) {
-  const r = await fetch(B + '/api' + p, { method, headers: { ...headers, ...(body && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}) }, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined });
+  // 기기 세션: 세션을 열 때 받은 토큰을 그 기기 요청마다 함께 보낸다(앱과 같게)
+  const dev = p === '/session' ? body?.deviceId : headers['x-walf-device'];
+  const tok = dev ? TOKENS.get(dev) : undefined;
+  const r = await fetch(B + '/api' + p, { method, headers: { ...headers, ...(tok ? { 'x-walf-token': tok } : {}), ...(body && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}) }, body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined });
+  if (p === '/session' && r.ok) { const t = (await r.clone().json().catch(() => ({})) as any).token; if (t) TOKENS.set(dev, t); }
   return { status: r.status, text: await r.clone().text(), j: await r.json().catch(() => ({})) as any };
 }
 let cookie = '', csrf = '', FIRST = 0;
@@ -189,6 +194,47 @@ async function main() {
   assert.equal(wv.alternatives.items[0].saved, true); assert.equal(wv.status, 'needs_info', '대체 상품을 저장해도 기다려줘는 그대로');
   assert.equal((await api('POST', `/offers/${dOffer('mock://shop/other-brand')}/save`)).status, 404, '공개하지 않은 후보는 저장할 수 없다');
   ok('기다리는 동안 볼 비슷한 옷: 공개 → 저장(기다려줘는 계속) · 지원하지 않는 판매처는 고를 수 없음 · 공개 전 후보는 저장 못 함');
+
+  // ── Gate D: 세션·사진 보호 · 선호·피드백 · 한 화면 검수 · 평가 데이터 ──
+  const noTok = await fetch(B + '/api/me', { headers: A });
+  assert.equal(noTok.status, 401); assert.equal((await noTok.json() as any).error, 'bad_token', '기기 ID만으로는 내 계정에 들어올 수 없다');
+  const steal = await fetch(B + '/api/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: A['x-walf-device'] }) });
+  assert.equal(steal.status, 401); assert.equal((await steal.json() as any).error, 'device_claimed', '기기 ID를 알아도 세션을 새로 열 수 없다');
+  const photo = (await api('GET', `/requests/${id}`)).j.product.photoUrl as string;
+  assert.match(photo, /\/uploads\/[\w-]+\.png\?exp=\d+&sig=[\w-]+$/);
+  assert.equal((await fetch(photo)).status, 200);
+  assert.equal((await fetch(photo.split('?')[0])).status, 403, '서명 없는 사진 주소는 열리지 않는다');
+  assert.equal((await fetch(photo.replace(/sig=[\w-]+/, 'sig=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'))).status, 403);
+  assert.equal((await fetch(B + '/uploads/..%2F..%2Fserver%2F.env?exp=1&sig=x')).status, 403);
+  ok('보안: 기기 ID만으로는 401(토큰 필요) · 남의 기기 ID로 세션 못 엶 · 사용자 사진은 서명·만료 주소로만(서명 없음·위조·경로 조작 403)');
+  const pr = await api('POST', `/requests/${id}/priority`, { priority: 'material_detail' });
+  assert.equal(pr.status, 200); assert.equal(pr.j.priorities.find((x: any) => x.selected).id, 'material_detail');
+  assert.equal((await api('POST', `/requests/${id}/priority`, { priority: 'cheap' })).status, 400);
+  const alt0 = f.alternatives.items[0].id, sale0 = f.sale.exact[0].id;
+  assert.equal((await api('POST', `/offers/${alt0}/feedback`, { kind: 'like' })).status, 200);
+  assert.equal((await api('POST', `/offers/${f.alternatives.items[1].id}/feedback`, { kind: 'not_interested' })).status, 200);
+  assert.equal((await api('POST', `/offers/${sale0}/feedback`, { kind: 'like' })).status, 400, '같은 상품 판매처에는 추천 평가를 남기지 않는다');
+  assert.equal((await api('POST', `/offers/${sale0}/open`)).status, 200);
+  const fv2 = (await api('GET', `/requests/${id}/find`)).j;
+  assert.deepEqual(fv2.alternatives.items.map((x: any) => x.feedback), ['like', 'not_interested']);
+  ok('추천 기준 고르기(소재·디테일) · 비슷한 디자인에 “마음에 들어요”·“관심 없어요” · 판매 페이지 열기는 행동 기록으로만');
+  const rv = await page(`/requests/${id}/review`);
+  for (const k of ['data-review=', '사용자 원본', 'AI 식별', '같은 상품 후보 · 다른 판매처의 매물', '비슷한 디자인 추천', '출처와 검증 상태', '검수 기록']) assert.ok(rv.includes(k), k);
+  assert.match(rv, /<img class="u" src="[^"]*\/uploads\/[\w-]+\.png\?exp=/, '사용자 원본 사진(서명 주소)');
+  assert.match(rv, /기다려줘 W\d+ 새 판매처/, '다른 판매처의 매물(기다려줘 새 판매처)도 함께');
+  assert.match(rv, /마음에 들어요 1/); assert.match(rv, /✓ 나일론|✕ /, '디자인 요소 일치·불일치');
+  assert.ok(Number(/data-review-log="(\d+)"/.exec(rv)![1]) >= 6, '검수 기록(공개·후보 검수)');
+  ok('한 화면 검수: 사용자 원본 사진 · AI 식별 · 같은 상품 후보·다른 판매처 · 대체 추천(디자인 요소 ✓/✕·사용자 피드백) · 출처 · 검수 기록');
+  const ef = await (await fetch(B + '/admin/export/feedback.json?mock=1', { headers: { cookie } })).json() as any;
+  const lk = ef.rows.find((x: any) => x.signal === 'like');
+  assert.deepEqual([lk.explicit, lk.satisfaction, lk.item.relation, lk.model.version, lk.model.rank, lk.target.priority], [true, 1, 'similar', 'fixture-1', 1, 'material_detail']);
+  assert.ok(ef.rows.some((x: any) => x.signal === 'open' && x.explicit === false && x.satisfaction === null), '열어 보기는 만족 값 없음');
+  assert.ok(!JSON.stringify(ef).includes(A['x-walf-device']) && /^u_[0-9a-f]{12}$/.test(lk.user), '사용자는 가명');
+  const er = await (await fetch(B + '/admin/export/reviews.json?mock=1', { headers: { cookie } })).json() as any;
+  assert.ok(er.rows.some((x: any) => x.subject === 'identity' && x.decision === 'match' && x.auto.tier === 'match'));
+  assert.ok(er.rows.some((x: any) => x.subject === 'offer' && x.decision === 'exact' && x.reason === '로고 자수·소매 절개선·지퍼 위치가 공식몰 사진과 같음' && x.auto.verdict === 'likely'), '자동 판정(가능성)과 운영자 결정(같은 상품 확인)·근거');
+  assert.equal(((await (await fetch(B + '/admin/export/feedback.json', { headers: { cookie } })).json()) as any).count, 0, '모의 데이터는 기본으로 뺀다');
+  ok('평가 데이터 내보내기: 피드백(상품·모델 버전·순위·선호, 가명) · 검수(자동 판정 대 운영자 결정·근거) · 모의 데이터는 기본 제외');
 }
 
 async function main2() {
@@ -221,9 +267,11 @@ async function main2() {
   assert.equal(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id=?', FIRST), 0);
   assert.equal(count('SELECT COUNT(*) n FROM offers WHERE watch_id IS NOT NULL'), 0, '기다려줘의 새 판매처·대체 상품 후보도 함께 삭제');
   assert.equal(count('SELECT COUNT(*) n FROM offer_saves'), 0, '저장한 옷 기록도 삭제');
+  assert.equal(count('SELECT COUNT(*) n FROM offer_signals'), 0, '추천 피드백·행동 기록도 삭제');
+  assert.ok(count('SELECT COUNT(*) n FROM review_log') > 0 && count('SELECT COUNT(*) n FROM review_log WHERE request_id=?', FIRST) === 0, '운영자 검수 기록은 남기되 사용자 의뢰와의 연결은 끊음');
   assert.ok(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id<>?', FIRST) >= 1, '다른 사용자의 탐색은 그대로');
   assert.ok(count('SELECT COUNT(*) n FROM listings') > 0, '판매처 상품 페이지 기록(개인 정보 아님)은 남는다');
-  ok('계정 삭제 → 그 사용자의 판매처 탐색·후보·기다려줘 새 판매처·저장한 옷도 삭제(판매처 상품 페이지 기록만 남음)');
+  ok('계정 삭제 → 판매처 탐색·후보·기다려줘 새 판매처·저장한 옷·추천 피드백 삭제 · 운영자 검수 기록은 연결만 끊고 남김 · 판매처 상품 페이지 기록은 남음');
 }
 
 main().then(main2).then(() => { console.log(`\n${steps.length} steps passed`); }, e => { console.error('\nFAIL', e); console.error(srvLog.slice(-3000)); process.exitCode = 1; })

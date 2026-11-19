@@ -6,6 +6,7 @@ import { HttpError } from './domain.ts';
 import * as S from './findsearch.ts';
 import { card, meetsWatch, type OfferCard } from './offerreview.ts';
 import { offerOf } from './offers.ts';
+import { feedbackMap, priorityOptions, recordSignal, savedSet } from './feedback.ts';
 import { now, kWhen } from './time.ts';
 
 type Row = Record<string, any>;
@@ -63,8 +64,8 @@ export function updateDiscovery(db: DB, userId: number, watchId: number, patch: 
 /** 기다려줘 화면: 새 판매처(검수 후 공개분) · 기다리는 동안 볼 대체 상품 · 저장 표시 */
 export function watchExtrasView(db: DB, w: Row, base: string, e: S.SearchEnv, userId: number, t = now()) {
   const size = w.size ? String(w.size).toUpperCase() : null;
-  const saved = new Set(all(db, 'SELECT offer_id FROM offer_saves WHERE user_id=?', userId).map(x => x.offer_id));
-  const rows = all(db, `SELECT * FROM offers WHERE watch_id=? AND published=1 ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, rank`, w.id).map(offerOf);
+  const saved = savedSet(db, userId, w.id);
+  const rows = all(db, `SELECT * FROM offers WHERE watch_id=? AND published=1 ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, search_id DESC, rank`, w.id).map(offerOf);
   const last = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='discovery' ORDER BY id DESC LIMIT 1`, w.id);
   const lastDone = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='discovery' AND status='done' ORDER BY id DESC LIMIT 1`, w.id);
   // “새로 찾음”: 마지막 탐색에서 이 기다려줘가 처음 본 페이지
@@ -75,7 +76,8 @@ export function watchExtrasView(db: DB, w: Row, base: string, e: S.SearchEnv, us
   const state = !w.discovery ? 'off' : items.length ? 'ready' : !sources.some(x => x.selected) ? 'unavailable' : !last ? 'not_started'
     : ['queued', 'running'].includes(last.status) ? 'searching' : last.status === 'failed' ? 'failed' : pendingCands ? 'reviewing' : 'none';
   const searched = parse(lastDone?.report ?? null, []).filter((x: any) => x.outcome !== 'not_run').map((x: any) => x.label);
-  const alts = rows.filter(o => o.relation === 'similar').map(o => ({ ...card(o, size, base), saved: saved.has(o.id) }));
+  const fb = feedbackMap(db, userId, rows.filter(o => o.relation === 'similar').map(o => o.id));
+  const alts = rows.filter(o => o.relation === 'similar').map(o => ({ ...card(o, size, base), saved: saved.has(o.id), feedback: fb.get(o.id) ?? null }));
   const simLast = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='similar' ORDER BY id DESC LIMIT 1`, w.id);
   const simPending = simLast?.status === 'done' && !!one(db, `SELECT 1 FROM offers WHERE search_id=? AND review_state='pending'`, simLast.id);
   return {
@@ -89,6 +91,7 @@ export function watchExtrasView(db: DB, w: Row, base: string, e: S.SearchEnv, us
     alternatives: {
       available: !!w.request_id, state: alts.length ? 'ready' : simLast && ['queued', 'running'].includes(simLast.status) ? 'searching' : simPending ? 'reviewing' : simLast ? 'none' : 'not_started',
       items: alts, note: '저장하거나 열어 봐도 기다려줘는 그대로 계속돼요.',
+      priority: w.priority ?? null, priorities: priorityOptions(w.priority),
     },
   };
 }
@@ -98,7 +101,8 @@ export function saveOffer(db: DB, userId: number, offerId: number, on: boolean) 
   const o = one(db, 'SELECT * FROM offers WHERE id=? AND published=1', offerId);
   const owner = o?.watch_id ? one(db, 'SELECT user_id FROM watches WHERE id=?', o.watch_id)?.user_id : o?.request_id ? one(db, 'SELECT user_id FROM requests WHERE id=?', o.request_id)?.user_id : null;
   if (!o || owner !== userId) throw new HttpError(404, 'not_found');
-  if (on) run(db, 'INSERT OR IGNORE INTO offer_saves(user_id, offer_id, created_at) VALUES (?,?,?)', userId, o.id, now());
-  else run(db, 'DELETE FROM offer_saves WHERE user_id=? AND offer_id=?', userId, o.id);
+  const changed = on ? Number(run(db, 'INSERT OR IGNORE INTO offer_saves(user_id, offer_id, created_at) VALUES (?,?,?)', userId, o.id, now()).changes)
+    : Number(run(db, 'DELETE FROM offer_saves WHERE user_id=? AND offer_id=?', userId, o.id).changes);
+  if (changed) recordSignal(db, userId, o.id, on ? 'save' : 'unsave'); // 행동 기록(만족으로 치지 않는다)
   return { saved: on };
 }

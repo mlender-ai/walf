@@ -12,6 +12,7 @@ import { useStore } from '@/lib/store';
 import { C, R } from '@/lib/theme';
 import type { TagT, WatchView } from '@/lib/types';
 import { OfferCard } from '@/components/OfferCard';
+import { PriorityPicker } from '@/components/PriorityPicker';
 
 const won = (n: number | null | undefined) => (n == null ? '—' : `${n.toLocaleString('ko-KR')}원`);
 const STOCK: Record<string, string> = { in_stock: '재고 있음', sold_out: '품절', unknown: '재고 미확인', option_missing: '원하는 옵션 없음' };
@@ -48,10 +49,12 @@ export default function WatchScreen() {
     catch (e: any) { Alert.alert('저장하지 못했어요', e.message); } finally { setBusy(false); }
   };
 
-  const setDiscovery = async (patch: { discovery?: boolean; discoverySources?: string[] }) => {
+  const setDiscovery = async (patch: { discovery?: boolean; discoverySources?: string[]; priority?: string | null }) => {
     setBusy(true);
     try { setW(await call<WatchView>('PATCH', `/watches/${id}`, patch)); } catch (e: any) { Alert.alert('저장하지 못했어요', e.message); } finally { setBusy(false); }
   };
+  const feedback = async (offerId: number, kind: string) => { try { await call('POST', `/offers/${offerId}/feedback`, { kind }); load(); } catch (e: any) { Alert.alert('저장하지 못했어요', e.message); } };
+  const opened = (offerId: number) => { call('POST', `/offers/${offerId}/open`).catch(() => {}); };
   const toggleSave = async (offerId: number, on: boolean) => {
     try { await call(on ? 'POST' : 'DELETE', `/offers/${offerId}/save`); load(); } catch (e: any) { Alert.alert('저장하지 못했어요', e.message); }
   };
@@ -124,7 +127,7 @@ export default function WatchScreen() {
         {dv ? <>
           <Gap h={8} />
           <Head title="새 판매처" sub="같은 상품을 파는 다른 곳" desc="위 상품 페이지와 따로, 같은 상품을 파는 다른 판매처를 하루 한 번 찾아요. 왈프 팀이 확인한 곳만 보여 드려요." />
-          {dv.items.length ? dv.items.map(o => <OfferCard key={o.id} o={o} extra={o.isNew ? [{ kind: 'p', text: '새로 찾음' } as TagT] : []}
+          {dv.items.length ? dv.items.map(o => <OfferCard key={o.id} o={o} onOpen={() => opened(o.id)} extra={o.isNew ? [{ kind: 'p', text: '새로 찾음' } as TagT] : []}
               note={o.meetsTarget ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 8 }}><Icon name="check" size={14} stroke={2.4} /><T size={12.5} w={700}>원하는 가격({won(w.conditions.targetPrice)}) 이하 · 원하는 옵션 있음</T></View> : null} />)
             : <View style={st.box}><T size={14} w={700}>{DISC_TITLE[dv.state]}</T><T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 4 }}>{discDesc}</T></View>}
           {dv.enabled && (dv.lastLabel || dv.nextLabel) ? <T size={12} color={C.gray500} style={{ marginHorizontal: 20, marginTop: 10 }}>{[dv.lastLabel && `마지막 확인 ${dv.lastLabel}`, dv.nextLabel && `다음 확인 ${dv.nextLabel}`].filter(Boolean).join(' · ')}</T> : null}
@@ -148,7 +151,8 @@ export default function WatchScreen() {
         {av?.available && w.status !== 'ended' && (av.items.length || ['searching', 'reviewing'].includes(av.state)) ? <>
           <Gap h={8} />
           <Head title="비슷한 옷도 살펴볼까요?" sub="같은 상품 아님" desc="아직 찾는 중이에요. 기다리는 동안 볼 수 있게 디자인이 비슷한 옷을 골라 봤어요." />
-          {av.items.length ? av.items.map(o => <OfferCard key={o.id} o={o} footer={
+          {av.priorities?.length ? <PriorityPicker options={av.priorities} onPick={p => setDiscovery({ priority: p })} busy={busy} /> : null}
+          {av.items.length ? av.items.map(o => <OfferCard key={o.id} o={o} onFeedback={k => feedback(o.id, k)} onOpen={() => opened(o.id)} footer={
             <Btn label={o.saved ? '저장함' : '저장'} kind={o.saved ? 'pri' : 'sec'} small onPress={() => toggleSave(o.id, !o.saved)} style={{ alignSelf: 'flex-start', marginTop: 10 }} a11y={o.saved ? '저장 해제' : '이 옷 저장'} />} />)
             : <View style={st.box}><T size={14} w={700}>비슷한 옷을 고르고 있어요</T><T size={12.5} color={C.gray500} style={{ marginTop: 4 }}>왈프 팀이 확인한 뒤 보여 드려요.</T></View>}
           <T size={12} color={C.gray500} style={{ marginHorizontal: 20, marginTop: 10 }}>{av.note}</T>

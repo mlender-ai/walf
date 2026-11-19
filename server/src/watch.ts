@@ -8,6 +8,8 @@ import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './tim
 import { colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
 import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type Snapshot } from './sources.ts';
 import { compareProduct, type Verdict } from './sameproduct.ts';
+import { uploadUrl } from './media.ts';
+import { logReview } from './reviewlog.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -166,6 +168,7 @@ export function attachUrl(db: DB, id: number, url: string, operator: string, pol
       u, src.source.id, `${operator}가 상품 페이지를 연결함`, t, t, id);
     if (w.product_id) run(db, 'UPDATE products SET url=COALESCE(url, ?), updated_at=? WHERE id=?', u, t, w.product_id);
     event(db, w, 'team', 'url', '왈프 팀이 상품 페이지를 찾았어요', `${operator} · 하루 한 번 이 페이지의 가격을 확인해요`, t);
+    logReview(db, { operator, subject: 'watch_url', subjectId: w.id, watchId: w.id, action: 'attach', before: { url: w.url, pageIdentity: w.page_identity }, after: { url: u, pageIdentity: 'operator_confirmed' }, isMock: !!w.is_mock, at: t });
   });
 }
 
@@ -176,6 +179,7 @@ export function confirmPage(db: DB, id: number, same: boolean, operator: string,
   if (!w.url) throw new HttpError(409, 'bad_state', '연결된 상품 페이지가 없어요.');
   const t = now();
   tx(db, () => {
+    logReview(db, { operator, subject: 'watch_page', subjectId: w.id, watchId: w.id, action: same ? 'page_same' : 'page_diff', auto: { pageIdentity: w.page_identity, note: w.identity_note, url: w.url, title: w.title }, isMock: !!w.is_mock, at: t });
     if (same) {
       run(db, `UPDATE watches SET page_identity='operator_confirmed', identity_note=?, updated_at=? WHERE id=?`, `${operator}가 같은 상품 페이지임을 확인함`, t, id);
       event(db, w, 'team', 'page_ok', '같은 상품 페이지임을 확인했어요', operator, t);
@@ -199,6 +203,7 @@ export function confirmShipping(db: DB, id: number, fee: unknown, operator: stri
   const t = now();
   tx(db, () => {
     run(db, 'UPDATE listings SET shipping_fee=?, shipping_by=?, shipping_at=? WHERE id=?', f, operator, t, l.id);
+    logReview(db, { operator, subject: 'shipping', subjectId: l.id, watchId: w.id, action: 'shipping', before: { fee: l.shipping_fee ?? null }, after: { fee: f }, auto: { url: l.url }, isMock: !!w.is_mock, at: t });
     event(db, w, 'team', 'shipping', '왈프 팀이 배송비를 확인했어요', `${won(f)} · ${operator}`, t);
   });
   for (const x of all(db, `SELECT id, url FROM watches WHERE status='active' AND url IS NOT NULL`)) if (urlKey(x.url) === l.url_key) reevaluate(db, x.id, policy);
@@ -497,7 +502,7 @@ export function watchView(db: DB, w: Row, base: string, policy: Pick<WatchPolicy
   const events = all(db, 'SELECT * FROM watch_events WHERE watch_id=? ORDER BY at DESC, id DESC LIMIT 50', w.id).map(e => ({ id: e.id, at: e.at, label: kWhen(e.at, t), clock: kClock(e.at), actor: D.ACTOR_LABEL[e.actor] || e.actor, kind: e.kind, title: e.title, detail: e.detail, isMock: !!e.is_mock }));
   return {
     id: w.id, status: w.status, isMock: !!w.is_mock, display: watchDisplay(w, policy, t),
-    product: { title: w.title, brand: w.brand || p?.brand || null, url: w.url && !w.url.startsWith('mock://') ? w.url : null, photoUrl: w.photo ? `${base}/uploads/${w.photo}` : p?.image || null,
+    product: { title: w.title, brand: w.brand || p?.brand || null, url: w.url && !w.url.startsWith('mock://') ? w.url : null, photoUrl: uploadUrl(base, w.photo) || p?.image || null,
       pageTitle: listing?.title || null, seller: listing?.seller || null, productId: w.product_id },
     conditions: { size: w.size, color: w.color, targetPrice: w.target_price, condition: w.condition, priceBasis: w.price_basis === 'item' ? 'item' : 'total',
       label: [`${won(w.target_price)} 이하${w.price_basis === 'item' ? '(배송비 제외)' : ''}`, w.size, w.color, w.condition === 'new' ? '새 상품만' : '중고도 OK'].filter(Boolean).join(' · ') },
@@ -516,12 +521,12 @@ export function myItems(db: DB, userId: number, base: string, policy: Pick<Watch
   const reqs = all(db, 'SELECT * FROM requests WHERE user_id=? ORDER BY id DESC LIMIT 30', userId).map(r => {
     const d = D.display(db, r, t);
     const ended = !D.OPEN_STATUSES.includes(r.status);
-    return { kind: 'find' as const, id: r.id, title: D.shortName(r), brand: r.identified_brand || r.brand || null, photoUrl: r.photo ? `${base}/uploads/${r.photo}` : null,
+    return { kind: 'find' as const, id: r.id, title: D.shortName(r), brand: r.identified_brand || r.brand || null, photoUrl: uploadUrl(base, r.photo),
       stateKey: d.key, stateLabel: ended ? '완료·종료' : r.status === 'active' && !['offer_verified', 'lead_found'].includes(d.key) ? '7일 탐색 중' : d.label, sub: d.title, isMock: !!r.is_mock || !!d.isMock, updatedAt: r.updated_at, ended };
   });
   const watches = all(db, 'SELECT * FROM watches WHERE user_id=? ORDER BY id DESC LIMIT 30', userId).map(w => {
     const d = watchDisplay(w, policy, t);
-    return { kind: 'watch' as const, id: w.id, title: w.title, brand: w.brand, photoUrl: w.photo ? `${base}/uploads/${w.photo}` : null,
+    return { kind: 'watch' as const, id: w.id, title: w.title, brand: w.brand, photoUrl: uploadUrl(base, w.photo),
       stateKey: d.key, stateLabel: d.label, sub: d.title, isMock: !!w.is_mock, updatedAt: w.updated_at, ended: w.status === 'ended', target: `${won(w.target_price)} 이하${w.size ? ` · ${w.size}` : ''}` };
   });
   const items = [...reqs, ...watches].sort((a, b) => Number(a.ended) - Number(b.ended) || b.updatedAt - a.updatedAt);

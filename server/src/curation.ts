@@ -50,6 +50,18 @@ export const SIMILAR_PROVIDERS: SimilarProductProvider[] = [FIXTURE_CURATOR, FAS
 /** 제품군·실루엣이 가장 무겁다. 브랜드는 점수에 넣지 않는다 */
 export const DESIGN_WEIGHT: Record<StyleKind, number> = { category: 3, silhouette: 3, detail: 2, material: 2, color: 1, mood: 1 };
 export const RANKER = 'walf-design-rank-1';
+/** 사용자가 고를 수 있는 선호(무엇이 중요한지). 고르지 않으면 기본(제품군·실루엣 우선) */
+export const PRIORITIES = ['silhouette', 'material_detail', 'brand_archive', 'vibe'] as const;
+export type Priority = typeof PRIORITIES[number];
+export const PRIORITY_LABEL: Record<Priority, string> = { silhouette: '실루엣이 중요해요', material_detail: '소재와 디테일이 중요해요', brand_archive: '브랜드와 아카이브 가치가 중요해요', vibe: '비슷한 느낌이면 괜찮아요' };
+const PRIORITY_RULE: Record<Priority, { weights: Record<StyleKind, number>; min: number }> = {
+  silhouette: { weights: { category: 3, silhouette: 5, detail: 1, material: 1, color: 0.5, mood: 0.5 }, min: 0.35 },
+  material_detail: { weights: { category: 3, silhouette: 1, detail: 4, material: 4, color: 0.5, mood: 0.5 }, min: 0.35 },
+  brand_archive: { weights: { category: 3, silhouette: 2, detail: 1, material: 1, color: 0.5, mood: 3 }, min: 0.35 },   // 같은 브랜드·아카이브 무드에 가산점
+  vibe: { weights: { category: 2, silhouette: 1, detail: 1, material: 1, color: 2, mood: 3 }, min: 0.25 },                 // 느낌(무드·색) 위주로 넓게
+};
+export const isPriority = (v: unknown): v is Priority => (PRIORITIES as readonly string[]).includes(String(v));
+export const rankerOf = (p: Priority | null | undefined) => `${RANKER}:${p || 'default'}`;
 const KIND_KO: Record<StyleKind, string> = { category: '제품군', silhouette: '실루엣', detail: '디테일', material: '소재', color: '색', mood: '무드' };
 const ORDER: StyleKind[] = ['category', 'silhouette', 'detail', 'material', 'color', 'mood'];
 const KIND_SUBJ: Record<StyleKind, string> = { category: '제품군이', silhouette: '실루엣이', detail: '디테일이', material: '소재가', color: '색이', mood: '무드가' };
@@ -85,7 +97,9 @@ export const MIN_DESIGN_SCORE = 0.35;
  * 추천 엔진이 준 후보를 정리하고 디자인 점수로 다시 정렬한다.
  * 빠지는 것: 주소·추천 모델·버전이 없는 값 · 디자인 정보가 없는 상품 · 제품군이 다른 상품 · 찾는 옷과 같은 상품(같은 상품은 판매처 탐색 쪽) · 점수가 낮은 상품.
  */
-export function curateOffers(raw: unknown[], input: SimilarInput & { mockAllowed: boolean }, weights = DESIGN_WEIGHT) {
+export function curateOffers(raw: unknown[], input: SimilarInput & { mockAllowed: boolean; priority?: Priority | null }) {
+  const rule = input.priority ? PRIORITY_RULE[input.priority] : { weights: DESIGN_WEIGHT, min: MIN_DESIGN_SCORE };
+  const weights = rule.weights;
   const dropped = { invalid: 0, noStyle: 0, category: 0, same: 0, low: 0 };
   const kept: ProductOffer[] = [];
   for (const r of raw) {
@@ -98,7 +112,11 @@ export function curateOffers(raw: unknown[], input: SimilarInput & { mockAllowed
     }
     const m = designMatch(input.style, o.style, weights);
     if (!m.categoryOk) { dropped.category++; continue; }
-    if (m.score < MIN_DESIGN_SCORE) { dropped.low++; continue; }
+    // “브랜드와 아카이브 가치”: 찾는 옷과 같은 브랜드이거나 아카이브 무드면 가산점(다른 선호에서는 브랜드를 보지 않는다)
+    if (input.priority === 'brand_archive' && ((input.brand && o.brand && o.brand.toLowerCase() === input.brand.toLowerCase()) || (o.style.mood || []).includes('archive'))) {
+      m.score = Math.min(1, Math.round((m.score + 0.15) * 100) / 100); m.similar.push(o.brand && input.brand && o.brand.toLowerCase() === input.brand.toLowerCase() ? '같은 브랜드' : '아카이브 무드');
+    }
+    if (m.score < rule.min) { dropped.low++; continue; }
     const ws = sizeFit(o, input.size);
     const diff = [...m.diff, ...o.diffPoints.filter(x => !m.diff.includes(x))];
     if (ws === 'sold_out') diff.push(`${input.size} 사이즈는 품절이에요`);

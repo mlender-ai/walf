@@ -74,7 +74,7 @@ test('[대체 상품] 상품을 식별하지 못해도 사진에서 읽은 디�
   await runAll(db, env());
   const s = db.prepare('SELECT * FROM offer_searches WHERE id=?').get(q.id) as any;
   assert.equal(s.purpose, 'similar'); assert.equal(s.target_basis, 'style_only'); assert.equal(s.is_mock, 1);
-  assert.match(s.summary, /비슷한 디자인 \d+개\(정렬 walf-design-rank-1\)/);
+  assert.match(s.summary, /비슷한 디자인 \d+개\(정렬 walf-design-rank-1:default\)/);
   const offers = offersOf(db, q.id!);
   assert.equal(offers[0].name, '울 집업 블루종 브라운');
   assert.equal(S.queueSimilarSearch(db, env(), id).skipped, '같은 조건의 추천이 이미 있어요');

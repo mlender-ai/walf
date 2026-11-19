@@ -12,6 +12,8 @@ import { SOURCES } from './sources.ts';
 import sharp from 'sharp';
 import type { SearchEnv } from './findsearch.ts';
 import * as X from './discovery.ts';
+import * as FB from './feedback.ts';
+import { uploadUrl } from './media.ts';
 
 type Cfg = { uploads: string; pushConfigured: boolean; policy: W.WatchPolicy; rate?: { writes: number; windowMs: number }; search?: SearchEnv };
 
@@ -49,6 +51,8 @@ export function userApi(db: DB, cfg: Cfg) {
     const dev = req.get('x-walf-device');
     const u = dev ? D.userByDevice(db, dev) : undefined;
     if (!u || u.deleted_at) return res.status(401).json({ error: 'no_session', message: '세션이 없어요. 앱을 다시 열어 주세요.' });
+    // 기기 ID만으로는 안 된다 — 세션을 열 때 받은 토큰이 함께 맞아야 한다
+    if (!D.tokenOk(u, req.get('x-walf-token'))) return res.status(401).json({ error: 'bad_token', message: '세션이 만료됐어요. 앱을 다시 열어 주세요.' });
     (req as any).user = u; next();
   };
   const uid = (req: express.Request) => (req as any).user.id as number;
@@ -82,8 +86,8 @@ export function userApi(db: DB, cfg: Cfg) {
   });
 
   r.post('/session', (req, res) => {
-    const u = D.upsertUser(db, String(req.body?.deviceId || ''), String(req.body?.platform || ''));
-    res.json({ userId: u.id });
+    const s = D.openSession(db, String(req.body?.deviceId || ''), String(req.body?.platform || ''), req.get('x-walf-token'));
+    res.json({ userId: s.user.id, ...(s.token ? { token: s.token } : {}) }); // 토큰은 처음 한 번만 준다(앱이 저장)
   });
 
   r.get('/me', auth, (req, res) => {
@@ -97,7 +101,7 @@ export function userApi(db: DB, cfg: Cfg) {
       user: { id: u.id, pushToken: !!u.push_token, pushPermission: u.push_permission || null, createdAt: u.created_at },
       active: open ? D.requestView(db, open, base) : null,
       past: past.map(p => ({ id: p.id, status: p.status, title: D.shortName(p), brand: p.identified_brand || p.brand, isMock: !!p.is_mock,
-        display: D.display(db, p), endedAt: p.ended_at, photoUrl: p.photo ? `${base}/uploads/${p.photo}` : null })),
+        display: D.display(db, p), endedAt: p.ended_at, photoUrl: uploadUrl(base, p.photo) })),
       items: mine.items, watchLimit: mine.watchLimit,
       unread, pushConfigured: cfg.pushConfigured,
     });
@@ -140,8 +144,17 @@ export function userApi(db: DB, cfg: Cfg) {
     const b = req.body || {};
     W.updateWatch(db, uid(req), id, b, cfg.policy);
     if (cfg.search && (b.discovery !== undefined || b.discoverySources !== undefined)) X.updateDiscovery(db, uid(req), id, { discovery: b.discovery, discoverySources: b.discoverySources }, cfg.search);
+    if (b.priority !== undefined) FB.setPriority(db, uid(req), { watchId: id }, b.priority);
     res.json(watchOut(req, id));
   });
+  // 추천 기준(무엇이 중요한지) · 추천 피드백 · 행동 기록(열어 보기는 만족으로 치지 않는다)
+  r.post('/requests/:id/priority', auth, (req, res) => {
+    const id = idp(req.params.id);
+    FB.setPriority(db, uid(req), { requestId: id }, req.body?.priority ?? null);
+    res.json(F.findView(db, D.ownRequest(db, uid(req), id), baseOf(req)));
+  });
+  r.post('/offers/:id/feedback', auth, (req, res) => res.json(FB.recordSignal(db, uid(req), idp(req.params.id), String(req.body?.kind || '') as FB.SignalKind)));
+  r.post('/offers/:id/open', auth, (req, res) => res.json(FB.recordSignal(db, uid(req), idp(req.params.id), 'open')));
   // 대체 상품·판매처 저장 — 저장해도 기다려줘·찾아줘 상태는 그대로
   r.post('/offers/:id/save', auth, (req, res) => res.json(X.saveOffer(db, uid(req), idp(req.params.id), true)));
   r.delete('/offers/:id/save', auth, (req, res) => res.json(X.saveOffer(db, uid(req), idp(req.params.id), false)));

@@ -10,6 +10,7 @@ import { useStore } from '@/lib/store';
 import { C, R } from '@/lib/theme';
 import type { FindItem, FindView } from '@/lib/types';
 import { OfferCard } from '@/components/OfferCard';
+import { PriorityPicker } from '@/components/PriorityPicker';
 
 /**
  * 찾아줘 결과 — 왈프 팀이 검수해 공개한 것만 보인다.
@@ -44,6 +45,10 @@ export default function FindResult() {
     ]);
   };
   const alts = f?.alternatives.items || [];
+  // 추천 피드백·선호 — 열어 본 것은 만족으로 치지 않는다(서버에 행동 기록으로만)
+  const feedback = async (offerId: number, kind: string) => { try { await call('POST', `/offers/${offerId}/feedback`, { kind }); load(); } catch (e: any) { Alert.alert('저장하지 못했어요', e.message); } };
+  const opened = (offerId: number) => { call('POST', `/offers/${offerId}/open`).catch(() => {}); };
+  const pick = async (p: string | null) => { setBusy(true); try { setF(await call<FindView>('POST', `/requests/${id}/priority`, { priority: p })); } catch (e: any) { Alert.alert('저장하지 못했어요', e.message); } finally { setBusy(false); } };
   const saleCards = f ? [...f.sale.exact, ...f.sale.possible] : [];
   const identified = !!(f?.match || f?.likely.length);
   const saleDesc = !f ? '' : f.sale.state === 'none' ? `${f.sale.searchedSources.length ? `${f.sale.searchedSources.join(' · ')}에서 찾아봤어요.` : ''} 다른 판매처는 아직 자동으로 확인하지 못해요.`.trim()
@@ -82,15 +87,16 @@ export default function FindResult() {
             <Gap h={8} />
             <Head title="판매처" sub="같은 상품을 파는 곳" desc="실제로 파는 곳 중 왈프 팀이 확인한 것만 보여 드려요." />
             {saleCards.length ? <>
-              {f.sale.exact.map(o => <OfferCard key={o.id} o={o} />)}
-              {f.sale.possible.map(o => <OfferCard key={o.id} o={o} />)}
+              {f.sale.exact.map(o => <OfferCard key={o.id} o={o} onOpen={() => opened(o.id)} />)}
+              {f.sale.possible.map(o => <OfferCard key={o.id} o={o} onOpen={() => opened(o.id)} />)}
             </> : <View style={s.note}><T size={14} w={700}>{SALE_TITLE[f.sale.state]}</T><T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 4 }}>{saleDesc}</T></View>}
             {saleCards.length || f.sale.state === 'none' ? <T size={12} lh={17} color={C.gray500} style={{ marginHorizontal: 20, marginTop: 10 }}>{f.sale.note}</T> : null}
           </> : null}
           {alts.length || ['searching', 'reviewing'].includes(f.alternatives.state) ? <>
             <Gap h={8} />
             <Head title="비슷한 디자인의 옷" sub="같은 상품 아님" desc={`${!saleCards.length && identified ? '같은 옷을 파는 곳을 아직 못 찾았어요. 디자인이 비슷한 옷도 살펴볼까요? ' : ''}실루엣·디테일·소재가 비슷한 순서예요.`} />
-            {alts.length ? alts.map(o => <OfferCard key={o.id} o={o} />) : <View style={s.note}><T size={14} w={700}>비슷한 옷을 고르고 있어요</T><T size={12.5} color={C.gray500} style={{ marginTop: 4 }}>왈프 팀이 확인한 뒤 보여 드려요.</T></View>}
+            {f.priorities?.length ? <PriorityPicker options={f.priorities} onPick={pick} busy={busy} /> : null}
+            {alts.length ? alts.map(o => <OfferCard key={o.id} o={o} onFeedback={k => feedback(o.id, k)} onOpen={() => opened(o.id)} />) : <View style={s.note}><T size={14} w={700}>비슷한 옷을 고르고 있어요</T><T size={12.5} color={C.gray500} style={{ marginTop: 4 }}>왈프 팀이 확인한 뒤 보여 드려요.</T></View>}
           </> : null}
           {f.discover.length ? <>
             <Gap />

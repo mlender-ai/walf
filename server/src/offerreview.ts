@@ -5,6 +5,8 @@ import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { offerOf, type ProductOffer, type StoredOffer } from './offers.ts';
+import { logReview } from './reviewlog.ts';
+import { feedbackMap, priorityOptions } from './feedback.ts';
 import { now, kWhen } from './time.ts';
 
 type Row = Record<string, any>;
@@ -47,10 +49,16 @@ export function reviewOffer(db: DB, offerId: number, action: ReviewAction, input
         action, publishedNow ? 1 : 0, publishedNow ? t : null, operator, t, reason || null, o.id);
     }
     if (publishedNow) logPublished(db, r, [action], operator, mock);
+    logReview(db, { operator, subject: 'offer', subjectId: o.id, requestId: r.id, action, auto: autoOf(o), reason: reason || null, isMock: mock, at: t });
   });
   if (publishedNow) notifyPublished(db, r, [action], mock, t);
   return offerOf(one(db, 'SELECT * FROM offers WHERE id=?', o.id)!);
 }
+
+/** 검수 기록에 남길 자동 판정(운영자 결정과 비교하는 평가 데이터) */
+const autoOf = (o: StoredOffer) => ({ relation: o.relation, verdict: o.verdict, detail: o.detail, wantSize: o.wantSize, wantColor: o.wantColor, stock: o.stock, score: o.score, rank: o.rank,
+  recommender: o.recommender, recommenderVersion: o.recommenderVersion, checks: o.checks.map(c => [c.field, c.result]), seller: o.seller, name: o.name, url: o.url,
+  price: o.salePrice ?? o.price, shipping: o.shipping, similarPoints: o.similarPoints, diffPoints: o.diffPoints });
 
 /** 검수 규칙(찾아줘·기다려줘 공통) */
 function checkAction(o: StoredOffer, action: ReviewAction, reason: string) {
@@ -91,6 +99,7 @@ function reviewWatchOffer(db: DB, o: StoredOffer, action: ReviewAction, reason: 
       if (action === 'alternative') { if (!one(db, `SELECT 1 FROM watch_events WHERE watch_id=? AND kind='alternatives_published' AND at>?`, w.id, t - 86_400_000)) watchEvent(db, w, 'alternatives_published', '기다리는 동안 볼 비슷한 옷을 골랐어요', '같은 상품은 아니에요 · 기다려줘는 그대로 계속돼요', t); }
       else watchEvent(db, w, 'discovery_published', '왈프 팀이 다른 판매처를 확인했어요', `${o.seller} · ${action === 'exact' ? '같은 상품 확인' : '같은 상품일 수 있음'} · 가격·재고는 바뀔 수 있어요`, t);
     }
+    logReview(db, { operator, subject: 'offer', subjectId: o.id, watchId: w.id, action, auto: { ...autoOf(o), meetsWatch: meetsWatch(o, w) }, reason: reason || null, isMock: mock, at: t });
   });
   if (action === 'exact' || action === 'possible') {
     if (meetsWatch(o, w)) {
@@ -136,6 +145,8 @@ export type OfferCard = {
   id: number; tier: 'exact' | 'possible' | 'alternative'; seller: string; brand: string | null; name: string | null; imageUrl: string | null; url: string | null; isMock: boolean;
   price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'used' | 'unknown';
   sizeLabel: string | null; basisLabel: string; confirmed: string[]; unconfirmed: string[]; similarPoints: string[]; diffPoints: string[]; teamNote: string | null;
+  /** 이 사용자의 직접 평가(대체 상품만): like | not_quite | not_interested | null */
+  feedback?: string | null;
 };
 /** mock://image/x.svg → 앱이 읽을 수 있는 PNG 주소(테스트 소스가 켜졌을 때만 서버가 준다) */
 export const imageFor = (u: string | null, base: string) => !u ? null : u.startsWith('mock://image/') ? `${base}/api/mock-image/${encodeURIComponent(u.slice(13))}` : /^https?:\/\//.test(u) ? u : null;
@@ -178,10 +189,13 @@ function partState(db: DB, requestId: number, purpose: 'find' | 'similar', publi
 }
 /** 찾아줘 결과 화면의 판매처(같은 상품)·대체 상품 — 운영자가 공개한 것만. 검수 전 후보는 개수도 보여 주지 않는다(“확인 중”만) */
 export function offersView(db: DB, r: Row, base: string) {
-  const rows = (db.prepare(`SELECT * FROM offers WHERE request_id=? AND published=1 ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, rank`).all(r.id) as Row[]).map(offerOf);
+  // 같은 등급 안에서는 가장 최근 탐색·추천(선호를 바꿨으면 그 기준)의 순서가 먼저, 예전 추천에서 남은 공개분은 뒤에
+  const rows = (db.prepare(`SELECT * FROM offers WHERE request_id=? AND published=1 ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, search_id DESC, rank`).all(r.id) as Row[]).map(offerOf);
   const size = r.size ? String(r.size).toUpperCase() : null;
   const cards = rows.map(o => card(o, size, base));
-  const exact = cards.filter(c => c.tier === 'exact'), possible = cards.filter(c => c.tier === 'possible'), alts = cards.filter(c => c.tier === 'alternative');
+  const exact = cards.filter(c => c.tier === 'exact'), possible = cards.filter(c => c.tier === 'possible');
+  const fb = feedbackMap(db, r.user_id, cards.filter(c => c.tier === 'alternative').map(c => c.id));
+  const alts = cards.filter(c => c.tier === 'alternative').map(c => ({ ...c, feedback: fb.get(c.id) ?? null }));
   const last = one(db, `SELECT report FROM offer_searches WHERE request_id=? AND purpose='find' AND status='done' ORDER BY id DESC LIMIT 1`, r.id);
   const rep = parse(last?.report ?? null, []) as { outcome: string; label: string }[];
   const searched = rep.filter(x => x.outcome !== 'not_run');
@@ -190,5 +204,6 @@ export function offersView(db: DB, r: Row, base: string) {
       searchedSources: searched.map(x => x.label), notSearchedCount: rep.length - searched.length,
       note: '중고 플랫폼(번개장터 등)은 약관·제휴 확인 전이라 자동으로 찾지 않아요. 7일 매물 찾기를 고르면 왈프 팀이 직접 살펴봐요.' },
     alternatives: { ...partState(db, r.id, 'similar', alts.length), items: alts },
+    priority: r.priority ?? null, priorities: priorityOptions(r.priority),
   };
 }
