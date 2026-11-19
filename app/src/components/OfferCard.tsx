@@ -86,7 +86,7 @@ export function OfferCard({ o, extra = [], note, footer, onFeedback, onOpen }: {
 }
 
 const s = StyleSheet.create({
-  card: { marginHorizontal: 20, marginTop: 12, padding: 14, borderRadius: R.card, borderWidth: 1, borderColor: C.gray300 },
+  card: { marginHorizontal: 20, marginTop: 12, padding: 14, borderRadius: R.card, borderWidth: 1, borderColor: C.gray300, backgroundColor: C.white },
   img: { width: 88, height: 104, borderRadius: R.thumb },
   row: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
   box: { marginTop: 10, padding: 10, gap: 3, borderRadius: R.thumb, borderWidth: 1, borderStyle: 'dashed', borderColor: C.gray500 },

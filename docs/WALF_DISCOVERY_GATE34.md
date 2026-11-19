@@ -39,7 +39,7 @@
 
 ## 3. 검증
 
-- `cd server && node --test`: **143개 통과**(새 테스트 `test/discovery-gate34.test.ts` 10개 포함)
+- `cd server && npm test`: **140개 통과**(새 테스트 `test/discovery-gate34.test.ts` 10개 포함). 처음 보고한 143개는 `node --test`로 E2E 3개 파일까지 센 수였다(2026-11-20 바로잡음)
 - `npm run e2e`: 20·19·21단계 통과(모의 AI·모의 판매처)
 - 앱 `npx tsc --noEmit`: 통과
 - 공식몰 실측: 고친 재고 해석으로 같은 페이지를 1회 다시 읽었다. robots.txt 확인과 1초 간격은 그대로다.

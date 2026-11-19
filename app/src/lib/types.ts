@@ -41,9 +41,14 @@ export type Me = { user: { id: number; pushToken: boolean; pushPermission: strin
 
 export type Attr = { label: string; text: string };
 export type FindItem = { id: number; tier: 'match' | 'likely' | 'discover'; brand: string | null; name: string; modelCode: string | null; season: string | null; color: string | null; category: string | null;
+  /** 같은 옷으로 확인된 상품 사진(판매처·상품 페이지). 사용자 사진과 따로 */ image?: string | null;
   matched: Attr[]; uncertain: Attr[]; evidence: { url: string; host: string }[]; note: string | null; confirmed: boolean; isMock: boolean };
 export type FindView = { requestId: number; status: string; state: 'pending' | 'ready' | 'confirmed'; publishedLabel: string | null; match: FindItem | null; likely: FindItem[]; discover: FindItem[];
   styleWords: string[]; productId: number | null; canHunt: boolean; isMock: boolean;
+  /** exact: 같은 옷 확인 · likely: 유력 후보만 · not_found: 같은 옷을 못 찾음 */
+  outcome: 'exact' | 'likely' | 'not_found';
+  original: { photoUrl: string | null; name: string | null; brand: string | null; size: string | null; color: string | null };
+  understood: { known: string[]; unknown: string[] };
   /** DISCOVER 는 브랜드 단위 추천. 판매 중인 비슷한 “상품”은 alternatives(실제 추천 엔진은 연결 전 — PENDING_INTEGRATION) */
   discoverKind: 'brand'; similarProducts: { status: string; items: OfferCard[] };
   /** 식별 결과와 따로: 같은 상품을 파는 곳(운영자가 공개한 것만) */

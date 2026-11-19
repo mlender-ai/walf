@@ -82,7 +82,7 @@ export function createWatch(db: DB, userId: number, input: NewWatch, policy: Wat
     const note = !url ? '상품 링크가 있으면 바로 지켜볼 수 있어요. 왈프 팀이 상품 페이지를 찾고 있어요.' : !src!.ok ? src!.reason! : null;
     const id = Number(run(db, `INSERT INTO watches(user_id, product_id, request_id, status, title, brand, url, photo, size, color, target_price, condition, price_basis, page_identity, source, info_note,
       next_check_at, started_at, renew_at, is_mock, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      userId, pid, req?.id ?? null, status, name || LINK_TITLE, brand, url, input.photo || null, size ? normSize(size) : null, color, target, condition, priceBasis, pageIdentity,
+      userId, pid, req?.id ?? null, status, name || LINK_TITLE, brand, url, input.photo || req?.photo || null, size ? normSize(size) : null, color, target, condition, priceBasis, pageIdentity,
       src?.ok ? src.source.id : null, note, status === 'active' ? t : null, t, t + policy.renewAfterMs, isMock ? 1 : 0, t, t).lastInsertRowid);
     const w = one(db, 'SELECT * FROM watches WHERE id=?', id)!;
     event(db, w, 'user', 'created', '기다려줘 시작', `${won(target)} 이하${priceBasis === 'item' ? '(배송비 제외)' : ''}${size ? ` · ${normSize(size)}` : ''}${color ? ` · ${color}` : ''}${condition === 'new' ? ' · 새 상품만' : ''}`, t);

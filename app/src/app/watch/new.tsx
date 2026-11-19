@@ -17,12 +17,12 @@ const fmt = (v: string) => v.replace(/[^\d]/g, '').replace(/\B(?=(\d{3})+(?!\d))
 
 /** 기다려줘 등록 — 상품명이나 링크 + 원하는 가격만 있으면 된다. 찾아줘에서 넘어오면 상품이 채워져 있다 */
 export default function NewWatch() {
-  const p = useLocalSearchParams<{ productId?: string; requestId?: string; title?: string; brand?: string }>();
+  const p = useLocalSearchParams<{ productId?: string; requestId?: string; title?: string; brand?: string; size?: string; color?: string; keep?: string }>();
   const { bottom } = useSafeAreaInsets();
   const { refresh } = useStore();
   const fromFind = !!p.productId;
   const [url, setUrl] = useState(''); const [name, setName] = useState(p.title || ''); const [brand, setBrand] = useState(p.brand || '');
-  const [price, setPrice] = useState(''); const [size, setSize] = useState(''); const [color, setColor] = useState(''); const [newOnly, setNewOnly] = useState(false); const [itemOnly, setItemOnly] = useState(false);
+  const [price, setPrice] = useState(''); const [size, setSize] = useState(p.size || ''); const [color, setColor] = useState(p.color || ''); const [newOnly, setNewOnly] = useState(false); const [itemOnly, setItemOnly] = useState(false);
   const [discover, setDiscover] = useState(true);
   const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
@@ -67,6 +67,13 @@ export default function NewWatch() {
           <T size={24} w={800} lh={31} ls={-1} style={{ marginTop: 8 }} accessibilityRole="header">어떤 옷을 기다릴까요?</T>
           <T size={14} color={C.gray500} style={{ marginTop: 4 }}>원하는 사이즈와 가격이 되면 알려 드릴게요. 하루 한 번 확인해요.</T>
 
+          {p.keep === '1' && !fromFind ? (
+            <View style={{ marginTop: 18, padding: 14, borderRadius: R.card, backgroundColor: C.canvas }}>
+              <T size={12} color={C.gray500}>찾아줘에서 이어서</T>
+              <T size={14} w={700} lh={20} style={{ marginTop: 2 }}>맡긴 사진으로 왈프 팀이 같은 옷을 계속 찾아요</T>
+              <T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 2 }}>같은 상품 페이지를 알면 링크를 넣어 주세요. 없으면 비워 두어도 돼요.</T>
+            </View>
+          ) : null}
           {fromFind ? (
             <View style={{ marginTop: 18, padding: 14, borderRadius: R.card, borderWidth: 1, borderColor: C.gray300 }}>
               <T size={12} color={C.gray500}>찾아줘에서 확인한 옷</T>
@@ -75,7 +82,7 @@ export default function NewWatch() {
             </View>
           ) : null}
           <Field label={fromFind ? '살 수 있는 상품 페이지 링크(있으면 바로 지켜봐요)' : '상품 링크'} defaultValue="" onChangeText={setUrl} placeholder="공식몰 등 상품 페이지 https://" autoCapitalize="none" autoCorrect={false} keyboardType="url"
-            hint={fromFind ? '찾아줘 근거 페이지는 판매 페이지가 아닐 수 있어 가져오지 않아요. 링크가 없으면 왈프 팀이 찾아 연결해요.' : '공식몰 같은 상품 페이지는 바로 지켜봐요. 번개장터·무신사 등 자동 수집을 금지한 곳은 왈프 팀이 확인해요.'} />
+            hint={fromFind ? '찾아줘 근거 페이지는 판매 페이지가 아닐 수 있어 가져오지 않아요. 링크가 없으면 왈프 팀이 찾아 연결해요.' : '왈프 팀이 이용 조건을 확인한 판매처(등록된 브랜드 공식몰 등)는 바로 지켜봐요. 그 밖의 링크는 왈프 팀이 직접 확인해요.'} />
           {fromFind ? null : <>
             <Field label="상품명" defaultValue={p.title || ''} onChangeText={setName} placeholder="예: BADBLOOD Mystic Nylon Track Jacket Navy" maxLength={120} />
             <Field label="브랜드 (선택)" defaultValue={p.brand || ''} onChangeText={setBrand} placeholder="예: BADBLOOD" maxLength={60} />
