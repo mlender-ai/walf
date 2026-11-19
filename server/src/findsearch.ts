@@ -399,7 +399,7 @@ export function createOfferSearcher(db: DB, e: SearchEnv, more: (() => void)[] =
 
 
 // ── 사용자 화면: 어디서 찾아봤는지(실제 판매처 · 테스트 판매처 · 연결 준비 중) ──────
-// 지금 자동으로 찾는 실제 판매처는 등록한 브랜드 공식몰뿐이다(네이버 쇼핑 등은 키·연동 대기). 결과 화면에서 이 한계를 숨기지 않는다.
+// 지금 자동으로 찾는 실제 판매처는 등록한 브랜드 공식몰뿐이다(네이버 쇼핑 API는 2026-07-31 종료, 나머지는 약관·연동 대기). 결과 화면에서 이 한계를 숨기지 않는다.
 export type Coverage = { kind: 'real' | 'test' | 'none'; real: string[]; pending: string[]; searched: boolean; note: string };
 const SOURCE_NAME: Record<string, string> = { naver_shopping: '네이버 쇼핑' };
 /** 이 대상에 소스마다 지금 쓸 수 있는지 */

@@ -19,6 +19,7 @@ export type DiscoverySource = { id: string; label: string; status: string; usabl
   /** 사용자에게 보여 줄 쉬운 설명(조항·내부 사정은 reason 에 — 어드민용) */ note: string };
 const noteOf = (status: string, usable: boolean, paid: boolean, isMock: boolean, reason: string) => usable ? '찾아볼 수 있어요'
   : reason === '이 기다려줘에서 끈 판매처예요' ? '꺼 두었어요'
+  : status === 'UNSUPPORTED' && /종료/.test(reason) ? '서비스가 종료돼 찾을 수 없어요'
   : status === 'UNSUPPORTED' ? '이용약관상 자동으로 찾을 수 없어요 · 필요하면 왈프 팀이 직접 확인해요'
   : status === 'PENDING_INTEGRATION' ? '약관·연동을 확인하고 있어요'
   : status === 'PENDING_EXTERNAL_SETUP' ? (paid ? '유료 기능이라 아직 쓰지 않아요' : '연결을 준비하고 있어요')

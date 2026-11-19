@@ -12,7 +12,7 @@ import { mockProvider } from '../src/ai.ts';
 import { setClock } from '../src/time.ts';
 import { cleanOffer, offersOf } from '../src/offers.ts';
 import { clearRobotsCache, SourceError } from '../src/sources.ts';
-import { SEARCH_SOURCES, mockSource, naverItems, naverSource, officialLinks, officialSource, type RawHit, type SearchSource, type SourceCtx } from '../src/searchsources.ts';
+import { SEARCH_SOURCES, mockSource, naverSource, officialLinks, officialSource, type RawHit, type SearchSource, type SourceCtx } from '../src/searchsources.ts';
 
 process.env.WALF_PUSH_DISABLED = '1';
 const T0 = Date.UTC(2026, 10, 16, 1, 0);
@@ -85,7 +85,7 @@ test('[3 소스 검색] 소스마다 따로 돈다: 실패해도 다른 소스�
   assert.equal(by.pending.outcome, 'not_run'); assert.equal(by.pending.reason, '연동 대기'); assert.equal(by.pending.hits, 0);
 });
 
-test('[3 소스 검색] 모의 의뢰는 테스트 판매처만, 실제 의뢰는 실제 판매처만 — 공식몰은 등록된 브랜드만, 네이버는 키가 있어야, 약관 금지 판매처는 열지 않는다', () => {
+test('[3 소스 검색] 모의 의뢰는 테스트 판매처만, 실제 의뢰는 실제 판매처만 — 공식몰은 등록된 브랜드만, 종료된 네이버 쇼핑 API·약관 금지 판매처는 열지 않는다', () => {
   const real = { ...TARGET, isMock: false };
   const av = (s: SearchSource, t: S.SearchTarget, c: SourceCtx) => s.availability(t, c);
   assert.equal(av(mockSource, TARGET, ctx()).usable, true);
@@ -93,8 +93,9 @@ test('[3 소스 검색] 모의 의뢰는 테스트 판매처만, 실제 의뢰�
   assert.equal(av(officialSource, TARGET, ctx()).usable, false, '모의 의뢰에 실제 공식몰을 열지 않는다');
   assert.equal(av(officialSource, real, ctx({ isMock: false })).usable, true);
   assert.match(av(officialSource, { ...real, brand: 'LEMAIRE' }, ctx({ isMock: false })).reason, /공식몰\(카페24\)이 등록되어 있지 않아요/);
-  assert.equal(av(naverSource, real, ctx({ isMock: false })).status, 'PENDING_EXTERNAL_SETUP');
-  assert.equal(av(naverSource, real, ctx({ isMock: false, env: { WALF_NAVER_CLIENT_ID: 'x', WALF_NAVER_CLIENT_SECRET: 'y' } })).usable, true);
+  assert.equal(av(naverSource, real, ctx({ isMock: false })).status, 'UNSUPPORTED');
+  assert.equal(av(naverSource, real, ctx({ isMock: false, env: { WALF_NAVER_CLIENT_ID: 'x', WALF_NAVER_CLIENT_SECRET: 'y' } })).usable, false, '키가 있어도 종료된 API는 열지 않는다');
+  assert.match(av(naverSource, real, ctx({ isMock: false })).reason, /2026-07-31 종료/);
   for (const id of ['ai_web', 'bunjang', 'musinsa', 'soldout', 'wconcept', 'kream', 'joongna', 'fruitsfamily', '29cm']) {
     const s = SEARCH_SOURCES.find(x => x.id === id)!;
     assert.equal(av(s, real, ctx({ isMock: false })).usable, false, `${id}는 열지 않는다`);
@@ -121,17 +122,6 @@ test('[3 소스 검색] 공식몰: robots.txt 를 먼저 보고, 카페24 검색
   const blocked = ctx({ isMock: false, fetcher: (async (u: string) => new Response(u.endsWith('/robots.txt') ? 'User-agent: *\nDisallow: /product/search' : html)) as any, resolve: async () => ['93.184.216.34'] });
   await assert.rejects(officialSource.search({ text: 'x', kind: 'code' }, { ...TARGET, isMock: false }, blocked), (e: any) => e.code === 'robots');
   clearRobotsCache();
-});
-
-test('[3 소스 검색] 네이버 쇼핑 API 결과: 태그를 지우고, 최저가·이미지·판매처·중고 여부만 읽는다(사이즈·재고는 모름)', () => {
-  const xs = naverItems({ items: [
-    { title: '<b>배드블러드</b> 미스틱 나일론 트랙 자켓', link: 'https://smartstore.naver.com/x/products/1', image: 'https://shopping-phinf.pstatic.net/a.jpg', lprice: '159000', mallName: '테스트스토어', productType: '2', brand: '배드블러드' },
-    { title: '중고 자켓', link: 'https://x.example/2', image: '', lprice: '0', mallName: '', productType: '5' },
-    { title: '주소 없음', link: 'javascript:alert(1)' },
-  ] }, 'q');
-  assert.equal(xs.length, 2, 'http(s) 주소만');
-  assert.deepEqual([xs[0].title, xs[0].price, xs[0].seller, xs[0].condition], ['배드블러드 미스틱 나일론 트랙 자켓', 159000, '테스트스토어', 'new']);
-  assert.deepEqual([xs[1].price, xs[1].imageUrl, xs[1].seller, xs[1].condition], [null, null, '네이버 쇼핑', 'used']);
 });
 
 // ── 4 · 통합 ──
@@ -203,7 +193,7 @@ test('[7 결과] 식별 결과와 판매 매물 결과를 나누고, 같은 상�
   assert.deepEqual(r.sale.likely.map(o => o.url), ['mock://shop/select-mystic-navy']);
   assert.deepEqual(r.sale.unverified.map(o => o.url), ['mock://shop/slow-shop']);
   assert.equal(r.sale.different.length, 3);
-  assert.ok(r.limits.some(x => /검색하지 않은 곳 2곳/.test(x)), '공식몰·네이버는 검색하지 않음(매물 없음이 아님)');
+  assert.ok(r.limits.some(x => /검색하지 않은 곳 2곳/.test(x)), '공식몰(모의 의뢰)·네이버(종료)는 검색하지 않음(매물 없음이 아님)');
   assert.ok(r.limits.some(x => /사진으로 비교하지 않았어요/.test(x)));
   const none = S.assemble({ ...TARGET, brand: '테스트브랜드A' }, [], found.report);
   assert.equal(none.sale.state, 'none');

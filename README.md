@@ -40,7 +40,7 @@ npm start                 # http://localhost:4300 , 어드민 http://localhost:4
 테스트:
 
 ```bash
-npm test        # 상태 규칙 · AI 작업 순서 · Claude 요청 형식(로컬 가짜 API) · V2(찾아줘·기다려줘·비용·가격 소스·마이그레이션) · V2.1 판매처 탐색 7단계·대체 상품 큐레이션·검수·기다려줘 새 매물 탐색·선호·피드백·검수 기록·세션·사진 보호·코드 리뷰 후속(품번 판정·알림 조건·이전 계정 잠금·식별 후보 여러 개) 단위 테스트 130개
+npm test        # 상태 규칙 · AI 작업 순서 · Claude 요청 형식(로컬 가짜 API) · V2(찾아줘·기다려줘·비용·가격 소스·마이그레이션) · V2.1 판매처 탐색 7단계·대체 상품 큐레이션·검수·기다려줘 새 매물 탐색·선호·피드백·검수 기록·세션·사진 보호·코드 리뷰 후속(품번 판정·알림 조건·이전 계정 잠금·식별 후보 여러 개) 단위 테스트 132개
 npm run e2e     # ① BADBLOOD 7일 수배 HTTP 전 구간(20) ② V2 찾아줘→기다려줘(테스트 가격 220,000→190,000→145,000)·서버 재시작(19) ③ V2.1 찾아줘 판매처 탐색·대체 상품·운영자 검수·기다려줘 새 판매처·보안·피드백·한 화면 검수·평가 데이터(21) — 모두 임시 DB·모의
 ```
 
@@ -70,6 +70,7 @@ DAY n 탐색 작업 생성 ─▶ AI 탐색: 무신사·29CM·W컨셉·번개장
 - 공식몰(카페24·schema.org) 상품 페이지는 가입 없이 동작해요. 번개장터·무신사 등 약관이 자동 수집을 금지한 곳은 열지 않아요(`server/src/sources.ts`).
 - 비용 가드레일: `WALF_AI_MONTHLY_BUDGET_USD`(기본 10) · `WALF_AI_MAX_CALLS_PER_REQUEST`(기본 10). 넘으면 작업이 멈추고 어드민 **비용** 화면에서 확인해요. 기다려줘 설정: `WALF_WATCH_*`(`server/.env.example`).
 - 문서: [구조](docs/WALF_V2_ARCHITECTURE.md) · [진행 보고](docs/WALF_V2_PROGRESS.md) · [비용 모델](docs/WALF_V2_COST_MODEL.md) · [주말 설정 체크리스트](docs/WEEKEND_SETUP_CHECKLIST.md)
+- Discovery Upgrade: [Gate 0 진단](docs/WALF_DISCOVERY_GATE0.md) · [판매처 접근 매트릭스](docs/WALF_SOURCE_ACCESS_MATRIX.md) · [운영 비용 시나리오](docs/WALF_COST_SCENARIOS.md)(`node server/tools/cost-scenarios.ts`)
 
 ## 2. 앱
 

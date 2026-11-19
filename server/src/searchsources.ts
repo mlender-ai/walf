@@ -112,44 +112,13 @@ export const officialSource: SearchSource = {
   async detail(hit, ctx) { await ctx.pace(hostOf(hit.url)); return { ...(await fetchPage(hit.url, ctx)), source: 'official', seller: hit.seller }; },
 };
 
-// ── 네이버 쇼핑 검색 API(키 필요) ─────────────────────────────
-// 무료 API(하루 호출 한도 있음). 키가 없으면 PENDING_EXTERNAL_SETUP. 결과는 검색 목록 값뿐이라 사이즈·재고는 모른다(listed_only).
-const stripTags = (s: unknown) => String(s ?? '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").trim();
-export function naverItems(j: any, query: string): RawHit[] {
-  return (Array.isArray(j?.items) ? j.items : []).filter((x: any) => /^https?:\/\//.test(String(x?.link || ''))).map((x: any, i: number) => {
-    const type = Number(x.productType);
-    return { source: 'naver_shopping', seller: stripTags(x.mallName) || '네이버 쇼핑', url: String(x.link), title: stripTags(x.title).slice(0, 160), brand: stripTags(x.brand) || null,
-      price: Number(x.lprice) > 0 ? Math.round(Number(x.lprice)) : null, imageUrl: /^https?:\/\//.test(String(x.image || '')) ? String(x.image) : null,
-      condition: type >= 4 && type <= 6 ? 'used' as const : type >= 1 && type <= 3 ? 'new' as const : 'unknown' as const, query, rank: i + 1, isMock: false };
-  });
-}
-export const naverSource: SearchSource = {
-  id: 'naver_shopping', label: '네이버 쇼핑 검색 API', kind: 'retail', cost: 'free',
-  availability(_t, ctx) {
-    if (ctx.isMock) return { status: 'PENDING_EXTERNAL_SETUP', usable: false, reason: '모의 의뢰라 실제 판매처를 열지 않아요' };
-    return ctx.env.WALF_NAVER_CLIENT_ID && ctx.env.WALF_NAVER_CLIENT_SECRET ? { status: 'SUPPORTED', usable: true, reason: '네이버 검색 API(쇼핑) — 검색 목록의 가격·이미지만, 사이즈·재고는 판매처 확인 필요' }
-      : { status: 'PENDING_EXTERNAL_SETUP', usable: false, reason: '네이버 검색 API 키(WALF_NAVER_CLIENT_ID·SECRET) 설정 전 — 주말 설정 체크리스트 참고' };
-  },
-  pick: qs => [...qs.filter(q => q.kind === 'brand_code'), ...qs.filter(q => q.kind === 'brand_name' || q.kind === 'alias_name')].slice(0, 2),
-  async search(q, _t, ctx) {
-    await ctx.pace('openapi.naver.com');
-    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 10_000);
-    try {
-      const f = ctx.fetcher || (fetch as unknown as Fetcher);
-      const res = await (f as any)(`https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(q.text)}&display=20&sort=sim`,
-        { headers: { 'X-Naver-Client-Id': ctx.env.WALF_NAVER_CLIENT_ID!, 'X-Naver-Client-Secret': ctx.env.WALF_NAVER_CLIENT_SECRET! }, signal: ctl.signal, redirect: 'manual' });
-      if (res.status === 401 || res.status === 403) throw new SourceError('auth', '네이버 API 키가 맞지 않아요');
-      if (res.status === 429) throw new SourceError('blocked', '네이버 API 호출 한도에 걸렸어요');
-      if (res.status >= 400) throw new SourceError('http', `네이버 API 오류(HTTP ${res.status})`);
-      return naverItems(await res.json(), q.text);
-    } catch (e: any) { if (e instanceof SourceError) throw e; throw new SourceError(e?.name === 'AbortError' ? 'timeout' : 'network', '네이버 API에 연결하지 못했어요'); }
-    finally { clearTimeout(timer); }
-  },
-};
-
 // ── 열지 않는 곳 ─────────────────────────────────────────────
 const closed = (id: string, label: string, kind: SearchSource['kind'], cost: SearchSource['cost'], a: Availability): SearchSource =>
   ({ id, label, kind, cost, availability: () => a, pick: () => [], async search() { return []; } });
+// 네이버 쇼핑 검색 API는 2026-07-31 서비스가 끝났다(developers.naver.com/notice/article/32564). 옮겨 간 NAVER API HUB 검색 목록에도 쇼핑이 없다.
+// 다른 공식 경로가 생기기 전까지 닫아 두고, “연결 준비 중”으로 보여 주지 않는다(docs/WALF_SOURCE_ACCESS_MATRIX.md).
+export const naverSource = closed('naver_shopping', '네이버 쇼핑 검색 API', 'retail', 'free', { status: 'UNSUPPORTED', usable: false,
+  reason: '공식 API가 2026-07-31 종료됐어요(네이버 개발자센터 공지 32564) · 대신 쓸 공식 경로 없음' });
 export const aiWebSource = closed('ai_web', 'AI 웹 검색(Claude)', 'any', 'paid', { status: 'PENDING_EXTERNAL_SETUP', usable: false,
   reason: '유료 호출 — API 키·월 예산을 정하기 전에는 판매처 탐색에 쓰지 않아요(7일 탐색의 AI 탐색과 같은 비용 상한으로 연결 예정)' });
 /** sources.ts 의 판매처 판단(약관·robots.txt)을 그대로 따른다 */

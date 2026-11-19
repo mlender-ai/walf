@@ -69,8 +69,8 @@ async function submit(note: string, size = 'M', headers = A) {
 
 async function main() {
   start(); await ready();
-  assert.match(srvLog, /판매처 탐색 공식몰 1곳 · 네이버 쇼핑 API 키 없음\(대기\) · AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐/);
-  ok('서버 시작: 판매처 탐색 = 공식몰 1곳(BADBLOOD) · 네이버 키 대기 · 유료 AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐');
+  assert.match(srvLog, /판매처 탐색 공식몰 1곳 · 네이버 쇼핑 API 종료\(2026-07-31\) · AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐/);
+  ok('서버 시작: 판매처 탐색 = 공식몰 1곳(BADBLOOD) · 네이버 쇼핑 API 종료 · 유료 AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐');
   await api('POST', '/session', { deviceId: A['x-walf-device'], platform: 'ios' }, {});
   await login();
 
@@ -94,11 +94,11 @@ async function main() {
   assert.equal((await fetch(B + '/admin/mock-image/track-jacket-navy.svg', { redirect: 'manual' })).status, 302, '어드민 로그인 없이는 못 본다');
   ok('후보마다 이미지·판매처·판매가/할인가/배송비/총액·사이즈 재고·일치/불일치 근거를 보여 줌(사진 비교는 안 했다고 표시)');
   assert.match(html, /브랜드 공식몰\(카페24 자체 검색\)[\s\S]*?검색하지 않음[\s\S]*?모의 의뢰라 실제 판매처를 열지 않아요/);
-  assert.match(html, /네이버 쇼핑 검색 API[\s\S]*?PENDING_EXTERNAL_SETUP[\s\S]*?검색하지 않음/);
+  assert.match(html, /네이버 쇼핑 검색 API[\s\S]*?UNSUPPORTED[\s\S]*?검색하지 않음[\s\S]*?2026-07-31 종료/);
   assert.match(html, /AI 웹 검색\(Claude\)<\/b> <span class="sub">유료<\/span>[\s\S]*?PENDING_EXTERNAL_SETUP/);
   assert.match(html, /번개장터[\s\S]*?UNSUPPORTED[\s\S]*?검색하지 않음[\s\S]*?제39조/);
   assert.match(html, /검색하지 않은 곳 \d+곳\(연동 대기·지원 안 함·해당 없음\) — “매물 없음”이 아니에요/);
-  ok('소스별 처리: 테스트 판매처만 검색 · 공식몰(모의 의뢰라 안 엶) · 네이버(키 대기) · AI 웹(유료, 대기) · 약관 금지 판매처는 “검색하지 않음”(매물 없음이 아님)');
+  ok('소스별 처리: 테스트 판매처만 검색 · 공식몰(모의 의뢰라 안 엶) · 네이버(API 종료) · AI 웹(유료, 대기) · 약관 금지 판매처는 “검색하지 않음”(매물 없음이 아님)');
 
   // 사용자 화면에는 검수 전 탐색 결과가 보이지 않는다
   const fv = await api('GET', `/requests/${id}/find`);
