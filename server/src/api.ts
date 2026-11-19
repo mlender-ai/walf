@@ -10,8 +10,10 @@ import * as F from './find.ts';
 import * as W from './watch.ts';
 import { SOURCES } from './sources.ts';
 import sharp from 'sharp';
+import type { SearchEnv } from './findsearch.ts';
+import * as X from './discovery.ts';
 
-type Cfg = { uploads: string; pushConfigured: boolean; policy: W.WatchPolicy; rate?: { writes: number; windowMs: number } };
+type Cfg = { uploads: string; pushConfigured: boolean; policy: W.WatchPolicy; rate?: { writes: number; windowMs: number }; search?: SearchEnv };
 
 /** 사용자(기기)별 쓰기 요청 제한 — 메모리 고정 창. 서버 한 대 기준(여러 대면 공용 저장소로 옮겨야 함) */
 export function rateLimiter(max: number, windowMs: number) {
@@ -118,21 +120,31 @@ export function userApi(db: DB, cfg: Cfg) {
     res.json(F.findView(db, D.getRequest(db, id), baseOf(req)));
   });
 
-  const watchOut = (req: express.Request, id: number) => W.watchView(db, W.ownWatch(db, uid(req), id), baseOf(req), cfg.policy);
+  // 상품 페이지 가격 감시(Price Watch) + 새 판매처 탐색(Listing Discovery) · 대체 상품 — 서로 다른 작업, 화면에서도 나눠 보여 준다
+  const watchOut = (req: express.Request, id: number) => {
+    const w = W.ownWatch(db, uid(req), id);
+    return { ...W.watchView(db, w, baseOf(req), cfg.policy), ...(cfg.search ? X.watchExtrasView(db, w, baseOf(req), cfg.search, uid(req)) : {}) };
+  };
   r.post('/watches', auth, up.single('photo'), (req, res) => {
     try {
       const b = req.body || {};
       const id = W.createWatch(db, uid(req), { productName: b.productName, productUrl: b.productUrl, brand: b.brand, size: b.size, color: b.color, targetPrice: b.targetPrice,
         condition: b.condition, priceBasis: b.priceBasis, photo: req.file?.filename || null, productId: b.productId ? Number(b.productId) : null, requestId: b.requestId ? Number(b.requestId) : null }, cfg.policy);
+      if (cfg.search && (b.discovery === false || b.discovery === 'false')) X.updateDiscovery(db, uid(req), id, { discovery: false }, cfg.search);
       res.status(201).json(watchOut(req, id));
     } catch (e) { removeUpload(cfg.uploads, req.file); throw e; }
   });
   r.get('/watches/:id', auth, (req, res) => res.json(watchOut(req, idp(req.params.id))));
   r.patch('/watches/:id', auth, (req, res) => {
     const id = idp(req.params.id);
-    W.updateWatch(db, uid(req), id, req.body || {}, cfg.policy);
+    const b = req.body || {};
+    W.updateWatch(db, uid(req), id, b, cfg.policy);
+    if (cfg.search && (b.discovery !== undefined || b.discoverySources !== undefined)) X.updateDiscovery(db, uid(req), id, { discovery: b.discovery, discoverySources: b.discoverySources }, cfg.search);
     res.json(watchOut(req, id));
   });
+  // 대체 상품·판매처 저장 — 저장해도 기다려줘·찾아줘 상태는 그대로
+  r.post('/offers/:id/save', auth, (req, res) => res.json(X.saveOffer(db, uid(req), idp(req.params.id), true)));
+  r.delete('/offers/:id/save', auth, (req, res) => res.json(X.saveOffer(db, uid(req), idp(req.params.id), false)));
   r.post('/watches/:id/:action', auth, (req, res) => {
     const id = idp(req.params.id), a = req.params.action;
     if (!['pause', 'resume', 'end', 'renew'].includes(a)) throw new HttpError(404, 'not_found');

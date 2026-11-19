@@ -23,6 +23,7 @@ export default function NewWatch() {
   const fromFind = !!p.productId;
   const [url, setUrl] = useState(''); const [name, setName] = useState(p.title || ''); const [brand, setBrand] = useState(p.brand || '');
   const [price, setPrice] = useState(''); const [size, setSize] = useState(''); const [color, setColor] = useState(''); const [newOnly, setNewOnly] = useState(false); const [itemOnly, setItemOnly] = useState(false);
+  const [discover, setDiscover] = useState(true);
   const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const can = !!(url.trim() || name.trim()) && !!price.replace(/[^\d]/g, '');
@@ -39,7 +40,8 @@ export default function NewWatch() {
   const submit = async () => {
     setErr(''); setBusy(true);
     const fields: Record<string, string> = { productName: name.trim(), productUrl: url.trim(), brand: brand.trim(), size: size.trim(), color: color.trim(),
-      targetPrice: price.replace(/[^\d]/g, ''), condition: newOnly ? 'new' : 'any', priceBasis: itemOnly ? 'item' : 'total', productId: p.productId || '', requestId: p.requestId || '' };
+      targetPrice: price.replace(/[^\d]/g, ''), condition: newOnly ? 'new' : 'any', priceBasis: itemOnly ? 'item' : 'total', productId: p.productId || '', requestId: p.requestId || '',
+      discovery: discover ? '' : 'false' };
     try {
       let w: WatchView;
       if (photo) {
@@ -99,6 +101,11 @@ export default function NewWatch() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 18 }}>
             <View style={{ flex: 1 }}><T size={14} w={600}>새 상품만</T><T size={12} color={C.gray500}>끄면 중고도 함께 봐요(중고 판매처는 연동 준비 중)</T></View>
             <Switch value={newOnly} onValueChange={setNewOnly} trackColor={{ true: C.black, false: C.gray300 }} accessibilityLabel="새 상품만" />
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 18 }}>
+            <View style={{ flex: 1 }}><T size={14} w={600}>새 판매처도 찾아보기</T><T size={12} color={C.gray500}>같은 상품을 파는 다른 곳을 하루 한 번 찾아요. 왈프 팀이 확인한 곳만 알려 드려요</T></View>
+            <Switch value={discover} onValueChange={setDiscover} trackColor={{ true: C.black, false: C.gray300 }} accessibilityLabel="새 판매처도 찾아보기" />
           </View>
 
           <T size={13} w={700} style={{ marginTop: 22 }}>사진 (선택)</T>

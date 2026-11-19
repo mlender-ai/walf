@@ -150,6 +150,45 @@ async function main() {
   assert.equal(list.filter((n: any) => n.title === '같은 옷을 파는 곳을 찾았어요').length, 1);
   assert.equal(list.filter((n: any) => n.title === '비슷한 디자인의 옷을 골라 봤어요').length, 1);
   ok('앱: 판매처(같은 상품 확인 2 · 같은 상품일 수 있음 1)와 비슷한 디자인 2개가 보임 · 이미지(PNG) · “구매 가능” 표현 없음 · 알림은 종류별 한 번');
+
+  // ── Gate C: 기다려줘 — 상품 페이지 가격 감시와 새 매물 탐색 분리 · 대체 상품 ──
+  const conf = await api('POST', `/requests/${id}/find/confirm`, { identityId: f.match.id, next: 'watch' });
+  assert.equal(conf.status, 200);
+  const cw = await api('POST', '/watches', { productId: String(conf.j.productId), requestId: String(id), targetPrice: '180000', size: 'M' });
+  assert.equal(cw.status, 201);
+  const wid = cw.j.id;
+  assert.equal(cw.j.status, 'needs_info', '상품 페이지가 없으니 가격 감시는 확인 대기');
+  assert.equal(cw.j.discovery.enabled, true);
+  assert.deepEqual(cw.j.discovery.sources.filter((x: any) => x.usable).map((x: any) => x.id), ['mock']);
+  assert.ok(cw.j.discovery.sources.some((x: any) => x.id === 'bunjang' && !x.usable && /제39조/.test(x.reason)), '지원하지 않는 곳은 이유와 함께 “찾지 않는 곳”');
+  const wh = await waitFor(`/watches/${wid}`, /data-discovery="done:3"/);
+  assert.match(wh, /1 · 상품 페이지 가격 감시[\s\S]*?상품 페이지 없음[\s\S]*?2 · 새 판매처·새 매물 탐색/);
+  assert.match(wh, /알림 후보 3[\s\S]*?원하는 조건 충족\(페이지 기준\)[\s\S]*?테스트 공식몰/);
+  assert.match(await page('/'), new RegExp(`기다려줘: 새 판매처 후보[\\s\\S]*?W${wid} `));
+  let wv = (await api('GET', `/watches/${wid}`)).j;
+  assert.equal(wv.discovery.state, 'reviewing'); assert.equal(wv.discovery.items.length, 0, '검수 전 후보는 앱에 보이지 않는다');
+  ok('기다려줘 등록(상품 페이지 없음 → 가격 감시는 확인 대기) · 새 매물 탐색은 따로 돌아 알림 후보 3곳(공식몰·편집숍·중고) · 번개장터 등은 “찾지 않는 곳” · 검수 전에는 앱에 안 보임');
+  const dOffer = (url: string) => { const d = new DatabaseSync(DB_FILE, { readOnly: true }); try { return (d.prepare(`SELECT o.id FROM offers o WHERE o.watch_id=? AND o.url=? ORDER BY o.id DESC LIMIT 1`).get(wid, url) as any).id as number; } finally { d.close(); } };
+  await post(`/offers/${dOffer('mock://shop/official-055-navy')}/review`, { action: 'exact' });
+  await post(`/offers/${dOffer('mock://shop/select-mystic-navy')}/review`, { action: 'possible' });
+  wv = (await api('GET', `/watches/${wid}`)).j;
+  assert.deepEqual(wv.discovery.items.map((o: any) => [o.seller, o.tier, o.meetsTarget, o.isNew]), [['테스트 공식몰', 'exact', true, true], ['테스트 편집숍', 'possible', false, true]]);
+  assert.equal(wv.status, 'needs_info'); assert.equal(wv.latest, null); assert.equal(wv.history.length, 0, '새 판매처 공개는 상품 페이지 가격 감시 기록·상태를 바꾸지 않는다');
+  const al = ((await api('GET', '/alerts')).j as any[]).filter(n => n.kind === 'watch_discovery');
+  assert.equal(al.length, 1); assert.equal(al[0].title, '다른 판매처에서 원하는 조건의 매물을 찾았어요');
+  assert.ok(!/구매 가능/.test(JSON.stringify(wv) + al[0].body));
+  ok('운영자 검수 후 앱에 새 판매처 2곳(같은 상품 확인 · 같은 상품일 수 있음) · 원하는 조건 충족(173,100원 ≤ 180,000 · M)만 알림 1번 · 가격 감시 상태는 그대로');
+  assert.equal((await api('PATCH', `/watches/${wid}`, { discoverySources: ['mock', 'bunjang'] })).status, 400, '지원하지 않는 곳은 고를 수 없다');
+  const wsh = await waitFor(`/watches/${wid}`, /data-watch-similar="done"/);
+  const simW = [...wsh.matchAll(/id="offer-(\d+)"/g)].map(x => Number(x[1])).filter(n => { const d = new DatabaseSync(DB_FILE, { readOnly: true }); try { return (d.prepare(`SELECT relation FROM offers WHERE id=?`).get(n) as any)?.relation === 'similar'; } finally { d.close(); } });
+  await post(`/offers/${simW[0]}/review`, { action: 'alternative' });
+  wv = (await api('GET', `/watches/${wid}`)).j;
+  assert.equal(wv.alternatives.items.length, 1); assert.equal(wv.alternatives.items[0].saved, false);
+  assert.equal((await api('POST', `/offers/${simW[0]}/save`)).j.saved, true);
+  wv = (await api('GET', `/watches/${wid}`)).j;
+  assert.equal(wv.alternatives.items[0].saved, true); assert.equal(wv.status, 'needs_info', '대체 상품을 저장해도 기다려줘는 그대로');
+  assert.equal((await api('POST', `/offers/${dOffer('mock://shop/other-brand')}/save`)).status, 404, '공개하지 않은 후보는 저장할 수 없다');
+  ok('기다리는 동안 볼 비슷한 옷: 공개 → 저장(기다려줘는 계속) · 지원하지 않는 판매처는 고를 수 없음 · 공개 전 후보는 저장 못 함');
 }
 
 async function main2() {
@@ -180,9 +219,11 @@ async function main2() {
   assert.equal((await api('DELETE', '/me')).status, 200);
   assert.equal(count('SELECT COUNT(*) n FROM offers WHERE request_id=?', FIRST), 0);
   assert.equal(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id=?', FIRST), 0);
+  assert.equal(count('SELECT COUNT(*) n FROM offers WHERE watch_id IS NOT NULL'), 0, '기다려줘의 새 판매처·대체 상품 후보도 함께 삭제');
+  assert.equal(count('SELECT COUNT(*) n FROM offer_saves'), 0, '저장한 옷 기록도 삭제');
   assert.ok(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id<>?', FIRST) >= 1, '다른 사용자의 탐색은 그대로');
   assert.ok(count('SELECT COUNT(*) n FROM listings') > 0, '판매처 상품 페이지 기록(개인 정보 아님)은 남는다');
-  ok('계정 삭제 → 그 사용자 의뢰의 판매처 탐색·후보도 삭제(판매처 상품 페이지 기록만 남음)');
+  ok('계정 삭제 → 그 사용자의 판매처 탐색·후보·기다려줘 새 판매처·저장한 옷도 삭제(판매처 상품 페이지 기록만 남음)');
 }
 
 main().then(main2).then(() => { console.log(`\n${steps.length} steps passed`); }, e => { console.error('\nFAIL', e); console.error(srvLog.slice(-3000)); process.exitCode = 1; })

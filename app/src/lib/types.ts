@@ -72,5 +72,11 @@ export type WatchView = {
   schedule: { lastCheckedLabel: string | null; nextCheckLabel: string | null; renewLabel: string | null; startedLabel: string };
   actions: { pause: boolean; resume: boolean; renew: boolean; end: boolean; edit: boolean };
   requestId: number | null; createdAt: number;
+  /** 새 판매처 찾기(Listing Discovery) — 상품 페이지 가격 감시와 따로. 왈프 팀이 확인한 것만 */
+  discovery?: { enabled: boolean; state: 'off' | 'unavailable' | 'not_started' | 'searching' | 'reviewing' | 'ready' | 'none' | 'failed';
+    items: (OfferCard & { isNew: boolean; meetsTarget: boolean })[]; lastLabel: string | null; nextLabel: string | null; searchedSources: string[];
+    sources: { id: string; label: string; status: string; usable: boolean; selected: boolean; reason: string; paid: boolean; note: string }[]; note: string };
+  /** 기다리는 동안 볼 비슷한 디자인(같은 상품 아님) — 저장해도 기다려줘는 계속 */
+  alternatives?: { available: boolean; state: string; items: (OfferCard & { saved: boolean })[]; note: string };
 };
 export type Alert = { id: number; kind: string; title: string; body: string; link: string | null; read: boolean; createdAt: number; isMock: boolean; push: string };

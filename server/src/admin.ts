@@ -63,18 +63,15 @@ const DETAIL_LABEL: Record<string, string> = { fetched: '상품 페이지 확인
 const WANT_SIZE: Record<string, string> = { ok: '재고 있음', sold_out: '품절', missing: '옵션 없음', unknown: '재고 모름', any: '사이즈 무관' };
 const CHECK_MARK: Record<string, string> = { match: '✓', mismatch: '✕', unknown: '?', not_checked: '–' };
 
-/** 의뢰 상세: 찾아줘 판매처 탐색(AI 식별과 별도) — 소스별로 무엇을 했는지와 실제 상품 후보를 같은 상품·가능성·확인 못 함·다른 상품으로 나눠 보여 준다 */
-function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
-  const e = cfg.search?.env;
-  if (!e) return '';
-  const img = (o: ProductOffer) => !o.imageUrl ? '<div class="noimg">이미지<br>없음</div>'
+/** 판매처 후보·대체 상품 카드(어드민) — 자동 판정 근거 · 검수 상태 · 공개/제외 폼 */
+const offerImg = (o: ProductOffer) => !o.imageUrl ? '<div class="noimg">이미지<br>없음</div>'
     : o.imageUrl.startsWith('mock://image/') ? `<img src="/admin/mock-image/${esc(o.imageUrl.slice(13))}" alt="테스트 이미지">`
     : `<img src="${esc(o.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
-  const won = (n: number | null) => n == null ? '—' : `${n.toLocaleString('ko-KR')}원`;
-  const card = (o: ProductOffer) => {
+const wonA = (n: number | null) => n == null ? '—' : `${n.toLocaleString('ko-KR')}원`;
+function offerCardHtml(o: ProductOffer, size: string | null, forWatch = false) {
     const so = o as StoredOffer;
     const state = so.reviewState === 'rejected' ? `<span class="tg x">제외 · ${esc(so.reviewNote || '')}</span>`
-      : so.reviewState === 'approved' ? `<span class="tg ${so.published ? 'v' : 'p'}">${so.published ? '공개됨' : '공개 대기(찾아줘 결과 공개 때 함께)'} · ${esc(R.TIER_LABEL[so.publishTier!] || '')}</span>` : '<span class="tg p">검수 전</span>';
+      : so.reviewState === 'approved' ? `<span class="tg ${so.published ? 'v' : 'p'}">${so.published ? '공개됨' : forWatch ? '내림' : '공개 대기(찾아줘 결과 공개 때 함께)'} · ${esc(R.TIER_LABEL[so.publishTier!] || '')}</span>` : '<span class="tg p">검수 전</span>';
     const acts: [string, string][] = o.relation === 'similar' ? [['alternative', '비슷한 디자인으로 공개'], ['reject', '제외']]
       : [['exact', '같은 상품 확인으로 공개'], ['possible', '같은 상품일 수 있음으로 공개'], ['reject', '제외']];
     const review = so.id ? `<form method="post" action="/admin/offers/${so.id}/review" class="row" style="margin-top:8px;align-items:center">
@@ -85,15 +82,21 @@ function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
     const sizes = [...new Set(o.options.map(x => `${x.size || '?'}${x.color ? `(${x.color})` : ''} ${x.stock === 'in_stock' ? '있음' : x.stock === 'sold_out' ? '품절' : '모름'}`))];
     const head = o.relation === 'similar' ? `<span class="tg x">비슷한 디자인 · 같은 상품 아님</span> <span class="sub">디자인 점수 ${o.score ?? '—'} · ${esc(o.recommender)} ${esc(o.recommenderVersion)}</span>`
       : `<span class="tg ${o.verdict === 'same_code' ? 'v' : o.verdict === 'likely' ? 'o' : 'x'}">${VERDICT_LABEL[o.verdict]}</span> <span class="tg p">${DETAIL_LABEL[o.detail]}</span>`;
-    return `<div class="of" id="offer-${so.id}">${img(o)}<div><p style="margin:0">${head} ${state}${o.isMock ? MOCK : ''}</p>
+    return `<div class="of" id="offer-${so.id}">${offerImg(o)}<div><p style="margin:0">${head} ${state}${o.isMock ? MOCK : ''}</p>
       <p style="margin:4px 0 0"><b>${esc(o.seller)}</b> · <a href="${o.url.startsWith('mock://') ? '#' : esc(o.url)}" target="_blank" rel="noopener noreferrer">${esc(o.name || o.url)}</a></p>
       <ul class="ck">${o.checks.map(c => `<li class="${c.result === 'match' ? 'm' : c.result === 'mismatch' ? 'x' : ''}">${CHECK_MARK[c.result]} ${esc(c.text)}</li>`).join('')}</ul>
       ${o.relation === 'similar' && o.similarPoints.length ? `<p style="margin:4px 0 0;font-size:12.5px"><b>비슷한 점</b> ${o.similarPoints.map(esc).join(' · ')}</p>` : ''}
       ${o.diffPoints.length ? `<p class="sub" style="margin:4px 0 0">다른 점·주의: ${o.diffPoints.map(esc).join(' · ')}</p>` : ''}${o.detailNote ? `<p class="sub" style="margin:2px 0 0">${esc(o.detailNote)}</p>` : ''}${review}</div>
-      <div><dl class="kv" style="grid-template-columns:70px 1fr"><dt>판매가</dt><dd>${won(o.price)}${o.salePrice ? ` → <b>${won(o.salePrice)}</b>` : ''}</dd><dt>배송비</dt><dd>${o.shipping == null ? '모름' : won(o.shipping)}</dd>
-      <dt>총액</dt><dd>${totalPrice(o) != null ? won(totalPrice(o)) : itemPrice(o) != null ? `${won(itemPrice(o))} + 배송비 모름` : '—'}</dd><dt>상태</dt><dd>${{ new: '새 상품', used: '중고', unknown: '모름' }[o.condition]}</dd>
-      <dt>원하는 옵션</dt><dd>${esc(rq.size || '사이즈 무관')} · ${WANT_SIZE[o.wantSize]}</dd></dl>${sizes.length ? `<p class="sub" style="margin:4px 0 0">옵션: ${esc(sizes.join(' · '))}</p>` : ''}</div></div>`;
-  };
+      <div><dl class="kv" style="grid-template-columns:70px 1fr"><dt>판매가</dt><dd>${wonA(o.price)}${o.salePrice ? ` → <b>${wonA(o.salePrice)}</b>` : ''}</dd><dt>배송비</dt><dd>${o.shipping == null ? '모름' : wonA(o.shipping)}</dd>
+      <dt>총액</dt><dd>${totalPrice(o) != null ? wonA(totalPrice(o)) : itemPrice(o) != null ? `${wonA(itemPrice(o))} + 배송비 모름` : '—'}</dd><dt>상태</dt><dd>${{ new: '새 상품', used: '중고', unknown: '모름' }[o.condition]}</dd>
+      <dt>원하는 옵션</dt><dd>${esc(size || '사이즈 무관')} · ${WANT_SIZE[o.wantSize]}</dd></dl>${sizes.length ? `<p class="sub" style="margin:4px 0 0">옵션: ${esc(sizes.join(' · '))}</p>` : ''}</div></div>`;
+  }
+
+/** 의뢰 상세: 찾아줘 판매처 탐색(AI 식별과 별도) — 소스별로 무엇을 했는지와 실제 상품 후보를 같은 상품·가능성·확인 못 함·다른 상품으로 나눠 보여 준다 */
+function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
+  const e = cfg.search?.env;
+  if (!e) return '';
+  const card = (o: ProductOffer) => offerCardHtml(o, rq.size);
   const searches = S.latestSearches(db, rq.id, 3);
   const s = searches[0];
   const button = `<form method="post" action="/admin/requests/${rq.id}/offers/search" style="display:inline"><button class="btn s sm">판매처 탐색 ${s ? '다시 ' : ''}실행</button></form>`;
@@ -223,6 +226,10 @@ export function adminRouter(db: DB, cfg: Cfg) {
           WHERE s.id IN (SELECT MAX(id) FROM offer_searches WHERE purpose='find' AND status IN ('done','failed') GROUP BY request_id) AND r.status IN ('submitted','active')
           AND (s.status='failed' OR EXISTS (SELECT 1 FROM offers o WHERE o.search_id=s.id AND o.verdict IN ('same_code','likely') AND o.review_state='pending')) ORDER BY s.id DESC`)
         .map(x => link(x, x.sst === 'failed' ? `<b>탐색 실패</b> · ${esc(String(x.error || '').slice(0, 60))}` : esc(x.summary))).join('')],
+      ['기다려줘: 새 판매처 후보', '같은 상품을 파는 다른 판매처·새 매물(사진 비교 없음) — 검수해야 사용자에게 보이고, 원하는 가격 이하면 알림이 가요', q(`SELECT w.*, s.summary FROM offer_searches s JOIN watches w ON w.id=s.watch_id
+          WHERE s.id IN (SELECT MAX(id) FROM offer_searches WHERE purpose='discovery' AND status='done' GROUP BY watch_id) AND w.status IN ('active','needs_info')`)
+        .filter(w => offersOf(db, (db.prepare(`SELECT MAX(id) id FROM offer_searches WHERE watch_id=? AND purpose='discovery' AND status='done'`).get(w.id) as any).id).some(o => o.reviewState === 'pending' && S.discoveryCandidate(o, w)))
+        .map(w => `<div class="q"><a href="/admin/watches/${w.id}"><b>W${w.id} ${esc(w.title)}</b>${w.is_mock ? MOCK : ''}</a><span class="sub">${esc(w.summary || '')}</span></div>`).join('')],
       ['예산·상한으로 멈춘 AI 작업', '비용 화면에서 확인한 뒤 계속하거나 직접 확인하세요', q(`SELECT j.*, r.product_name, r.identified_name, r.product_url, r.is_mock rm, r.id rid FROM ai_jobs j JOIN requests r ON r.id=j.request_id WHERE j.status IN ('held','interrupted') ORDER BY j.id`)
         .map(j => link({ ...j, id: j.rid, is_mock: j.rm }, `AI ${j.kind === 'identify' ? '식별' : '탐색'} ${j.status === 'held' ? '보류' : '중단'} · ${esc(String(j.error || '').slice(0, 60))}`)).join('')],
     ];
@@ -560,13 +567,74 @@ export function adminRouter(db: DB, cfg: Cfg) {
     }
   });
   const ACTIONS = ['exact', 'possible', 'alternative', 'reject', 'hide'];
-  r.post('/offers/:id/review', withRow('SELECT * FROM offers WHERE id=?', (o, req) => {
+  r.post('/offers/:id/review', (req, res, next) => {
+    const o = db.prepare('SELECT * FROM offers WHERE id=?').get(Number(req.params.id)) as any;
+    if (!o) return next(new HttpError(404, 'not_found'));
     const action = String(req.body.action || '');
-    if (!ACTIONS.includes(action)) throw new HttpError(400, 'bad_action', '검수 동작을 골라 주세요.');
     const reason = action === 'reject' ? [req.body.reason, req.body.note].map(x => String(x || '').trim()).filter(Boolean).join(' · ') : String(req.body.note || '').trim();
-    const x = R.reviewOffer(db, o.id, action as R.ReviewAction, { reason }, OP(req));
-    return [o.request_id, action === 'reject' ? '후보를 제외했어요.' : action === 'hide' ? '사용자 화면에서 내렸어요.' : x.published ? `${R.TIER_LABEL[action]}(으)로 공개했어요.` : `${R.TIER_LABEL[action]}(으)로 검수했어요. 찾아줘 결과를 공개할 때 함께 공개돼요.`];
-  }));
+    const msgOf = (x: StoredOffer) => action === 'reject' ? '후보를 제외했어요.' : action === 'hide' ? '사용자 화면에서 내렸어요.' : x.published ? `${R.TIER_LABEL[action]}(으)로 공개했어요.` : `${R.TIER_LABEL[action]}(으)로 검수했어요. 찾아줘 결과를 공개할 때 함께 공개돼요.`;
+    if (o.watch_id && !o.request_id) {
+      const to = (k: string, m: string) => res.redirect(`/admin/watches/${o.watch_id}?${k}=${encodeURIComponent(m)}`);
+      try { if (!ACTIONS.includes(action)) throw new HttpError(400, 'bad_action', '검수 동작을 골라 주세요.'); to('m', msgOf(R.reviewOffer(db, o.id, action as R.ReviewAction, { reason }, OP(req)))); }
+      catch (e: any) { if (e instanceof HttpError) return to('e', e.message); next(e); }
+      return;
+    }
+    (req as any).rid = o.request_id;
+    act(() => {
+      if (!ACTIONS.includes(action)) throw new HttpError(400, 'bad_action', '검수 동작을 골라 주세요.');
+      return [o.request_id, msgOf(R.reviewOffer(db, o.id, action as R.ReviewAction, { reason }, OP(req)))];
+    })(req, res, next);
+  });
+  // 기다려줘 상세 — 상품 페이지 가격 감시와 따로: 새 판매처 후보 · 대체 상품 검수
+  r.get('/watches/:id', (req, res, next) => {
+    const w = db.prepare('SELECT * FROM watches WHERE id=?').get(Number(req.params.id)) as any;
+    if (!w) return next(new HttpError(404, 'not_found'));
+    const e = cfg.search?.env, t = now();
+    const d = W.watchDisplay(w, cfg.policy!, t);
+    const disc = S.latestSearchesFor(db, w.id, 'discovery', 3), sim = S.latestSearchesFor(db, w.id, 'similar', 1)[0];
+    const s0 = disc[0];
+    const offers = s0 ? offersOf(db, s0.id) : [];
+    const cands = offers.filter(o => S.discoveryCandidate(o, w)), others = offers.filter(o => !S.discoveryCandidate(o, w));
+    const rep = (x: any) => JSON.parse(x?.report || '[]') as S.SourceReport[];
+    const repTable = (xs: S.SourceReport[]) => `<table><thead><tr><th>소스</th><th>상태</th><th>이번 탐색</th><th>근거·검색어</th></tr></thead><tbody>${xs.map(x => `<tr><td><b>${esc(x.label)}</b></td><td><span class="st">${esc(x.status)}</span></td><td>${S.OUTCOME_LABEL[x.outcome]}${x.outcome === 'ok' || x.outcome === 'empty' ? ` · ${x.hits}건` : ''}</td><td class="sub">${esc(x.reason)}${x.queries.length ? `<br>검색어: ${x.queries.map(esc).join(' / ')}` : ''}</td></tr>`).join('')}</tbody></table>`;
+    const btn = (path: string, label: string) => `<form method="post" action="/admin/watches/${w.id}/${path}" style="display:inline"><button class="btn s sm">${label}</button></form>`;
+    const tg = e ? S.watchTargetOf(db, w, e.malls) : null;
+    const body = `${flash(req)}<p class="sub"><a href="/admin/watches#w${w.id}">← 기다려줘 목록</a></p><h1>W${w.id} ${esc(w.title)}${w.is_mock ? MOCK : ''}</h1>
+      <p class="sub">${esc(w.brand || '')} · ${w.target_price.toLocaleString()}원 이하 ${esc(w.size || '')} ${esc(w.color || '')} ${w.condition === 'new' ? '· 새 상품만' : '· 중고 OK'} · 사용자 화면: <b>${esc(d.label)}</b> ${esc(d.title)}</p>
+      <section><h2>1 · 상품 페이지 가격 감시 <span class="sub">(Price Watch · 하루 한 번 · 알림은 이 페이지 조건 충족일 때)</span></h2>
+        <p>${w.url ? `<a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.url)}</a>` : '<b>상품 페이지 없음</b> — 새 판매처 탐색에서 찾은 페이지를 확인해 목록 화면에서 연결할 수 있어요'} · 마지막 확인 ${w.last_checked_at ? kWhen(w.last_checked_at, t) : '—'}</p></section>
+      <section class="ob" data-discovery="${esc(s0?.status || 'none')}:${cands.length}"><h2>2 · 새 판매처·새 매물 탐색 <span class="sub">(Listing Discovery · 지켜보는 상품 페이지는 뺌 · 사진 비교 전이라 검수해야 사용자에게 보임)</span></h2>
+        <div class="aibar"><b>탐색 대상</b><span>${tg ? esc([tg.brand, tg.name].filter(Boolean).join(' ')) + (tg.modelCode ? ` · 품번 ${esc(tg.modelCode)}` : '') : '상품 이름을 몰라 찾을 수 없어요'}</span><span class="sub">${w.discovery ? '사용자 설정: 켜짐' : '<b>사용자가 껐어요</b>'}${w.discovery_sources ? ` · 고른 곳 ${esc(JSON.parse(w.discovery_sources).join(', ') || '없음')}` : ''} · ${s0 ? `${esc(s0.status)} ${kWhen(s0.finished_at || s0.created_at, t)}` : '아직 안 함'}</span><span class="sp"></span>${btn('discovery', '지금 다시 찾기')}</div>
+        ${s0?.summary ? `<p><b>${esc(s0.summary)}</b></p>` : ''}${s0 ? `<details><summary>소스별 처리</summary>${repTable(rep(s0))}</details>` : ''}
+        ${cands.length ? `<h3>알림 후보 ${cands.length} <span class="sub">같은 상품(품번·상품명) · 원하는 사이즈 품절·없음 아님 · 상태 조건 맞음 — 사진·옵션을 열어 확인한 뒤 공개하세요. 원하는 가격 이하면 공개할 때 사용자에게 알림이 가요</span></h3>${cands.map(o => `<div>${R.meetsWatch(o, w) ? '<span class="tg v">원하는 조건 충족(페이지 기준)</span>' : '<span class="tg x">조건 미충족 · 알림 없음</span>'}${offerCardHtml(o, w.size, true)}</div>`).join('')}` : s0 ? '<p class="empty">알림 후보가 없어요.</p>' : ''}
+        ${others.length ? `<details><summary>후보에서 뺀 것 ${others.length}(다른 상품·원하는 사이즈 없음·품절·중고 등)</summary>${others.map(o => offerCardHtml(o, w.size, true)).join('')}</details>` : ''}</section>
+      <section class="ob" data-watch-similar="${esc(sim?.status || 'none')}"><h2>3 · 기다리는 동안 볼 대체 상품 <span class="sub">(같은 상품 아님 · 저장·열람해도 기다려줘는 계속)</span></h2>
+        ${!w.request_id ? '<p class="sub">찾아줘(사진)에서 넘어온 기다려줘만 디자인 정보가 있어 고를 수 있어요.</p>' : `<div class="aibar"><span class="sub">${sim ? `${esc(sim.summary || sim.status)} · ${kWhen(sim.finished_at || sim.created_at, t)}` : '아직 안 함'}</span><span class="sp"></span>${btn('similar', '비슷한 디자인 다시 고르기')}</div>
+        ${sim ? offersOf(db, sim.id).map(o => offerCardHtml(o, w.size, true)).join('') || '<p class="empty">고를 만한 비슷한 디자인이 없어요.</p>' : ''}`}</section>`;
+    send(req, res, page(`W${w.id}`, body, OP(req), 'watch'));
+  });
+  r.post('/watches/:id/discovery', async (req, res, next) => {
+    const id = Number(req.params.id);
+    const to = (k: string, m: string) => res.redirect(`/admin/watches/${id}?${k}=${encodeURIComponent(m)}`);
+    try {
+      if (!cfg.search) throw new HttpError(409, 'search_off', '판매처 탐색이 꺼져 있어요.');
+      const q = S.queueDiscovery(db, cfg.search.env, id, { by: OP(req), force: true });
+      if (!q.id) return to('e', q.skipped || '시작하지 못했어요.');
+      await cfg.search.step();
+      to('m', '새 판매처를 다시 찾아봤어요.');
+    } catch (e: any) { if (e instanceof HttpError) return to('e', e.message); next(e); }
+  });
+  r.post('/watches/:id/similar', async (req, res, next) => {
+    const id = Number(req.params.id);
+    const to = (k: string, m: string) => res.redirect(`/admin/watches/${id}?${k}=${encodeURIComponent(m)}`);
+    try {
+      if (!cfg.search) throw new HttpError(409, 'search_off', '판매처 탐색이 꺼져 있어요.');
+      const q = S.queueWatchSimilar(db, cfg.search.env, id, { by: OP(req), force: true });
+      if (!q.id) return to('e', q.skipped || '시작하지 못했어요.');
+      await cfg.search.step();
+      to('m', '비슷한 디자인을 다시 골랐어요.');
+    } catch (e: any) { if (e instanceof HttpError) return to('e', e.message); next(e); }
+  });
   // 테스트 판매처 이미지(직접 그린 SVG) — 테스트 소스가 켜졌을 때만
   const MOCK_IMG = path.resolve(import.meta.dirname, '..', 'fixtures', 'search-images');
   r.get('/mock-image/:name', (req, res) => {
@@ -590,7 +658,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
       <section><h2>전체 ${rows.length}</h2><table><thead><tr><th>#</th><th>옷 · 조건</th><th>사용자 화면</th><th>마지막 확인</th><th>상품 페이지</th></tr></thead><tbody>${rows.map(w => {
         const d = W.watchDisplay(w, policy, t);
         const ev = JSON.parse(w.last_result || 'null');
-        return `<tr id="w${w.id}"><td>W${w.id}</td><td><b>${esc(w.title)}</b>${w.is_mock ? MOCK : ''}<div class="sub">${esc(w.brand || '')} · ${w.target_price.toLocaleString()}원 이하 ${esc(w.size || '')} ${esc(w.color || '')} ${w.condition === 'new' ? '· 새 상품만' : ''}</div></td>
+        return `<tr id="w${w.id}"><td><a href="/admin/watches/${w.id}">W${w.id}</a></td><td><a href="/admin/watches/${w.id}"><b>${esc(w.title)}</b></a>${w.is_mock ? MOCK : ''}<div class="sub">${esc(w.brand || '')} · ${w.target_price.toLocaleString()}원 이하 ${esc(w.size || '')} ${esc(w.color || '')} ${w.condition === 'new' ? '· 새 상품만' : ''}</div></td>
           <td><span class="st">${esc(d.label)}</span><div class="sub">${esc(d.title)}</div></td>
           <td>${w.last_checked_at ? kWhen(w.last_checked_at, t) : '—'}<div class="sub">${ev ? esc(LS[ev.state] || ev.state) + (ev.total != null ? ` · ${ev.total.toLocaleString()}원${ev.shippingKnown ? '(배송비 포함)' : '(배송비 미확인)'}` : '') : ''}${w.fail_streak ? ` · 연속 실패 ${w.fail_streak}` : ''}</div></td>
           <td>${w.url ? `<a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.url.slice(0, 60))}</a>` : '<b>없음</b>'}${w.info_note ? `<div class="sub">${esc(w.info_note)}</div>` : ''}

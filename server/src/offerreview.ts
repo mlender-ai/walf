@@ -4,7 +4,7 @@
 import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
-import { offerOf, type StoredOffer } from './offers.ts';
+import { offerOf, type ProductOffer, type StoredOffer } from './offers.ts';
 import { now, kWhen } from './time.ts';
 
 type Row = Record<string, any>;
@@ -30,18 +30,11 @@ export function reviewOffer(db: DB, offerId: number, action: ReviewAction, input
   if (!row) throw new HttpError(404, 'not_found');
   const o = offerOf(row);
   const reason = String(input.reason ?? '').trim().slice(0, 300);
-  if (!o.requestId) throw new HttpError(409, 'bad_state', '의뢰에 묶이지 않은 후보예요.');
+  checkAction(o, action, reason);
+  if (o.watchId && !o.requestId) return reviewWatchOffer(db, o, action, reason, operator);
+  if (!o.requestId) throw new HttpError(409, 'bad_state', '의뢰나 기다려줘에 묶이지 않은 후보예요.');
   const r = D.getRequest(db, o.requestId);
   if (['cancelled', 'expired'].includes(r.status) && action !== 'hide' && action !== 'reject') throw new HttpError(409, 'bad_state', '끝난 의뢰에는 공개할 수 없어요.');
-  if (action === 'exact' || action === 'possible') {
-    if (o.relation !== 'same') throw new HttpError(400, 'bad_relation', '대체 추천 상품은 같은 상품으로 공개할 수 없어요. “비슷한 디자인”으로 공개하세요.');
-    if (action === 'exact' && o.verdict !== 'same_code' && reason.length < 10)
-      throw new HttpError(400, 'exact_needs_reason', '페이지에서 품번 일치를 확인하지 못한 후보예요. 같은 상품으로 공개하려면 직접 확인한 근거(10자 이상: 무엇이 같은지)를 적어 주세요. 아니면 “같은 상품일 수 있음”으로 공개하세요.');
-    if (o.verdict === 'different' && reason.length < 10)
-      throw new HttpError(400, 'different_needs_reason', '자동 판정이 “다른 상품”이에요. 공개하려면 같은 상품이라고 본 근거(10자 이상)를 적어 주세요.');
-  }
-  if (action === 'alternative' && o.relation !== 'similar') throw new HttpError(400, 'bad_relation', '판매처 후보는 대체 상품으로 공개하지 않아요. 같은 상품 확인·같은 상품일 수 있음 중에서 고르세요.');
-  if (action === 'reject' && !reason) throw new HttpError(400, 'need_reason', '제외 사유를 골라 주세요.');
   const t = now();
   const mock = o.isMock || !!r.is_mock;
   let publishedNow = false;
@@ -56,6 +49,61 @@ export function reviewOffer(db: DB, offerId: number, action: ReviewAction, input
     if (publishedNow) logPublished(db, r, [action], operator, mock);
   });
   if (publishedNow) notifyPublished(db, r, [action], mock, t);
+  return offerOf(one(db, 'SELECT * FROM offers WHERE id=?', o.id)!);
+}
+
+/** 검수 규칙(찾아줘·기다려줘 공통) */
+function checkAction(o: StoredOffer, action: ReviewAction, reason: string) {
+  if (action === 'exact' || action === 'possible') {
+    if (o.relation !== 'same') throw new HttpError(400, 'bad_relation', '대체 추천 상품은 같은 상품으로 공개할 수 없어요. “비슷한 디자인”으로 공개하세요.');
+    if (action === 'exact' && o.verdict !== 'same_code' && reason.length < 10)
+      throw new HttpError(400, 'exact_needs_reason', '페이지에서 품번 일치를 확인하지 못한 후보예요. 같은 상품으로 공개하려면 직접 확인한 근거(10자 이상: 무엇이 같은지)를 적어 주세요. 아니면 “같은 상품일 수 있음”으로 공개하세요.');
+    if (o.verdict === 'different' && reason.length < 10)
+      throw new HttpError(400, 'different_needs_reason', '자동 판정이 “다른 상품”이에요. 공개하려면 같은 상품이라고 본 근거(10자 이상)를 적어 주세요.');
+  }
+  if (action === 'alternative' && o.relation !== 'similar') throw new HttpError(400, 'bad_relation', '판매처 후보는 대체 상품으로 공개하지 않아요. 같은 상품 확인·같은 상품일 수 있음 중에서 고르세요.');
+  if (action === 'reject' && !reason) throw new HttpError(400, 'need_reason', '제외 사유를 골라 주세요.');
+}
+
+// ── 기다려줘 후보(새 판매처·대체 상품) ─────────────────────────
+/** 이 후보가 기다려줘 조건(원하는 가격·사이즈·상태)에 맞는지 — 페이지를 읽은 시각 기준. 맞을 때만 알림 후보 */
+export function meetsWatch(o: StoredOffer | ProductOffer, w: Row) {
+  const item = o.salePrice ?? o.price;
+  const priceOk = w.price_basis === 'item' ? item != null && item <= w.target_price : item != null && o.shipping != null && item + o.shipping <= w.target_price;
+  return priceOk && ['ok', 'any'].includes(o.wantSize) && o.stock !== 'sold_out' && !(w.condition === 'new' && o.condition === 'used');
+}
+function watchEvent(db: DB, w: Row, kind: string, title: string, detail: string, t: number) {
+  run(db, 'INSERT INTO watch_events(watch_id, actor, kind, title, detail, is_mock, at) VALUES (?,?,?,?,?,?,?)', w.id, 'team', kind, title, detail, w.is_mock, t);
+}
+/** 기다려줘 화면은 늘 보이므로 검수하면 바로 공개한다. 조건에 맞는 새 판매처만 알림(같은 페이지는 한 번), 대체 상품은 하루 한 번 */
+function reviewWatchOffer(db: DB, o: StoredOffer, action: ReviewAction, reason: string, operator: string) {
+  const w = one(db, 'SELECT * FROM watches WHERE id=?', o.watchId);
+  if (!w) throw new HttpError(404, 'not_found');
+  if (w.status === 'ended' && action !== 'hide' && action !== 'reject') throw new HttpError(409, 'bad_state', '끝난 기다려줘에는 공개할 수 없어요.');
+  const t = now();
+  const mock = o.isMock || !!w.is_mock;
+  tx(db, () => {
+    if (action === 'reject') run(db, `UPDATE offers SET review_state='rejected', publish_tier=NULL, published=0, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?`, operator, t, reason, o.id);
+    else if (action === 'hide') run(db, 'UPDATE offers SET published=0, reviewed_by=?, reviewed_at=? WHERE id=?', operator, t, o.id);
+    else {
+      run(db, `UPDATE offers SET review_state='approved', publish_tier=?, published=1, published_at=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?`, action, t, operator, t, reason || null, o.id);
+      // 대체 상품 기록은 하루 한 줄(여러 벌을 공개해도)
+      if (action === 'alternative') { if (!one(db, `SELECT 1 FROM watch_events WHERE watch_id=? AND kind='alternatives_published' AND at>?`, w.id, t - 86_400_000)) watchEvent(db, w, 'alternatives_published', '기다리는 동안 볼 비슷한 옷을 골랐어요', '같은 상품은 아니에요 · 기다려줘는 그대로 계속돼요', t); }
+      else watchEvent(db, w, 'discovery_published', '왈프 팀이 다른 판매처를 확인했어요', `${o.seller} · ${action === 'exact' ? '같은 상품 확인' : '같은 상품일 수 있음'} · 가격·재고는 바뀔 수 있어요`, t);
+    }
+  });
+  if (action === 'exact' || action === 'possible') {
+    if (meetsWatch(o, w)) {
+      const item = o.salePrice ?? o.price;
+      const total = item != null && o.shipping != null ? item + o.shipping : null;
+      D.notifyUser(db, w.user_id, { kind: 'watch_discovery', title: '다른 판매처에서 원하는 조건의 매물을 찾았어요',
+        body: `${o.seller} · ${total != null ? `배송비 포함 ${total.toLocaleString('ko-KR')}원` : `${(item ?? 0).toLocaleString('ko-KR')}원`}${w.size ? ` · ${w.size} 재고 있음` : ''}(페이지를 읽은 시각 기준). ${action === 'exact' ? '왈프 팀이 같은 상품인지 확인했어요.' : '같은 상품일 수 있어요. 확인하지 못한 점을 함께 적었어요.'} 먼저 팔릴 수 있어요.`,
+        link: `walf://watch/${w.id}`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:discovery:${o.url}` });
+    }
+  } else if (action === 'alternative') {
+    D.notifyUser(db, w.user_id, { kind: 'watch_alternatives', title: '기다리는 동안 볼 비슷한 옷을 골라 봤어요', body: '같은 상품은 아니에요. 기다려줘는 그대로 계속돼요.',
+      link: `walf://watch/${w.id}`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:alternatives:${Math.floor(t / 86_400_000)}` });
+  }
   return offerOf(one(db, 'SELECT * FROM offers WHERE id=?', o.id)!);
 }
 
@@ -101,7 +149,7 @@ function userCheck(c: StoredOffer['checks'][number]) {
   if (c.field === 'color' && c.result !== 'match') return '색상을 확인하지 못했어요';
   return c.text;
 }
-function card(o: StoredOffer, size: string | null, base: string): OfferCard {
+export function card(o: StoredOffer, size: string | null, base: string): OfferCard {
   const item = o.salePrice ?? o.price;
   const stockOf = (s: string) => s === 'in_stock' ? '있음' : s === 'sold_out' ? '품절' : '확인 필요';
   const sizeLabel = size ? { ok: `${size} 재고 있음`, sold_out: `${size} 품절`, missing: `${size} 옵션 없음`, unknown: `${size} 재고 확인 필요`, any: null }[o.wantSize]

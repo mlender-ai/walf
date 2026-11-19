@@ -80,11 +80,12 @@ export const totalPrice = (o: Pick<ProductOffer, 'price' | 'salePrice' | 'shippi
 
 // ── 저장 · 읽기 ──────────────────────────────────────────────
 /** 탐색 한 번의 결과를 순위대로 저장한다. 같은 상품 페이지는 listings 에 한 줄(처음 본 시각을 남겨 새 매물을 가른다) */
-export function saveOffers(db: DB, searchId: number, requestId: number | null, offers: ProductOffer[], t = now()) {
+export function saveOffers(db: DB, searchId: number, owner: { requestId?: number | null; watchId?: number | null }, offers: ProductOffer[], t = now()) {
+  const requestId = owner.requestId ?? null, watchId = owner.watchId ?? null;
   tx(db, () => {
     const ins = db.prepare(`INSERT INTO offers(search_id, request_id, listing_id, relation, rank, group_key, source, seller, url, url_key, brand, name, model_code, season, image_url,
       price, sale_price, currency, shipping, condition, options, stock, want_size, want_color, verdict, checks, similar_points, diff_points, recommender, recommender_version, score,
-      detail, detail_note, queries, fetched_at, is_mock, created_at, style) VALUES (${Array(38).fill('?').join(',')})`);
+      detail, detail_note, queries, fetched_at, is_mock, created_at, style, watch_id) VALUES (${Array(39).fill('?').join(',')})`);
     offers.forEach((o, i) => {
       const key = urlKey(o.url);
       let l = one(db, 'SELECT id FROM listings WHERE url_key=?', key);
@@ -95,11 +96,11 @@ export function saveOffers(db: DB, searchId: number, requestId: number | null, o
       } else db.prepare('UPDATE listings SET last_seen=? WHERE id=?').run(t, l.id);
       ins.run(searchId, requestId, l.id, o.relation, i + 1, o.groupKey, o.source, o.seller, o.url, key, o.brand, o.name, o.modelCode, o.season, o.imageUrl,
         o.price, o.salePrice, o.currency, o.shipping, o.condition, json(o.options), o.stock, o.wantSize, o.wantColor, o.verdict, json(o.checks), json(o.similarPoints), json(o.diffPoints),
-        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t, o.style ? json(o.style) : null);
+        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t, o.style ? json(o.style) : null, watchId);
       // 같은 의뢰에서 같은 페이지를 다시 찾으면 운영자 검수를 이어받는다(공개 중이면 새 줄로 옮겨 최신 가격으로 보이게)
       const id = Number(one(db, 'SELECT last_insert_rowid() id')!.id);
-      if (requestId != null) {
-        const prev = one(db, `SELECT * FROM offers WHERE request_id=? AND url_key=? AND relation=? AND id<? AND review_state<>'pending' ORDER BY id DESC LIMIT 1`, requestId, key, o.relation, id);
+      if (requestId != null || watchId != null) {
+        const prev = one(db, `SELECT * FROM offers WHERE ${requestId != null ? 'request_id' : 'watch_id'}=? AND url_key=? AND relation=? AND id<? AND review_state<>'pending' ORDER BY id DESC LIMIT 1`, requestId ?? watchId, key, o.relation, id);
         if (prev) {
           db.prepare('UPDATE offers SET review_state=?, publish_tier=?, published=?, published_at=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?')
             .run(prev.review_state, prev.publish_tier, prev.published, prev.published_at, prev.reviewed_by, prev.reviewed_at, prev.review_note, id);
@@ -110,12 +111,12 @@ export function saveOffers(db: DB, searchId: number, requestId: number | null, o
   });
 }
 
-export type StoredOffer = ProductOffer & { id: number; searchId: number; requestId: number | null; rank: number; listingId: number | null;
+export type StoredOffer = ProductOffer & { id: number; searchId: number; requestId: number | null; watchId: number | null; rank: number; listingId: number | null;
   reviewState: 'pending' | 'approved' | 'rejected'; publishTier: 'exact' | 'possible' | 'alternative' | null; published: boolean; publishedAt: number | null;
   reviewedBy: string | null; reviewedAt: number | null; reviewNote: string | null };
 export function offerOf(r: Row): StoredOffer {
   return {
-    id: r.id, searchId: r.search_id, requestId: r.request_id, rank: r.rank, listingId: r.listing_id, reviewState: r.review_state, publishTier: r.publish_tier ?? null,
+    id: r.id, searchId: r.search_id, requestId: r.request_id, watchId: r.watch_id ?? null, rank: r.rank, listingId: r.listing_id, reviewState: r.review_state, publishTier: r.publish_tier ?? null,
     published: !!r.published, publishedAt: r.published_at ?? null, reviewedBy: r.reviewed_by ?? null, reviewedAt: r.reviewed_at ?? null, reviewNote: r.review_note ?? null, style: parse(r.style, null),
     relation: r.relation, source: r.source, seller: r.seller, url: r.url, brand: r.brand, name: r.name, modelCode: r.model_code, season: r.season, imageUrl: r.image_url,
     price: r.price, salePrice: r.sale_price, currency: r.currency, shipping: r.shipping, condition: r.condition, options: parse(r.options, []), stock: r.stock,

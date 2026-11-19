@@ -390,6 +390,15 @@ export function openDb(file: string, opts: OpenOpts = {}): DB {
   add('offers', 'publish_tier', 'TEXT');          // exact(같은 상품 확인) | possible(같은 상품일 수 있음) | alternative(비슷한 디자인)
   add('offers', 'published', 'INTEGER NOT NULL DEFAULT 0');
   add('offers', 'published_at', 'INTEGER');
+  // Gate C — 기다려줘 새 매물 탐색(Listing Discovery)·대체 상품. 상품 페이지 가격 감시(price_checks)와 따로 돈다
+  add('offers', 'watch_id', 'INTEGER');                           // 기다려줘에서 찾은 후보면 그 Watch(찾아줘면 request_id)
+  add('watches', 'discovery', 'INTEGER NOT NULL DEFAULT 1');      // 같은 상품을 파는 다른 판매처·새 매물도 찾아볼지(사용자 설정)
+  add('watches', 'discovery_sources', 'TEXT');                    // 사용자가 고른 탐색 소스(JSON 배열) · 없으면 쓸 수 있는 곳 전부
+  add('watches', 'next_discovery_at', 'INTEGER');
+  db.exec(`CREATE TABLE IF NOT EXISTS offer_saves(
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, offer_id INTEGER NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL, UNIQUE(user_id, offer_id))`);  // 사용자가 저장한 대체 상품(저장해도 기다려줘는 계속된다)
+  db.exec('CREATE INDEX IF NOT EXISTS ix_offer_watch ON offers(watch_id, url_key)');
   if (version < 2) backfillProducts(db);
   if (version < SCHEMA_VERSION) db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
   return db;

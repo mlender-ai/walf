@@ -12,7 +12,7 @@ import { createAiWorker, recoverAiJobs, ensureAiJobs } from './aijobs.ts';
 import { loadSeedFile } from './catalog.ts';
 import { limitsFromEnv } from './cost.ts';
 import { createChecker, policyFromEnv, tickWatches } from './watch.ts';
-import { createOfferSearcher, recoverOfferSearches, searchEnvFrom } from './findsearch.ts';
+import { createOfferSearcher, ensureDiscoveries, recoverOfferSearches, searchEnvFrom } from './findsearch.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 // .env (있으면) — 이미 설정된 환경변수가 우선
@@ -47,11 +47,11 @@ app.use((req, res, next) => {
   next();
 });
 app.use('/uploads', express.static(uploads, { maxAge: '7d', immutable: true, fallthrough: false }));
-app.use('/api', userApi(db, { uploads, pushConfigured: process.env.WALF_PUSH_DISABLED !== '1', policy }), apiErrors);
-const checker = createChecker(db, policy);
-// 찾아줘 판매처 탐색(식별과 별도): 무료 소스만(공식몰 자체 검색 등), AI 호출 없음. 결과는 검수 전까지 사용자에게 보이지 않는다
+// 찾아줘 판매처 탐색(식별과 별도)·기다려줘 새 매물 탐색: 무료 소스만(공식몰 자체 검색 등), AI 호출 없음. 결과는 검수 전까지 사용자에게 보이지 않는다
 const searchEnv = searchEnvFrom({ mockAllowed: policy.mockAllowed });
-const searcher = createOfferSearcher(db, searchEnv);
+const searcher = createOfferSearcher(db, searchEnv, [() => ensureDiscoveries(db, searchEnv, policy.checkEveryMs)]);
+app.use('/api', userApi(db, { uploads, pushConfigured: process.env.WALF_PUSH_DISABLED !== '1', policy, search: searchEnv }), apiErrors);
+const checker = createChecker(db, policy);
 app.use('/admin', adminRouter(db, { uploads, password, secret: process.env.WALF_SECRET || crypto.randomBytes(32).toString('hex'), qaTools: process.env.WALF_QA_TOOLS === '1', ai, limits, policy, checker, search: { env: searchEnv, step: searcher.step } }));
 app.get('/', (_q, res) => res.redirect('/admin'));
 

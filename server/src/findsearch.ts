@@ -20,11 +20,11 @@ const parse = (s: string | null, d: any) => { try { return s ? JSON.parse(s) : d
 const json = (v: unknown) => JSON.stringify(v);
 
 // ── 1 · 식별 결과 → 탐색 대상 ───────────────────────────────────
-export type Basis = 'ai_draft' | 'operator_published' | 'user_confirmed' | 'style_only';
+export type Basis = 'ai_draft' | 'operator_published' | 'user_confirmed' | 'style_only' | 'watch';
 export type SearchTarget = { brand: string | null; name: string; modelCode: string | null; season: string | null; color: string | null; category: string | null;
   basis: Basis; ref: string; aliases: string[]; isMock: boolean };
 export type Want = { size: string | null; color: string | null; usedOk: boolean; maxPrice: number | null };
-export const BASIS_LABEL: Record<Basis, string> = { ai_draft: 'AI 식별 제안(검수 전)', operator_published: '왈프 팀이 공개한 식별 결과', user_confirmed: '사용자가 “이 옷이 맞아요”로 고른 결과', style_only: '상품은 식별하지 못함 — 사진에서 읽은 디자인만' };
+export const BASIS_LABEL: Record<Basis, string> = { ai_draft: 'AI 식별 제안(검수 전)', operator_published: '왈프 팀이 공개한 식별 결과', user_confirmed: '사용자가 “이 옷이 맞아요”로 고른 결과', style_only: '상품은 식별하지 못함 — 사진에서 읽은 디자인만', watch: '기다려줘에 등록한 상품' };
 
 /** 이름 앞에 붙은 브랜드는 뗀다(“BADBLOOD Mystic …” → “Mystic …”) */
 const stripBrand = (name: string, brand: string | null) => {
@@ -274,6 +274,7 @@ export function ensureFindSearches(db: DB, e: SearchEnv) {
 export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
   const s = one(db, 'SELECT * FROM offer_searches WHERE id=?', searchId)!;
   if (s.purpose === 'similar') return runSimilarSearch(db, e, s);
+  if (s.purpose === 'discovery') return runDiscoverySearch(db, e, s);
   const r = s.request_id ? one(db, 'SELECT * FROM requests WHERE id=?', s.request_id) : undefined;
   const t: SearchTarget = parse(s.target, null);
   const want = r ? wantOf(r) : { size: null, color: null, usedOk: true, maxPrice: null };
@@ -298,7 +299,7 @@ export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
   const summary = st.state === 'none' ? (report.some(x => x.outcome === 'ok' || x.outcome === 'empty') ? '검색한 곳에서 판매 페이지를 찾지 못했어요' : '검색할 수 있었던 곳이 없거나 모두 실패했어요')
     : `같은 상품(품번) ${st.same.length} · 가능성 높음 ${st.likely.length} · 확인 못 함 ${st.unverified.length} · 다른 상품 ${st.different.length}`;
   run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, reused_from=?, finished_at=? WHERE id=?`, json(queries), json(report), summary, prev?.id ?? null, now(), s.id);
-  saveOffers(db, s.id, s.request_id, ranked);
+  saveOffers(db, s.id, { requestId: s.request_id }, ranked);
   return result;
 }
 
@@ -306,6 +307,9 @@ export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
 export function searchResultOf(db: DB, s: Row): FindSearchResult & { search: Row } {
   const t: SearchTarget = parse(s.target, null);
   return { ...assemble(t, offersOf(db, s.id), parse(s.report, [])), search: s };
+}
+export function latestSearchesFor(db: DB, watchId: number, purpose: 'discovery' | 'similar', limit = 3) {
+  return all(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose=? ORDER BY id DESC LIMIT ?`, watchId, purpose, limit);
 }
 export function latestSearches(db: DB, requestId: number, limit = 3, purpose: 'find' | 'similar' = 'find') {
   return all(db, `SELECT * FROM offer_searches WHERE request_id=? AND purpose=? ORDER BY id DESC LIMIT ?`, requestId, purpose, limit);
@@ -316,7 +320,7 @@ export function recoverOfferSearches(db: DB) {
   return Number(run(db, `UPDATE offer_searches SET status=CASE WHEN attempts>=3 THEN 'failed' ELSE 'queued' END, error=CASE WHEN attempts>=3 THEN '여러 번 끊겨 중단' ELSE error END WHERE status='running'`).changes);
 }
 
-export function createOfferSearcher(db: DB, e: SearchEnv) {
+export function createOfferSearcher(db: DB, e: SearchEnv, more: (() => void)[] = []) {
   let busy = false, timer: NodeJS.Timeout | null = null;
   async function step(): Promise<number | null> {
     if (busy) return null;
@@ -335,7 +339,7 @@ export function createOfferSearcher(db: DB, e: SearchEnv) {
   }
   return {
     step,
-    start(ms: number) { timer = setInterval(() => { try { ensureFindSearches(db, e); } catch (err) { console.error('판매처 탐색 대기열 오류', err); } step().catch(err => console.error('판매처 탐색 오류', err)); }, ms); },
+    start(ms: number) { timer = setInterval(() => { try { ensureFindSearches(db, e); more.forEach(f => f()); } catch (err) { console.error('판매처 탐색 대기열 오류', err); } step().catch(err => console.error('판매처 탐색 오류', err)); }, ms); },
     stop() { if (timer) clearInterval(timer); },
   };
 }
@@ -377,7 +381,8 @@ export function queueSimilarSearch(db: DB, e: SearchEnv, requestId: number, opts
 async function runSimilarSearch(db: DB, e: SearchEnv, s: Row) {
   const t: SimilarTarget = parse(s.target, null);
   const r = s.request_id ? one(db, 'SELECT * FROM requests WHERE id=?', s.request_id) : undefined;
-  const size = r?.size ? normSize(r.size) : null;
+  const w = s.watch_id ? one(db, 'SELECT * FROM watches WHERE id=?', s.watch_id) : undefined;
+  const size = r?.size ? normSize(r.size) : w?.size ? normSize(w.size) : null;
   const report: SourceReport[] = [];
   const raw: unknown[] = [];
   for (const p of providersOf(e)) {
@@ -395,7 +400,104 @@ async function runSimilarSearch(db: DB, e: SearchEnv, s: Row) {
   const out = [`제외: 같은 상품 ${dropped.same} · 제품군 다름 ${dropped.category} · 디자인 점수 낮음 ${dropped.low} · 디자인 정보 없음 ${dropped.noStyle} · 형식 오류 ${dropped.invalid}`];
   const summary = offers.length ? `비슷한 디자인 ${offers.length}개(정렬 ${RANKER}) · ${out[0]}` : `고를 만한 비슷한 디자인이 없어요 · ${out[0]}`;
   run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, finished_at=? WHERE id=?`, json([{ text: styleWords(t.style).join(' · '), kind: 'style' }]), json(report), summary, now(), s.id);
-  saveOffers(db, s.id, s.request_id, offers);
+  saveOffers(db, s.id, { requestId: s.request_id, watchId: s.watch_id }, offers);
   return { identification: { basis: t.basis, basisLabel: BASIS_LABEL[t.basis], brand: t.brand, name: t.name, modelCode: t.modelCode, season: t.season, color: t.color, note: '' },
     sale: { state: 'none' as const, same: [], likely: [], unverified: [], different: [] }, sources: report, limits: [], isMock: t.isMock };
+}
+
+// ── 기다려줘: 새 매물 탐색(Listing Discovery) ─────────────────────
+// 등록한 상품 페이지 한 곳의 가격·재고는 Price Watch(watch.ts, price_checks)가 본다. 여기서는 같은 상품을 파는 다른 판매처·새 매물을 찾는다.
+// 지켜보는 상품 페이지 자체는 결과에서 뺀다. 새 매물은 품번·상품명·사이즈를 규칙으로 거르고, 사진 비교는 연결 전이라 운영자가 확인한 뒤에만 사용자에게 간다.
+/** 기다려줘의 탐색 대상: 찾아줘에서 확인한 상품(품번·시즌 포함)이 있으면 그것, 없으면 사용자가 쓴 이름·브랜드 */
+export function watchTargetOf(db: DB, w: Row, malls: SourceCtx['malls'] = []): SearchTarget | null {
+  const p = w.product_id ? one(db, 'SELECT * FROM products WHERE id=?', w.product_id) : undefined;
+  const brand = w.brand || p?.brand || null;
+  const name = stripBrand(String(p?.name || w.title || ''), brand);
+  if (!name || name === '링크로 등록한 옷') return null;
+  const b = one(db, 'SELECT aliases FROM brands WHERE key=?', brandKey(brand));
+  const m = mallFor(malls as any, brand);
+  const aliases = [...new Set([...parse(b?.aliases ?? null, []), ...(m?.aliases || [])].filter((a: string) => a && compact(a) !== compact(brand)))] as string[];
+  return { brand, name, modelCode: p?.model_code || null, season: p?.season || null, color: w.color || p?.color || null, category: p?.category || null,
+    basis: 'watch', ref: `watch:${w.id}`, aliases, isMock: !!w.is_mock };
+}
+/** 사용자가 이 기다려줘에서 끈 소스는 열지 않는다(검색하지 않음으로 남긴다) */
+export function sourcesFor(e: SearchEnv, w: Row): SearchSource[] {
+  const picked = parse(w.discovery_sources ?? null, null) as string[] | null;
+  return e.sources.map(x => !picked || picked.includes(x.id) ? x
+    : { ...x, availability: (t: TargetLike, c: SourceCtx) => { const a = x.availability(t, c); return a.usable ? { ...a, usable: false, reason: '이 기다려줘에서 끈 판매처예요' } : a; } });
+}
+type TargetLike = Parameters<SearchSource['availability']>[0];
+export const ACTIVE_FOR_DISCOVERY = ['active', 'needs_info'];
+/** 새 매물 탐색을 대기열에 넣는다. 같은 Watch·같은 조회 창(하루)에는 한 번만(force: 운영자가 다시 실행) */
+export function queueDiscovery(db: DB, e: SearchEnv, watchId: number, opts: { by?: string | null; force?: boolean; everyMs?: number; t?: number } = {}): { id?: number; skipped?: string } {
+  const w = one(db, 'SELECT * FROM watches WHERE id=?', watchId);
+  if (!w) return { skipped: 'not_found' };
+  if (!w.discovery) return { skipped: '새 판매처 찾기를 꺼 두었어요' };
+  if (!ACTIVE_FOR_DISCOVERY.includes(w.status)) return { skipped: '지켜보는 중일 때만 찾아요' };
+  const t = watchTargetOf(db, w, e.malls);
+  if (!t) return { skipped: '상품 이름을 몰라 찾을 수 없어요(링크만 등록)' };
+  const ids = sourcesFor(e, w).filter(x => x.availability(t, ctxOf(e, t.isMock)).usable).map(x => x.id);
+  if (!ids.length) return { skipped: '지금 쓸 수 있는 판매처 소스가 없어요' };
+  const t0 = opts.t ?? now();
+  const slot = Math.floor((t0 + 9 * 3600_000) / (opts.everyMs || 24 * 3600_000));
+  const key = crypto.createHash('sha256').update(json(['discovery', w.id, compact(t.brand), compact(t.name), compact(t.modelCode), ids.sort(), opts.force ? t0 : slot])).digest('hex').slice(0, 32);
+  const cur = one(db, `SELECT id FROM offer_searches WHERE watch_id=? AND search_key=? ORDER BY id DESC LIMIT 1`, w.id, key);
+  if (cur) return { id: cur.id, skipped: '오늘은 이미 찾아봤어요' };
+  const id = Number(run(db, `INSERT INTO offer_searches(watch_id, product_id, purpose, target, target_basis, search_key, status, requested_by, is_mock, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    w.id, w.product_id ?? null, 'discovery', json(t), t.basis, key, 'queued', opts.by ?? null, t.isMock ? 1 : 0, t0).lastInsertRowid);
+  return { id };
+}
+async function runDiscoverySearch(db: DB, e: SearchEnv, s: Row) {
+  const w = one(db, 'SELECT * FROM watches WHERE id=?', s.watch_id);
+  if (!w) throw new Error('기다려줘가 없어요');
+  const t: SearchTarget = parse(s.target, null);
+  const want: Want = { size: w.size || null, color: w.color || null, usedOk: w.condition !== 'new', maxPrice: w.target_price };
+  const ctx = ctxOf(e, t.isMock);
+  const queries = buildQueries(t);
+  const found = await searchSources(sourcesFor(e, w), t, queries, ctx);
+  const own = w.url ? urlKey(w.url) : null;
+  const merged = mergeHits(found.hits).filter(h => urlKey(h.url) !== own);   // 지켜보는 상품 페이지는 Price Watch 몫
+  const offers = (await normalizeHits(merged, t, e.sources, ctx, e.maxDetails)).map(o => verifyOffer(t, o, want));
+  const result = assemble(t, offers, found.report);
+  const ranked = [...result.sale.same, ...result.sale.likely, ...result.sale.unverified, ...result.sale.different];
+  const seen = new Set(all(db, 'SELECT DISTINCT url_key FROM offers WHERE watch_id=?', w.id).map(x => x.url_key));
+  const cands = ranked.filter(o => discoveryCandidate(o, w));
+  const fresh = cands.filter(o => !seen.has(urlKey(o.url)));
+  const summary = `알림 후보(같은 상품·원하는 옵션) ${cands.length} · 처음 본 곳 ${fresh.length} · 다른 상품 ${result.sale.different.length}${own && mergeHits(found.hits).length !== merged.length ? ' · 지켜보는 상품 페이지는 가격 감시에서 따로 봐요' : ''}`;
+  run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, finished_at=? WHERE id=?`, json(queries), json(found.report), summary, now(), s.id);
+  saveOffers(db, s.id, { watchId: w.id }, ranked);
+  return result;
+}
+/** 운영자에게 올릴 새 매물 후보: 같은 상품(품번·상품명) · 원하는 사이즈가 없거나 품절이 아님 · “새 상품만”이면 중고 제외 */
+export function discoveryCandidate(o: Pick<ProductOffer, 'verdict' | 'wantSize' | 'condition'>, w: Row) {
+  return (o.verdict === 'same_code' || o.verdict === 'likely') && !['sold_out', 'missing'].includes(o.wantSize) && !(w.condition === 'new' && o.condition === 'used');
+}
+/** 기다리는 동안 볼 대체 상품: 찾아줘에서 넘어온 기다려줘만(사진에서 읽은 디자인이 있어야 한다) */
+export function queueWatchSimilar(db: DB, e: SearchEnv, watchId: number, opts: { by?: string | null; force?: boolean } = {}): { id?: number; skipped?: string } {
+  const w = one(db, 'SELECT * FROM watches WHERE id=?', watchId);
+  if (!w) return { skipped: 'not_found' };
+  const style = w.request_id ? requestStyle(db, w.request_id) : {};
+  if (!Object.keys(style).length) return { skipped: '디자인 정보가 없어 비슷한 옷을 고를 수 없어요(사진으로 찾아줘에서 넘어온 기다려줘만)' };
+  const base = watchTargetOf(db, w, e.malls);
+  const t: SimilarTarget = { ...(base || { brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'watch' as const, ref: `watch:${w.id}`, aliases: [], isMock: !!w.is_mock }), style };
+  const ids = providersOf(e).filter(p => p.availability({ isMock: t.isMock, mockAllowed: e.mockAllowed }).usable).map(p => `${p.id}@${p.version}`);
+  if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요(패션 브레인 연결 전)' };
+  const key = crypto.createHash('sha256').update(json(['watch-similar', w.id, t.style, compact(t.name), ids.sort(), w.size || ''])).digest('hex').slice(0, 32);
+  const t0 = now();
+  if (!opts.force && one(db, `SELECT id FROM offer_searches WHERE watch_id=? AND search_key=? AND (status IN ('queued','running') OR COALESCE(finished_at, created_at)>?)`, w.id, key, t0 - e.reuseMs))
+    return { skipped: '같은 조건의 추천이 이미 있어요' };
+  const id = Number(run(db, `INSERT INTO offer_searches(watch_id, product_id, purpose, target, target_basis, search_key, status, requested_by, is_mock, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    w.id, w.product_id ?? null, 'similar', json(t), t.basis, key, 'queued', opts.by ?? null, t.isMock ? 1 : 0, t0).lastInsertRowid);
+  return { id };
+}
+/** 할 때가 된 기다려줘마다 새 매물 탐색·대체 상품을 넣는다(하루 한 번). 몇 번 불러도 같다 */
+export function ensureDiscoveries(db: DB, e: SearchEnv, everyMs: number, t = now()) {
+  let n = 0;
+  for (const w of all(db, `SELECT id FROM watches WHERE discovery=1 AND status IN ('active','needs_info') AND (next_discovery_at IS NULL OR next_discovery_at<=?)`, t)) {
+    const q = queueDiscovery(db, e, w.id, { everyMs, t });
+    if (q.id && !q.skipped) n++;
+    run(db, 'UPDATE watches SET next_discovery_at=? WHERE id=?', t + everyMs, w.id);
+    queueWatchSimilar(db, e, w.id);
+  }
+  return n;
 }
