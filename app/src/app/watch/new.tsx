@@ -17,11 +17,11 @@ const fmt = (v: string) => v.replace(/[^\d]/g, '').replace(/\B(?=(\d{3})+(?!\d))
 
 /** 기다려줘 등록 — 상품명이나 링크 + 원하는 가격만 있으면 된다. 찾아줘에서 넘어오면 상품이 채워져 있다 */
 export default function NewWatch() {
-  const p = useLocalSearchParams<{ productId?: string; requestId?: string; title?: string; brand?: string; size?: string; color?: string; keep?: string }>();
+  const p = useLocalSearchParams<{ productId?: string; requestId?: string; title?: string; brand?: string; size?: string; color?: string; url?: string; keep?: string }>();
   const { bottom } = useSafeAreaInsets();
   const { refresh } = useStore();
   const fromFind = !!p.productId;
-  const [url, setUrl] = useState(''); const [name, setName] = useState(p.title || ''); const [brand, setBrand] = useState(p.brand || '');
+  const [url, setUrl] = useState(p.url || ''); const [name, setName] = useState(p.title || ''); const [brand, setBrand] = useState(p.brand || '');
   const [price, setPrice] = useState(''); const [size, setSize] = useState(p.size || ''); const [color, setColor] = useState(p.color || ''); const [newOnly, setNewOnly] = useState(false); const [itemOnly, setItemOnly] = useState(false);
   const [discover, setDiscover] = useState(true);
   const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -81,8 +81,8 @@ export default function NewWatch() {
               <T size={15} w={700}>{p.title}</T>
             </View>
           ) : null}
-          <Field label={fromFind ? '살 수 있는 상품 페이지 링크(있으면 바로 지켜봐요)' : '상품 링크'} defaultValue="" onChangeText={setUrl} placeholder="공식몰 등 상품 페이지 https://" autoCapitalize="none" autoCorrect={false} keyboardType="url"
-            hint={fromFind ? '찾아줘 근거 페이지는 판매 페이지가 아닐 수 있어 가져오지 않아요. 링크가 없으면 왈프 팀이 찾아 연결해요.' : '왈프 팀이 이용 조건을 확인한 판매처(등록된 브랜드 공식몰 등)는 바로 지켜봐요. 그 밖의 링크는 왈프 팀이 직접 확인해요.'} />
+          <Field label={fromFind ? '살 수 있는 상품 페이지 링크(있으면 바로 지켜봐요)' : '상품 링크'} defaultValue={p.url || ''} onChangeText={setUrl} placeholder="공식몰 등 상품 페이지 https://" autoCapitalize="none" autoCorrect={false} keyboardType="url"
+            hint={fromFind ? (p.url ? '왈프 팀이 같은 상품으로 확인한 판매 페이지를 넣어 두었어요. 다른 곳을 지켜보려면 바꿔 주세요.' : '찾아줘 근거 페이지는 판매 페이지가 아닐 수 있어 가져오지 않아요. 링크가 없으면 왈프 팀이 찾아 연결해요.') : '왈프 팀이 이용 조건을 확인한 판매처(등록된 브랜드 공식몰 등)는 바로 지켜봐요. 그 밖의 링크는 왈프 팀이 직접 확인해요.'} />
           {fromFind ? null : <>
             <Field label="상품명" defaultValue={p.title || ''} onChangeText={setName} placeholder="예: BADBLOOD Mystic Nylon Track Jacket Navy" maxLength={120} />
             <Field label="브랜드 (선택)" defaultValue={p.brand || ''} onChangeText={setBrand} placeholder="예: BADBLOOD" maxLength={60} />

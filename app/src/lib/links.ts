@@ -6,7 +6,7 @@ export function openLink(link?: string | null) {
   let m: RegExpMatchArray | null;
   if ((m = link.match(/^walf:\/\/candidate\/(\d+)/)) || (m = link.match(/^candidate:(\d+)/))) return router.push(`/candidate/${m[1]}`);
   if ((m = link.match(/^walf:\/\/find\/(\d+)/)) || (m = link.match(/^find:(\d+)/))) return router.push({ pathname: '/find/[id]', params: { id: m[1] } });
-  if ((m = link.match(/^walf:\/\/watch\/(\d+)/)) || (m = link.match(/^watch:(\d+)/))) return router.push({ pathname: '/watch/[id]', params: { id: m[1] } });
+  if ((m = link.match(/^walf:\/\/watch\/(\d+)(?:\?tab=(offers|similar))?/)) || (m = link.match(/^watch:(\d+)/))) return router.push({ pathname: '/watch/[id]', params: m[2] ? { id: m[1], tab: m[2] } : { id: m[1] } }); // 새 판매처·비슷한 옷 알림은 그 탭으로
   if (/^walf:\/\/request\/\d+\/wanted/.test(link) || /^wanted:/.test(link)) return router.push('/request/wanted');
   if (/^walf:\/\/request\/\d+\/info/.test(link) || /^info:/.test(link)) return router.push('/request/info');
   if ((m = link.match(/^walf:\/\/request\/(\d+)/)) || (m = link.match(/^tracking:(\d+)/))) return router.push({ pathname: '/past/[id]', params: { id: m[1] } });

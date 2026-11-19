@@ -46,6 +46,7 @@ export default function Root() {
           <Stack.Screen name="find/[id]" />
           <Stack.Screen name="watch/new" options={{ presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
           <Stack.Screen name="watch/[id]" />
+          <Stack.Screen name="guide" />
         </Stack>
       </StoreProvider>
     </SafeAreaProvider>

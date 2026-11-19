@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { Avatar, Btn, CandRow, DOG, Hair, Icon, MockBanner, MockPill, ProductImage, Seg7, T, Tags } from './ui';
@@ -46,25 +47,29 @@ export function ItemsRow({ items }: { items: Item[] }) {
 }
 
 // ── S01 첫 방문 홈 ────────────────────────────────────────────
-// 1차 시안 360 폭 기준: 강아지 1.194w, 헤드라인 바닥 = 강아지 발끝
+// 1차 시안 360 폭 기준: 강아지 1.194w, 헤드라인 바닥 = 강아지 발끝.
+// 첫 화면에서 찾아줘·기다려줘 두 버튼이 떠 있는 탭에 가리지 않게, 화면 높이가 모자라면 그림 영역을 비율 그대로 줄인다
+const BELOW_HERO = 268; // 안내 두 줄 + 버튼 두 개 + 여백
 export function FirstVisit({ last, items = [], watchLimit }: { last?: PastItem; items?: Item[]; watchLimit?: { max: number; used: number } }) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const w = Math.min(width, 440);
-  const dog = w * 1.194, heroH = w * 1.2;
+  const room = height - insets.top - 52 - TAB_SPACE - BELOW_HERO - (items.length || last ? 74 : 0); // 진행 중 옷 줄까지 첫 화면에
+  const k = Math.max(0.62, Math.min(1, room / (w * 1.2)));
+  const dog = w * 1.194 * k, heroH = w * 1.2 * k, fs = Math.round(35 * Math.max(0.86, k));
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: TAB_SPACE }} showsVerticalScrollIndicator={false}>
       <View style={{ height: heroH, width: '100%' }}>
-        <Image source={DOG.stand} style={{ position: 'absolute', width: dog, height: dog, left: -0.028 * w + (width - w), top: 0.044 * w }}
+        <Image source={DOG.stand} style={{ position: 'absolute', width: dog, height: dog, right: -0.028 * w * k, top: 0.044 * w * k }}
           accessibilityLabel="정면을 바라보고 선 검은 래브라도, 왈프" />
-        <View style={{ position: 'absolute', left: 20, bottom: heroH - (0.044 * w + dog * 342 / 357), maxWidth: w * 0.42, gap: 14 }} accessibilityRole="header">
-          <T size={35} w={800} lh={41} ls={-1.75} max={1.25}>{'넌 그냥\n올려.'}</T>
-          <T size={35} w={800} lh={41} ls={-1.75} max={1.25}>{'찾는 건\n왈프가\n할게.'}</T>
+        <View style={{ position: 'absolute', left: 20, bottom: heroH - (0.044 * w * k + dog * 342 / 357), maxWidth: width - dog * 0.62 - 20, gap: 12 }} accessibilityRole="header">
+          <T size={fs} w={800} lh={Math.round(fs * 1.17)} ls={-1.75} max={1.25}>{'넌 그냥\n올려.'}</T>
+          <T size={fs} w={800} lh={Math.round(fs * 1.17)} ls={-1.75} max={1.25}>{'찾는 건\n왈프가\n할게.'}</T>
         </View>
       </View>
-      <View style={{ paddingHorizontal: 20, marginTop: 24 }}>
+      <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
         <T size={14.5} lh={22}>{'사진이나 링크만 주세요.\n어떤 옷인지 찾고, 원하는 가격이 될 때까지 지켜볼게요.'}</T>
-        <View style={{ marginTop: 18 }}><Entries canFind watchLimit={watchLimit} /></View>
-        <T size={12} w={500} color={C.gray500} style={{ textAlign: 'center', marginTop: 12 }}>무료 베타  ·  찾아줘 한 벌씩  ·  기다려줘 {watchLimit?.max ?? 3}벌까지</T>
+        <View style={{ marginTop: 16 }}><Entries canFind watchLimit={watchLimit} /></View>
         {items.length ? <ItemsRow items={items} /> : last ? (
           <Pressable onPress={() => router.push({ pathname: '/past/[id]', params: { id: String(last.id) } })} accessibilityRole="button" style={s.last}>
             <View style={{ flex: 1 }}><T size={12} color={C.gray500}>지난 의뢰 · {last.display.label}</T><T size={14} w={700} numberOfLines={1}>{last.title}</T></View>

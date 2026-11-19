@@ -457,7 +457,7 @@ function applyEval(db: DB, w0: Row, ev: Eval, t: number, nextAt: number | null) 
       alerted = 0; // 조건이 깨지면 다시 맞을 때 한 번 더 알린다(재입고·가격 재하락)
       event(db, w, 'walf', 'unmet', '조건이 다시 맞지 않아요', ev.reasons[0] || null, t);
     }
-    if (ATTENTION.includes(ev.state) && prev.state !== ev.state) event(db, w, 'walf', 'attention', '가격은 내려왔지만 확인할 게 있어요', `${ev.reasons[0]} · 확인 전에는 구매 가능 알림을 보내지 않아요`, t);
+    if (ATTENTION.includes(ev.state) && prev.state !== ev.state) event(db, w, 'walf', 'attention', '가격은 내려왔지만 확인할 게 있어요', `${ev.reasons[0]} · 확인 전에는 가격 알림을 보내지 않아요`, t);
     run(db, `UPDATE watches SET last_checked_at=?, next_check_at=COALESCE(?, next_check_at), last_state=?, last_result=?, fail_streak=0, alerted=?, alert_episode=?, met_at=CASE WHEN ?='met' THEN COALESCE(met_at, ?) ELSE met_at END, updated_at=? WHERE id=?`,
       t, nextAt, ev.state, JSON.stringify(ev), alerted, episode, ev.state, t, now(), w.id);
   });
@@ -509,7 +509,7 @@ export function watchDisplay(w: Row, policy: Pick<WatchPolicy, 'unreachableAfter
   if (ev.state === 'mismatch') return d('mismatch', '등록한 옷과 다른 상품 페이지로 보여요', `${w.identity_note || ev.reasons[0]}. 왈프 팀이 맞는 페이지를 확인할 때까지 가격 알림을 보내지 않아요.`, { eyebrow: when, notice: '왈프 팀이 확인하고 있어요' });
   if (ev.state === 'met') return d('met', '원하는 가격이 됐어요', `${ev.seller}${ev.option ? ` · ${ev.option}` : ''} · ${ship} · 재고 있음. 먼저 팔릴 수 있어요.`, { eyebrow: when });
   if (ATTENTION.includes(ev.state)) return d('attention', ev.state === 'shipping_unknown' ? '상품 가격은 충족, 배송비 미확인' : `${kRelDay(w.last_checked_at, t)} ${ship}`,
-    `${ev.reasons[0]}. 확인되기 전에는 구매 가능 알림을 보내지 않아요.`, { eyebrow: when, notice: '왈프 팀이 확인하고 있어요' });
+    `${ev.reasons[0]}. 확인되기 전에는 가격 알림을 보내지 않아요.`, { eyebrow: when, notice: '왈프 팀이 확인하고 있어요' });
   const desc: Record<string, string> = {
     above: `${ev.reasons[0]}. 하루 한 번 확인해요.`, sold_out: `${ev.reasons[0]}이에요. 다시 들어오고 원하는 가격 이하면 알려 드릴게요.`,
     size_missing: `${ev.reasons[0]}. 다른 사이즈로 바꾸거나 계속 지켜볼 수 있어요.`, color_missing: `${ev.reasons[0]}.`, condition: ev.reasons[0], no_price: `${ev.reasons[0]}. 다음 확인 때 다시 볼게요.`,
@@ -524,18 +524,20 @@ export function watchView(db: DB, w: Row, base: string, policy: Pick<WatchPolicy
   // 확인 한 번마다 이 Watch 조건에 맞는 옵션 한 줄
   const byCheck = new Map<number, Row[]>();
   for (const o of obs) { const k = o.check_id ?? -o.id; byCheck.set(k, [...(byCheck.get(k) || []), o]); }
+  const listing = w.url ? one(db, 'SELECT * FROM listings WHERE url_key=?', urlKey(w.url)) : undefined;
   const history = [...byCheck.values()].slice(0, 60).map(rows => {
     const ok = rows[0].ok === 1;
     const pick = rows.find(o => (!w.size || sameSize(o.size, w.size)) && (!w.color || !o.color || sameColor(w.color, o.color))) || (rows.length === 1 ? rows[0] : null);
-    const total = pick?.price != null ? pick.price + (pick.shipping ?? 0) : null;
+    // 페이지에 배송비가 없으면 왈프 팀이 확인한 배송비로 판정한다(withShipping) — 가격 카드·기록도 같은 값으로 보여 준다
+    const shipping = pick ? pick.shipping ?? listing?.shipping_fee ?? null : null;
+    const total = pick?.price != null ? pick.price + (shipping ?? 0) : null;
     return { at: rows[0].checked_at, label: `${kDate(rows[0].checked_at).replace(/\(.\)$/, '')} ${kClock(rows[0].checked_at)}`, ok, error: ok ? null : rows[0].error?.replace(/^\w+:\s*/, ''),
-      price: pick?.price ?? null, shipping: pick?.shipping ?? null, shippingKnown: pick ? pick.shipping != null : false, total, stock: pick?.stock || (ok ? 'option_missing' : null),
+      price: pick?.price ?? null, shipping, shippingKnown: shipping != null, total, stock: pick?.stock || (ok ? 'option_missing' : null),
       option: pick?.option_label || null, source: rows[0].source, isMock: !!rows[0].is_mock,
       // 이 줄의 가격이 목표 이하인지만 표시한다(조건 충족 여부는 상태 문장이 말한다). 총액 기준인데 배송비를 모르면 표시하지 않는다
-      meets: PAGE_OK.includes(w.page_identity) && pick?.stock === 'in_stock' && (w.price_basis === 'item' ? pick.price != null && pick.price <= w.target_price : total != null && pick.shipping != null && total <= w.target_price) };
+      meets: PAGE_OK.includes(w.page_identity) && pick?.stock === 'in_stock' && (w.price_basis === 'item' ? pick.price != null && pick.price <= w.target_price : total != null && shipping != null && total <= w.target_price) };
   });
   const src = sourceInfo(w.source);
-  const listing = w.url ? one(db, 'SELECT * FROM listings WHERE url_key=?', urlKey(w.url)) : undefined;
   const events = all(db, 'SELECT * FROM watch_events WHERE watch_id=? ORDER BY at DESC, id DESC LIMIT 50', w.id).map(e => ({ id: e.id, at: e.at, label: kWhen(e.at, t), clock: kClock(e.at), actor: D.ACTOR_LABEL[e.actor] || e.actor, kind: e.kind, title: e.title, detail: e.detail, isMock: !!e.is_mock }));
   return {
     id: w.id, status: w.status, isMock: !!w.is_mock, display: watchDisplay(w, policy, t),

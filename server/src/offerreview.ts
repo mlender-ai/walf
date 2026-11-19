@@ -116,14 +116,14 @@ function reviewWatchOffer(db: DB, o: StoredOffer, action: ReviewAction, reason: 
     if (action === 'exact')
       D.notifyUser(db, w.user_id, { kind: 'watch_discovery', title: '다른 판매처에서 원하는 조건의 매물을 찾았어요',
         body: `${o.seller} · ${[amount, ...fit.met.filter(x => x !== amount)].join(' · ')}(페이지를 읽은 시각 기준). 왈프 팀이 같은 상품인지 확인했어요. 먼저 팔릴 수 있어요.`,
-        link: `walf://watch/${w.id}`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:discovery:${o.url}` });
+        link: `walf://watch/${w.id}?tab=offers`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:discovery:${o.url}` });
     else
       D.notifyUser(db, w.user_id, { kind: 'watch_discovery_possible', title: '같은 옷일 수 있는 매물이 있어요',
         body: `${o.seller} · ${amount}(페이지를 읽은 시각 기준). 같은 상품인지는 아직 확정하지 못했어요. 판매 페이지에서 품번·사진을 꼭 확인해 주세요.`,
-        link: `walf://watch/${w.id}`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:possible:${o.url}` });
+        link: `walf://watch/${w.id}?tab=offers`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:possible:${o.url}` });
   } else if (action === 'alternative') {
     D.notifyUser(db, w.user_id, { kind: 'watch_alternatives', title: '기다리는 동안 볼 비슷한 옷을 골라 봤어요', body: '같은 상품은 아니에요. 기다려줘는 그대로 계속돼요.',
-      link: `walf://watch/${w.id}`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:alternatives:${Math.floor(t / 86_400_000)}` });
+      link: `walf://watch/${w.id}?tab=similar`, watchId: w.id, isMock: mock, dedupeKey: `watch:${w.id}:alternatives:${Math.floor(t / 86_400_000)}` });
   }
   return offerOf(one(db, 'SELECT * FROM offers WHERE id=?', o.id)!);
 }

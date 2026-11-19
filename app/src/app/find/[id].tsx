@@ -33,10 +33,12 @@ export default function FindResult() {
       const out = await call<{ productId: number }>('POST', `/requests/${id}/find/confirm`, { identityId: x.id, next });
       await refresh();
       if (next === 'hunt') router.replace('/');
-      else if (next === 'watch') router.replace({ pathname: '/watch/new', params: { productId: String(out.productId), requestId: String(id), title: x.name, brand: x.brand || '' } });
+      else if (next === 'watch') router.replace({ pathname: '/watch/new', params: { productId: String(out.productId), requestId: String(id), title: x.name, brand: x.brand || '', ...carry(x.tier === 'match') } });
       else load();
     } catch (e: any) { Alert.alert('처리하지 못했어요', e.message); } finally { setBusy(false); }
   };
+  /** 기다려줘로 넘길 때 다시 묻지 않게: 맡길 때 적은 사이즈·색상, 같은 상품으로 확인된 판매 페이지(정확히 찾은 옷일 때만) */
+  const carry = (exact: boolean) => ({ size: f?.original.size || '', color: f?.original.color || '', url: (exact && f?.sale.exact.find(o => o.url)?.url) || '' });
   const confirm = (x: FindItem) => Alert.alert('이 옷이 맞아요', '다음에 무엇을 할까요?', [
     ...(f?.canHunt ? [{ text: '7일 동안 매물 찾기', onPress: () => go(x, 'hunt') }] : []),
     { text: '원하는 가격 기다리기', onPress: () => go(x, 'watch') },
@@ -96,7 +98,7 @@ export default function FindResult() {
           {f.likely.map(x => <Card key={x.id} x={x} busy={busy} actions={f.state === 'ready' ? <Btn label="이 옷이 맞아요" kind="sec" busy={busy} onPress={() => confirm(x)} style={{ marginTop: 12 }} /> : undefined} />)}
           {f.state === 'confirmed' && confirmedItem ? (
             <View style={{ paddingHorizontal: 20, marginTop: 12 }}>
-              <Btn label="원하는 가격 기다리기" onPress={() => router.push({ pathname: '/watch/new', params: { productId: String(f.productId ?? ''), requestId: String(id), title: confirmedItem.name, brand: confirmedItem.brand || '' } })} />
+              <Btn label="원하는 가격 기다리기" onPress={() => router.push({ pathname: '/watch/new', params: { productId: String(f.productId ?? ''), requestId: String(id), title: confirmedItem.name, brand: confirmedItem.brand || '', ...carry(confirmedItem.tier === 'match') } })} />
             </View>
           ) : null}
           {/* 못 찾음: 어디까지 파악했는지 */}
