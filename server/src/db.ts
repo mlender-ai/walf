@@ -395,6 +395,13 @@ export function openDb(file: string, opts: OpenOpts = {}): DB {
   // Gate D — 기기 세션 토큰(서버가 발급, 해시만 저장). 기기 ID만 알아서는 그 사용자로 요청할 수 없다
   add('users', 'token_hash', 'TEXT');
   add('users', 'token_at', 'INTEGER');
+  // 리뷰 후속 — 토큰 발급 전 계정은 기기 ID만으로 열지 않는다. 운영자가 만든 일회용 이어받기 코드(해시·만료)로만 이어받는다
+  add('users', 'claim_hash', 'TEXT');
+  add('users', 'claim_until', 'INTEGER');
+  // 리뷰 후속 — 확정 전 식별 후보를 함께 찾는 판매처 탐색(최대 3개). 매물마다 어느 후보 기준으로 검증했는지 남긴다
+  add('offer_searches', 'targets', 'TEXT');
+  add('offers', 'target_ref', 'TEXT');
+  add('offers', 'target_rank', 'INTEGER');
   // Gate D — 사용자 선호(무엇이 중요한지)·추천 피드백·운영자 검수 기록(추천 엔진 평가 데이터)
   add('requests', 'priority', 'TEXT');   // silhouette | material_detail | brand_archive | vibe | NULL(고르지 않음)
   add('watches', 'priority', 'TEXT');

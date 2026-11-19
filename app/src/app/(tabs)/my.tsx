@@ -5,7 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { Header } from '@/components/Header';
 import { Btn, Hair, T, TextBtn } from '@/components/ui';
 import { TAB_SPACE } from '@/components/TabBar';
-import { call, getBase, getDevice, resetDevice, setBase, DEFAULT_BASE } from '@/lib/api';
+import { call, claimLegacy, getBase, getDevice, legacyLocked, resetDevice, setBase, DEFAULT_BASE } from '@/lib/api';
 import { enablePush, remotePushAvailable } from '@/lib/push';
 import { useStore } from '@/lib/store';
 import { C, FONT, R } from '@/lib/theme';
@@ -14,7 +14,13 @@ export default function MyTab() {
   const { me, reinit, refresh } = useStore();
   const [perm, setPerm] = useState<string>('…');
   const [base, setB] = useState(getBase());
-  useEffect(() => { Notifications.getPermissionsAsync().then(p => setPerm(p.status)).catch(() => setPerm('unknown')); }, []);
+  const [code, setCode] = useState('');
+  const [legacy, setLegacy] = useState(false);
+  useEffect(() => { Notifications.getPermissionsAsync().then(p => setPerm(p.status)).catch(() => setPerm('unknown')); legacyLocked().then(setLegacy).catch(() => {}); }, []);
+  const claim = async () => {
+    try { await claimLegacy(code); setCode(''); setLegacy(false); await reinit(); Alert.alert('이어받았어요', '이전 기록을 이 기기로 옮겼어요.'); }
+    catch (e: any) { Alert.alert('이어받지 못했어요', e.message); }
+  };
   const permLabel = perm === 'granted' ? (me?.user.pushToken ? '켜짐 · 푸시 연결됨' : remotePushAvailable() ? '켜짐 · 기기 등록 중' : '켜짐 · 이 설치본은 원격 푸시 없음(앱 안 알림만)') : perm === 'denied' ? '꺼짐' : '아직 묻지 않음';
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -40,6 +46,16 @@ export default function MyTab() {
         <Row k="기기 ID" v={(getDevice() || '').slice(0, 8) + '…'} />
         <Row k="앱 버전" v={`${Constants.expoConfig?.version} · ${Platform.OS}`} />
         <Hair style={{ marginTop: 10 }} />
+        <T size={17} w={800} ls={-0.5} style={{ marginTop: 22 }} accessibilityRole="header">이전 기록 이어받기</T>
+        <T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 6 }}>{legacy
+          ? '이 기기의 이전 버전 기록은 기기 ID만으로는 열 수 없어 잠가 두었어요. 왈프 팀에 확인을 받은 뒤 받은 코드를 넣으면 이 기기로 옮겨 와요.'
+          : '이전 버전 앱의 기록이 필요하면 왈프 팀에 확인을 받은 뒤 받은 코드(8자리)를 넣어 주세요.'}</T>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+          <TextInput value={code} onChangeText={v => setCode(v.toUpperCase())} autoCapitalize="characters" autoCorrect={false} autoComplete="off" keyboardType="ascii-capable" placeholder="ABCD-EFGH" placeholderTextColor={C.gray500} accessibilityLabel="이어받기 코드" maxLength={12}
+            style={{ flex: 1, borderWidth: 1, borderColor: C.gray300, borderRadius: R.card, paddingHorizontal: 14, height: 44, fontFamily: FONT[500], fontSize: 14, color: C.black }} />
+          <Btn label="이어받기" kind="sec" small style={{ flex: 0, paddingHorizontal: 16 }} onPress={claim} />
+        </View>
+        <Hair style={{ marginTop: 18 }} />
         <TextBtn label="내 의뢰·알림 데이터 삭제" onPress={() => Alert.alert('데이터를 삭제할까요?', '이 기기의 의뢰, 사진, 활동 기록, 알림을 서버에서 지워요. 외부에 게시된 수배글이 있으면 삭제 처리를 위해 채널 기록만 남겨요. 되돌릴 수 없어요.', [
           { text: '취소', style: 'cancel' },
           { text: '삭제', style: 'destructive', onPress: async () => { try { await call('DELETE', '/me'); await resetDevice(); await reinit(); Alert.alert('삭제했어요'); } catch (e: any) { Alert.alert('삭제하지 못했어요', e.message); } } },

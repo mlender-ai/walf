@@ -8,6 +8,7 @@ import { curate, requestStyle, styleWords, upsertProduct, type Curated } from '.
 import { FASHION_BRAIN } from './curation.ts';
 import { logPublished, offersView, publishPendingOffers } from './offerreview.ts';
 import { logReview } from './reviewlog.ts';
+import type { Coverage } from './findsearch.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -118,9 +119,9 @@ function matchCheck(a: Row, x: PublishInput['items'][number]) {
 const identityName = (a: Row) => a.color && !String(a.name).includes(a.color) ? `${a.name} ${a.color}` : a.name;
 
 /** 앱 화면용 — 공개된 결과만 */
-export function findView(db: DB, r: Row, base = '') {
+export function findView(db: DB, r: Row, base = '', coverage: Coverage | null = null) {
   const rows = all(db, `SELECT * FROM product_identities WHERE request_id=? AND status IN ('published','confirmed') ORDER BY tier, rank`, r.id);
-  const offers = offersView(db, r, base);
+  const offers = offersView(db, r, base, coverage);
   const anyOffer = offers.sale.state === 'ready' || offers.alternatives.state === 'ready';
   const host = (u: string) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return u; } };
   const item = (x: Row) => ({

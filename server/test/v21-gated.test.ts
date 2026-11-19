@@ -44,10 +44,10 @@ test('[세션] 처음 세션을 열면 토큰을 한 번 주고, 그 뒤로는 �
   const again = D.openSession(db, 'device-session-0001', 'ios', a.token);
   assert.equal(again.user.id, a.user.id); assert.equal(again.token, undefined, '토큰은 다시 주지 않는다');
   assert.equal(D.tokenOk(again.user, a.token), true); assert.equal(D.tokenOk(again.user, undefined), false);
-  // 토큰 발급 전(이전 버전) 계정은 다음 세션 열기 때 발급
+  // 토큰 발급 전(이전 버전) 계정은 기기 ID만으로 열 수 없다(리뷰 후속 — 이어받기 코드로만, test/v21-review.test.ts)
   const legacy = D.upsertUser(db, 'device-legacy-0001', 'ios');
-  assert.equal(D.tokenOk(legacy, undefined), true);
-  assert.ok(D.openSession(db, 'device-legacy-0001', 'ios', null).token);
+  assert.equal(D.tokenOk(legacy, undefined), false);
+  assert.throws(() => D.openSession(db, 'device-legacy-0001', 'ios', null), (e: any) => e.status === 401 && e.code === 'legacy_locked');
 });
 
 test('[사진] 사용자 사진은 서명·만료가 있는 주소로만 — 서명이 틀리거나 만료되거나 이상한 파일 이름이면 거절', () => {

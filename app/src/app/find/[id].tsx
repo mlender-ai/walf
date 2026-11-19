@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Header } from '@/components/Header';
-import { Avatar, Btn, Empty, ErrorBox, Gap, Icon, Loading, MockBanner, Section, T, Tag, TextBtn } from '@/components/ui';
+import { Avatar, Btn, Empty, ErrorBox, Gap, Icon, Loading, MockBanner, MockPill, Section, T, Tag, TextBtn } from '@/components/ui';
 import { TAB_SPACE } from '@/components/TabBar';
 import { call, ApiError } from '@/lib/api';
 import { useStore } from '@/lib/store';
@@ -86,16 +86,19 @@ export default function FindResult() {
           {identified ? <>
             <Gap h={8} />
             <Head title="판매처" sub="같은 상품을 파는 곳" desc="실제로 파는 곳 중 왈프 팀이 확인한 것만 보여 드려요." />
+            {f.sale.coverage ? <Scope kind={f.sale.coverage.kind} text={f.sale.coverage.note} /> : null}
+            {saleCards.length && f.sale.dataKind !== 'real' && f.sale.coverage?.kind !== 'test' ? <DataLine kind={f.sale.dataKind} /> : null}
             {saleCards.length ? <>
               {f.sale.exact.map(o => <OfferCard key={o.id} o={o} onOpen={() => opened(o.id)} />)}
               {f.sale.possible.map(o => <OfferCard key={o.id} o={o} onOpen={() => opened(o.id)} />)}
-            </> : <View style={s.note}><T size={14} w={700}>{SALE_TITLE[f.sale.state]}</T><T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 4 }}>{saleDesc}</T></View>}
+            </> : <View style={[s.note, { marginTop: 12 }]}><T size={14} w={700}>{SALE_TITLE[f.sale.state]}</T><T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 4 }}>{saleDesc}</T></View>}
             {saleCards.length || f.sale.state === 'none' ? <T size={12} lh={17} color={C.gray500} style={{ marginHorizontal: 20, marginTop: 10 }}>{f.sale.note}</T> : null}
           </> : null}
           {alts.length || ['searching', 'reviewing'].includes(f.alternatives.state) ? <>
             <Gap h={8} />
             <Head title="비슷한 디자인의 옷" sub="같은 상품 아님" desc={`${!saleCards.length && identified ? '같은 옷을 파는 곳을 아직 못 찾았어요. 디자인이 비슷한 옷도 살펴볼까요? ' : ''}실루엣·디테일·소재가 비슷한 순서예요.`} />
             {f.priorities?.length ? <PriorityPicker options={f.priorities} onPick={pick} busy={busy} /> : null}
+            {alts.length && f.alternatives.dataKind !== 'real' ? <DataLine kind={f.alternatives.dataKind} /> : null}
             {alts.length ? alts.map(o => <OfferCard key={o.id} o={o} onFeedback={k => feedback(o.id, k)} onOpen={() => opened(o.id)} />) : <View style={s.note}><T size={14} w={700}>비슷한 옷을 고르고 있어요</T><T size={12.5} color={C.gray500} style={{ marginTop: 4 }}>왈프 팀이 확인한 뒤 보여 드려요.</T></View>}
           </> : null}
           {f.discover.length ? <>
@@ -123,6 +126,21 @@ export default function FindResult() {
       )}
     </View>
   );
+}
+
+/** 어디서 찾아봤는지 — 실제 판매처가 몇 곳뿐인지, 테스트 판매처뿐인지 숨기지 않는다 */
+function Scope({ kind, text }: { kind: 'real' | 'test' | 'none'; text: string }) {
+  return (
+    <View style={s.scope} accessibilityLabel={`찾아본 곳: ${text}`}>
+      {kind === 'test' ? <MockPill /> : <Icon name="search" size={14} stroke={2} color={C.gray500} />}
+      <T size={12.5} lh={18} color={kind === 'test' ? C.black : C.gray500} style={{ flex: 1 }}>{text}</T>
+    </View>
+  );
+}
+/** 카드가 테스트 데이터인지 — 실제 판매 상품과 섞여 보이지 않게 */
+function DataLine({ kind }: { kind: 'test' | 'real' | 'mixed' | null }) {
+  if (!kind || kind === 'real') return null;
+  return <View style={[s.scope, { marginTop: 6 }]}><MockPill /><T size={12.5} lh={18} style={{ flex: 1 }}>{kind === 'test' ? '아래는 모두 테스트 데이터예요. 실제 판매 상품이 아니에요.' : '테스트 데이터가 섞여 있어요. “모의” 표시가 있는 카드는 실제 판매 상품이 아니에요.'}</T></View>;
 }
 
 /** 구역 제목 — 아래 카드와 붙어 보이게 아래 여백을 줄였다 */
@@ -167,6 +185,7 @@ const SALE_TITLE: Record<string, string> = { not_started: '판매처는 아직 �
 
 const s = StyleSheet.create({
   note: { marginHorizontal: 20, padding: 14, borderRadius: R.card, backgroundColor: C.canvas },
+  scope: { marginHorizontal: 20, marginTop: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   card: { marginHorizontal: 20, marginTop: 18, padding: 16, borderRadius: R.card, borderWidth: 1, borderColor: C.gray300 },
   attr: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
   unsure: { marginTop: 12, padding: 10, gap: 3, borderRadius: R.thumb, borderWidth: 1, borderStyle: 'dashed', borderColor: C.gray500 },

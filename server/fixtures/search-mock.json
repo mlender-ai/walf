@@ -27,6 +27,10 @@
       "options": [{ "color": "Navy", "size": "M", "stock": "in_stock" }] },
     { "id": "slow-shop", "seller": "테스트 편집숍2",
       "keywords": ["badblood", "배드블러드", "nylon", "나일론", "track", "트랙", "jacket", "자켓"],
-      "title": "배드블러드 나일론 트랙 자켓", "price": 175000, "detailError": "timeout" }
+      "title": "배드블러드 나일론 트랙 자켓", "price": 175000, "detailError": "timeout" },
+    { "id": "archive-coach-sold", "seller": "테스트 공식몰", "brand": "BADBLOOD", "image": "track-jacket-other.svg",
+      "keywords": ["archive", "아카이브", "coach", "코치", "w-jkt19-012"],
+      "title": "BADBLOOD Archive Coach Jacket Black W-JKT19-012 (판매 종료)", "price": 239000, "shipping": 3000, "condition": "new",
+      "options": [{ "color": "Black", "size": "M", "stock": "sold_out" }, { "color": "Black", "size": "L", "stock": "sold_out" }] }
   ]
 }

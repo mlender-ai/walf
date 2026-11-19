@@ -5,7 +5,7 @@ import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
-import { colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
+import { brandKey, colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
 import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type Snapshot } from './sources.ts';
 import { compareProduct, type Verdict } from './sameproduct.ts';
 import { uploadUrl } from './media.ts';
@@ -211,23 +211,26 @@ export function confirmShipping(db: DB, id: number, fee: unknown, operator: stri
 
 // ── 이 상품 페이지가 등록한 옷인가 ─────────────────────────────
 // 사용자가 A 상품을 등록하고 B 상품 페이지를 연결해도 A의 조건 충족 알림이 나가면 안 된다.
-// 자동으로는 품번이 같거나 상품명 핵심 단어가 대부분 같을 때만 “같음”으로 보고, 다른 브랜드·다른 품번은 “다름”, 나머지는 운영자 확인을 기다린다.
+// 자동으로 “같음”(matched)은 품번이 정확히 같을 때만이다. 상품명 핵심 단어만 같으면 “가능성 높음”(likely)으로 두고 알림을 보내지 않는다 — 운영자가 확인해야 같음이 된다.
+// 다른 브랜드·다른 품번은 “다름”, 나머지는 운영자 확인을 기다린다.
 export const PAGE_OK = ['page_defined', 'matched', 'operator_confirmed'];
-const PAGE_OF: Record<Verdict, string> = { same_code: 'matched', likely: 'matched', different: 'mismatch', unverified: 'unverified' };
+const PAGE_OF: Record<Verdict, string> = { same_code: 'matched', likely: 'likely', different: 'mismatch', unverified: 'unverified' };
 export function pageIdentity(w: { page_identity?: string | null; identity_note?: string | null; title: string; brand?: string | null }, prod: { name?: string | null; brand?: string | null; model_code?: string | null } | undefined,
-  s: { title: string | null; brand: string | null }): { identity: string; note: string } {
+  s: { title: string | null; brand: string | null }, aliases: string[] = []): { identity: string; note: string } {
   if (w.page_identity === 'page_defined' || w.page_identity === 'operator_confirmed') return { identity: w.page_identity, note: w.identity_note || '' };
-  const r = compareProduct({ brand: w.brand || prod?.brand, name: w.title || prod?.name, modelCode: prod?.model_code }, s);
+  const r = compareProduct({ brand: w.brand || prod?.brand, name: w.title || prod?.name, modelCode: prod?.model_code, aliases }, s);
   return { identity: PAGE_OF[r.verdict], note: r.note };
 }
 /** 판정 전에 페이지 동일성을 정하고 바뀌었으면 기록한다 */
 function settleIdentity(db: DB, w: Row, s: { title: string | null; brand: string | null }, t: number) {
   const prod = w.product_id ? one(db, 'SELECT * FROM products WHERE id=?', w.product_id) : undefined;
-  const r = pageIdentity(w, prod, s);
+  const brand = w.brand || prod?.brand;
+  const aliases = brand ? parse(one(db, 'SELECT aliases FROM brands WHERE key=?', brandKey(brand))?.aliases ?? null, []) as string[] : [];
+  const r = pageIdentity(w, prod, s, aliases);
   if (r.identity !== w.page_identity) {
     run(db, 'UPDATE watches SET page_identity=?, identity_note=?, updated_at=? WHERE id=?', r.identity, r.note, t, w.id);
     if (r.identity === 'mismatch') event(db, w, 'walf', 'page_mismatch', '등록한 옷과 다른 상품 페이지로 보여요', `${r.note} · 확인 전에는 가격 알림을 보내지 않아요`, t);
-    else if (r.identity === 'unverified') event(db, w, 'walf', 'page_check', '같은 상품 페이지인지 확인하고 있어요', r.note, t);
+    else if (r.identity === 'unverified' || r.identity === 'likely') event(db, w, 'walf', 'page_check', '같은 상품 페이지인지 확인하고 있어요', `${r.note} · 확인 전에는 가격 알림을 보내지 않아요`, t);
   }
   return r.identity;
 }
@@ -399,12 +402,13 @@ export function evaluate(w: { size?: string | null; color?: string | null; targe
     if (stock !== 'in_stock') return { ...base, state: 'stock_unknown', price, total, stock, option, reasons: [!opt && w.size ? '페이지에 사이즈별 재고가 없어 원하는 사이즈 재고를 확인하지 못했어요' : '재고를 확인하지 못했어요'] };
     if (basis === 'total' && s.shipping == null) return { ...base, state: 'shipping_unknown', price, total, stock, option, reasons: [`상품 가격 ${won(price)}은 원하는 가격 이하지만 배송비를 확인하지 못했어요`] };
     if (colorState === 'unknown') return { ...base, state: 'color_unknown', price, total, stock, option, reasons: [`원하는 색(${w.color})인지 페이지에서 확인하지 못했어요`] };
-    if (!PAGE_OK.includes(identity)) return { ...base, state: 'unverified', price, total, stock, option, reasons: ['등록한 옷과 같은 상품 페이지인지 아직 확인하지 않았어요'] };
+    if (!PAGE_OK.includes(identity)) return { ...base, state: 'unverified', price, total, stock, option,
+      reasons: [identity === 'likely' ? '상품명은 같아 보이지만 품번으로 같은 상품인지 확인하지 못했어요' : '등록한 옷과 같은 상품 페이지인지 아직 확인하지 않았어요'] };
     return { ...base, state: 'met', price, total, stock, option, reasons: [] };
   }
   const sale = s.salePrice != null ? s.salePrice + (basis === 'item' ? 0 : s.shipping ?? 0) : null;
   if (sale != null && sale <= w.target_price)
-    return { ...base, state: 'sale_only', price, total, stock, option, reasons: [`표시된 할인가 ${won(s.salePrice)}는 적용 조건(회원·쿠폰 등)을 확인하지 못했어요`] };
+    return { ...base, state: 'sale_only', price, total, stock, option, reasons: [`표시된 할인가 ${won(s.salePrice)}은 적용 조건(회원·쿠폰 등)을 확인하지 못했어요`] };
   return { ...base, state: 'above', price, total, stock, option, reasons: [`원하는 가격보다 ${won(compare - w.target_price)} 높아요${basis === 'item' ? '(배송비 제외)' : s.shipping == null ? '(배송비 미확인)' : ''}`] };
 }
 /** 알림·화면에 쓰는 금액 문구 */
@@ -452,6 +456,16 @@ function reevaluate(db: DB, id: number, _policy: WatchPolicy, nextAt: number | n
     pageStock: obs.some(o => o.stock === 'in_stock') ? 'in_stock' : 'unknown', basis: [], isMock: !!obs[0].is_mock };
   const s = withShipping(s0, l);
   applyEval(db, w, evaluate(w, s, settleIdentity(db, w, s, obs[0].checked_at)), obs[0].checked_at, nextAt);
+}
+
+/**
+ * 예전 규칙으로 자동 “같음”(matched)이 된 감시를 지금 규칙으로 다시 판정한다(서버 시작 때 한 번, 페이지를 다시 열지 않음).
+ * 상품명만 같았거나 품번 일부만 겹쳤던 페이지는 “가능성 높음·확인 필요”로 내려가고, 다시 확인되기 전에는 조건 충족 알림을 보내지 않는다.
+ */
+export function resettleAutoMatched(db: DB, policy: WatchPolicy) {
+  const ids = all(db, `SELECT id FROM watches WHERE page_identity='matched' AND status='active'`).map(x => x.id as number);
+  for (const id of ids) reevaluate(db, id, policy);
+  return ids.length;
 }
 
 // ── 화면용 ───────────────────────────────────────────────────

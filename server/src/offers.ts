@@ -3,7 +3,7 @@
 // 외부 추천 엔진(패션 브레인 등)이 주는 값도 cleanOffer 를 거쳐야 저장된다. 검수 전에는 사용자에게 보이지 않는다.
 import { type DB, tx } from './db.ts';
 import { urlKey, type Stock } from './sources.ts';
-import { cleanStyle, normSize, type Style } from './catalog.ts';
+import { cleanStyle, colorsIn, normSize, sameColor, type Style } from './catalog.ts';
 import type { Check, Verdict } from './sameproduct.ts';
 import { now } from './time.ts';
 
@@ -32,6 +32,8 @@ export type ProductOffer = {
   recommender: string; recommenderVersion: string; score: number | null;
   detail: 'fetched' | 'listed_only' | 'failed'; detailNote: string | null; queries: string[]; fetchedAt: number | null;
   groupKey: string | null; isMock: boolean;
+  /** 판매처 탐색: 어느 식별 후보 기준으로 검증했는지(여러 후보를 함께 찾을 때) — 예: ai_identity:12 · 1부터 */
+  targetRef?: string | null; targetRank?: number | null;
 };
 export const RULES_RECOMMENDER = { recommender: 'walf-rules', recommenderVersion: 'find-search-1' };
 
@@ -78,6 +80,50 @@ export const itemPrice = (o: Pick<ProductOffer, 'price' | 'salePrice'>) => o.sal
 /** 배송비를 알면 총액, 모르면 null(배송비를 0원으로 치지 않는다) */
 export const totalPrice = (o: Pick<ProductOffer, 'price' | 'salePrice' | 'shipping'>) => itemPrice(o) != null && o.shipping != null ? itemPrice(o)! + o.shipping : null;
 
+// ── 기다려줘 조건과 맞는지(새 매물 알림) ──────────────────────────
+// 원하는 가격·색상·사이즈 재고·상품 상태를 하나씩 본다. 모두 “확인됨”일 때만 met — 확인하지 못한 값은 충족으로 치지 않는다(unknown).
+// 가격은 판매가 기준이다. 표시된 할인가만 목표 이하면 적용 조건(회원·쿠폰 등)을 모르므로 unknown(가격 감시 watch.ts 의 sale_only 와 같은 규칙).
+export type WatchWant = { size: string | null; color: string | null; condition: 'new' | 'any'; targetPrice: number; basis: 'total' | 'item' };
+export type Fit = { state: 'met' | 'unmet' | 'unknown'; met: string[]; unmet: string[]; unknown: string[] };
+export const watchWantOf = (w: Row): WatchWant => ({ size: w.size ? normSize(w.size) : null, color: w.color || null, condition: w.condition === 'new' ? 'new' : 'any',
+  targetPrice: Number(w.target_price), basis: w.price_basis === 'item' ? 'item' : 'total' });
+const wonText = (n: number) => `${n.toLocaleString('ko-KR')}원`;
+export function fitOf(o: Pick<ProductOffer, 'options' | 'name' | 'condition' | 'stock' | 'price' | 'salePrice' | 'shipping'>, want: WatchWant): Fit {
+  const met: string[] = [], unmet: string[] = [], unknown: string[] = [];
+  // 색상: 옵션에 색이 있으면 옵션 색, 없으면 상품명에 적힌 색으로만
+  const optColors = [...new Set(o.options.map(x => x.color).filter(Boolean))];
+  const have = optColors.length ? optColors : colorsIn(o.name).length ? [o.name!] : [];
+  if (want.color) {
+    if (!have.length) unknown.push(`${want.color} 색상인지 확인하지 못했어요`);
+    else if (have.some(c => sameColor(want.color, c))) met.push(`${want.color} 색상`);
+    else unmet.push(`원하는 색(${want.color})이 아니에요`);
+  }
+  // 사이즈·재고: 원하는 사이즈(색이 정해졌으면 그 색) 옵션의 재고. 사이즈를 정하지 않았으면 페이지 재고
+  const sizeRows = o.options.filter(x => !want.size || normSize(x.size) === want.size);
+  const rows = sizeRows.filter(x => !want.color || !x.color || sameColor(want.color, x.color));
+  const label = want.size ? `${want.size} ` : '';
+  if (want.size && o.options.length && !sizeRows.length) unmet.push(`${want.size} 사이즈 옵션이 없어요`);
+  else if (sizeRows.length && !rows.length) { if (!unmet.length) unmet.push(`${want.color} ${label}옵션이 없어요`); } // 색이 달라 맞는 옵션이 없으면 색상에서 이미 말했다
+  else if (rows.some(x => x.stock === 'in_stock') || (!o.options.length && !want.size && o.stock === 'in_stock')) met.push(`${label}재고 있음`);
+  else if ((rows.length && rows.every(x => x.stock === 'sold_out')) || (!o.options.length && !want.size && o.stock === 'sold_out')) unmet.push(`${label}품절이에요`);
+  else unknown.push(want.size && !o.options.length ? `페이지에 사이즈별 재고가 없어 ${want.size} 재고를 확인하지 못했어요` : `${label}재고를 확인하지 못했어요`);
+  // 상품 상태
+  if (want.condition === 'new') {
+    if (o.condition === 'new') met.push('새 상품');
+    else if (o.condition === 'used') unmet.push('중고예요(새 상품만 원하셨어요)');
+    else unknown.push('새 상품인지 확인하지 못했어요');
+  }
+  // 가격(판매가 기준. 원하는 옵션의 가격이 따로 있으면 그 가격)
+  const price = rows.find(x => x.stock === 'in_stock' && x.price != null)?.price ?? o.price;
+  const ship = want.basis === 'item' ? 0 : o.shipping;
+  const saleOk = o.salePrice != null && o.salePrice + (ship ?? 0) <= want.targetPrice;
+  if (price == null) unknown.push('가격을 읽지 못했어요');
+  else if (price + (ship ?? 0) > want.targetPrice) (saleOk ? unknown : unmet).push(saleOk ? `표시된 할인가 ${wonText(o.salePrice!)}은 적용 조건(회원·쿠폰 등)을 확인하지 못했어요` : `원하는 가격보다 ${wonText(price + (ship ?? 0) - want.targetPrice)} 높아요${ship == null ? '(배송비 미확인)' : ''}`);
+  else if (ship == null) unknown.push(`상품가 ${wonText(price)}은 원하는 가격 이하지만 배송비를 확인하지 못했어요`);
+  else met.push(want.basis === 'item' ? `상품가 ${wonText(price)}(배송비 제외 기준)` : `배송비 포함 ${wonText(price + ship)}`);
+  return { state: unmet.length ? 'unmet' : unknown.length ? 'unknown' : 'met', met, unmet, unknown };
+}
+
 // ── 저장 · 읽기 ──────────────────────────────────────────────
 /** 탐색 한 번의 결과를 순위대로 저장한다. 같은 상품 페이지는 listings 에 한 줄(처음 본 시각을 남겨 새 매물을 가른다) */
 export function saveOffers(db: DB, searchId: number, owner: { requestId?: number | null; watchId?: number | null }, offers: ProductOffer[], t = now()) {
@@ -85,7 +131,7 @@ export function saveOffers(db: DB, searchId: number, owner: { requestId?: number
   tx(db, () => {
     const ins = db.prepare(`INSERT INTO offers(search_id, request_id, listing_id, relation, rank, group_key, source, seller, url, url_key, brand, name, model_code, season, image_url,
       price, sale_price, currency, shipping, condition, options, stock, want_size, want_color, verdict, checks, similar_points, diff_points, recommender, recommender_version, score,
-      detail, detail_note, queries, fetched_at, is_mock, created_at, style, watch_id) VALUES (${Array(39).fill('?').join(',')})`);
+      detail, detail_note, queries, fetched_at, is_mock, created_at, style, watch_id, target_ref, target_rank) VALUES (${Array(41).fill('?').join(',')})`);
     offers.forEach((o, i) => {
       const key = urlKey(o.url);
       let l = one(db, 'SELECT id FROM listings WHERE url_key=?', key);
@@ -96,7 +142,7 @@ export function saveOffers(db: DB, searchId: number, owner: { requestId?: number
       } else db.prepare('UPDATE listings SET last_seen=? WHERE id=?').run(t, l.id);
       ins.run(searchId, requestId, l.id, o.relation, i + 1, o.groupKey, o.source, o.seller, o.url, key, o.brand, o.name, o.modelCode, o.season, o.imageUrl,
         o.price, o.salePrice, o.currency, o.shipping, o.condition, json(o.options), o.stock, o.wantSize, o.wantColor, o.verdict, json(o.checks), json(o.similarPoints), json(o.diffPoints),
-        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t, o.style ? json(o.style) : null, watchId);
+        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t, o.style ? json(o.style) : null, watchId, o.targetRef ?? null, o.targetRank ?? null);
       // 같은 의뢰에서 같은 페이지를 다시 찾으면 운영자 검수를 이어받는다(공개 중이면 새 줄로 옮겨 최신 가격으로 보이게)
       const id = Number(one(db, 'SELECT last_insert_rowid() id')!.id);
       if (requestId != null || watchId != null) {
@@ -130,6 +176,7 @@ export function offerOf(r: Row): StoredOffer {
     wantSize: r.want_size, wantColor: r.want_color, verdict: VERDICTS.includes(r.verdict) ? r.verdict : 'unverified', checks: parse(r.checks, []),
     similarPoints: parse(r.similar_points, []), diffPoints: parse(r.diff_points, []), recommender: r.recommender, recommenderVersion: r.recommender_version, score: r.score,
     detail: r.detail, detailNote: r.detail_note, queries: parse(r.queries, []), fetchedAt: r.fetched_at, groupKey: r.group_key, isMock: !!r.is_mock,
+    targetRef: r.target_ref ?? null, targetRank: r.target_rank ?? null,
   };
 }
 export const offersOf = (db: DB, searchId: number) => all(db, 'SELECT * FROM offers WHERE search_id=? ORDER BY rank', searchId).map(offerOf);

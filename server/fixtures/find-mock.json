@@ -35,5 +35,14 @@
     ],
     "missing": ["브랜드 택 사진"],
     "style": { "mood": ["minimal", "workwear"], "material": ["wool"], "silhouette": ["boxy"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["brown"] }
+  },
+  {
+    "trigger": "[테스트:첫후보틀림]",
+    "summary": "AI 첫 후보의 품번이 틀리고 두 번째 후보가 맞는 사례(가상의 테스트 데이터)",
+    "identities": [
+      { "brand": "BADBLOOD", "name": "Mystic Nylon Track Jacket", "color": "Navy", "category": "아우터", "season": "", "code": "W-JKT26-056", "confidence": "medium", "reasons": ["테스트 데이터예요"], "refs": [], "matched": ["모델: 소매 절개선·지퍼 구성이 비슷해요(테스트)"], "uncertain": ["품번: 사진만으로는 확인하지 못했어요(테스트)"] },
+      { "brand": "BADBLOOD", "name": "Mystic Nylon Track Jacket", "color": "Navy", "category": "아우터", "season": "", "code": "W-JKT26-055", "confidence": "medium", "reasons": ["테스트 데이터예요"], "refs": [], "matched": ["색상: 네이비(테스트)"], "uncertain": ["품번: 사진만으로는 확인하지 못했어요(테스트)"] }
+    ],
+    "style": { "mood": ["sportswear", "street"], "material": ["nylon"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["navy"] }
   }
 ]

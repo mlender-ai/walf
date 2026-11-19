@@ -22,7 +22,9 @@ const json = (v: unknown) => JSON.stringify(v);
 // ── 1 · 식별 결과 → 탐색 대상 ───────────────────────────────────
 export type Basis = 'ai_draft' | 'operator_published' | 'user_confirmed' | 'style_only' | 'watch';
 export type SearchTarget = { brand: string | null; name: string; modelCode: string | null; season: string | null; color: string | null; category: string | null;
-  basis: Basis; ref: string; aliases: string[]; isMock: boolean };
+  basis: Basis; ref: string; aliases: string[]; isMock: boolean;
+  /** 확정된 식별(사용자가 “이 옷이 맞아요” · 운영자 MATCH 공개) — 확정이면 이 후보 하나만 찾는다 */
+  certain?: boolean };
 export type Want = { size: string | null; color: string | null; usedOk: boolean; maxPrice: number | null };
 export const BASIS_LABEL: Record<Basis, string> = { ai_draft: 'AI 식별 제안(검수 전)', operator_published: '왈프 팀이 공개한 식별 결과', user_confirmed: '사용자가 “이 옷이 맞아요”로 고른 결과', style_only: '상품은 식별하지 못함 — 사진에서 읽은 디자인만', watch: '기다려줘에 등록한 상품' };
 
@@ -31,9 +33,9 @@ const stripBrand = (name: string, brand: string | null) => {
   const b = String(brand || '').trim();
   return b && name.toLowerCase().startsWith(b.toLowerCase() + ' ') ? name.slice(b.length + 1).trim() : name.trim();
 };
-export function targetFrom(x: Row, basis: Basis, ref: string, aliases: string[], isMock: boolean): SearchTarget {
+export function targetFrom(x: Row, basis: Basis, ref: string, aliases: string[], isMock: boolean, certain = false): SearchTarget {
   return { brand: x.brand || null, name: stripBrand(String(x.name || ''), x.brand), modelCode: x.model_code || null, season: x.season || null, color: x.color || null,
-    category: x.category || null, basis, ref, aliases, isMock };
+    category: x.category || null, basis, ref, aliases, isMock, certain };
 }
 /** 탐색할 식별 결과: 사용자 확인 > 운영자 공개 > AI 제안(숨김 제외) 순. 앞의 것이 기본 대상이다 */
 export function targetsOf(db: DB, requestId: number, malls: { brand: string; aliases?: string[] }[] = []): SearchTarget[] {
@@ -46,9 +48,9 @@ export function targetsOf(db: DB, requestId: number, malls: { brand: string; ali
   };
   const out: SearchTarget[] = [];
   for (const x of all(db, `SELECT * FROM product_identities WHERE request_id=? AND status='confirmed' AND tier<>'discover' ORDER BY id DESC`, requestId))
-    out.push(targetFrom(x, 'user_confirmed', `product_identity:${x.id}`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock));
+    out.push(targetFrom(x, 'user_confirmed', `product_identity:${x.id}`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock, true));
   for (const x of all(db, `SELECT * FROM product_identities WHERE request_id=? AND status='published' AND tier<>'discover' ORDER BY tier='match' DESC, rank`, requestId))
-    out.push(targetFrom(x, 'operator_published', `product_identity:${x.id}`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock));
+    out.push(targetFrom(x, 'operator_published', `product_identity:${x.id}`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock, x.tier === 'match'));
   const job = one(db, `SELECT id FROM ai_jobs WHERE request_id=? AND kind='identify' AND status='done' ORDER BY id DESC LIMIT 1`, requestId);
   if (job) for (const x of all(db, 'SELECT * FROM ai_identities WHERE job_id=? ORDER BY rank', job.id)) {
     if (tierOf({ ...x, refs: parse(x.refs, []), uncertain: parse(x.uncertain, []) }) === 'hidden') continue;
@@ -57,6 +59,16 @@ export function targetsOf(db: DB, requestId: number, malls: { brand: string; ali
   // 같은 상품을 여러 번 담지 않는다(앞의 근거가 우선)
   const seen = new Set<string>();
   return out.filter(t => { const k = compact(`${t.brand}|${t.name}|${t.modelCode}`); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+/**
+ * 이번 탐색에서 찾아볼 식별 후보 — 확정된 식별이 있으면 그것 하나. 확정 전(AI 제안·운영자 LIKELY)이면 첫 후보가 틀렸을 수 있으니 앞에서부터 많아야 max개를 함께 찾는다.
+ * 비용 한도: 두 번째 후보부터는 검색어 3개까지, 상품 페이지 상세 확인은 모든 후보를 합쳐 maxDetails개까지(runFindSearch).
+ */
+export const MAX_TARGETS = 3;
+export function targetsToSearch(db: DB, requestId: number, e: Pick<SearchEnv, 'malls' | 'maxTargets'>): SearchTarget[] {
+  const ts = targetsOf(db, requestId, e.malls);
+  if (!ts.length || ts[0].certain) return ts.slice(0, 1);
+  return ts.filter(t => !t.certain).slice(0, Math.max(1, Math.min(MAX_TARGETS, e.maxTargets ?? MAX_TARGETS)));
 }
 export const wantOf = (r: Row): Want => ({ size: r.size ? normSize(r.size) : null, color: r.color || null, usedOk: !!r.used_ok, maxPrice: r.max_price ?? null });
 
@@ -122,9 +134,11 @@ export function mergeHits(hits: RawHit[]): MergedHit[] {
 
 // ── 5 · 상품 정보 정리(이미지·가격·판매처·사이즈) ───────────────────
 /** 같은 상품일 가능성이 큰 페이지부터 상세 페이지를 읽는다(많아야 maxDetails개). 못 읽은 곳은 검색 결과 값만 남기고 그렇게 표시한다 */
-export async function normalizeHits(merged: MergedHit[], t: SearchTarget, sources: SearchSource[], ctx: SourceCtx, maxDetails = 6): Promise<ProductOffer[]> {
+export async function normalizeHits(merged: MergedHit[], target: SearchTarget | SearchTarget[], sources: SearchSource[], ctx: SourceCtx, maxDetails = 6): Promise<ProductOffer[]> {
   const ORDER: Record<Verdict, number> = { same_code: 0, likely: 1, unverified: 2, different: 3 };
-  const pre = merged.map(h => ({ h, v: compareProduct(t, { title: h.title, brand: h.brand }).verdict }));
+  const ts = Array.isArray(target) ? target : [target];
+  // 여러 식별 후보를 찾을 때는 가장 가까운 후보 기준으로 상세 확인 순서를 정한다
+  const pre = merged.map(h => ({ h, v: ts.map(t => compareProduct(t, { title: h.title, brand: h.brand }).verdict).sort((a, b) => ORDER[a] - ORDER[b])[0] }));
   const fetchOrder = [...pre].sort((a, b) => ORDER[a.v] - ORDER[b.v] || a.h.rank - b.h.rank).filter(x => x.v !== 'different').slice(0, maxDetails).map(x => x.h);
   const out: ProductOffer[] = [];
   for (const { h } of pre) {
@@ -152,7 +166,7 @@ const COLOR_KO: Record<string, string> = { black: '블랙', white: '화이트', 
 const colorText = (s: string) => colorsIn(s).map(c => COLOR_KO[c] || c).join('') || s;
 /** 품번·브랜드·상품명으로 같은 상품인지 정하고, 원하는 색·사이즈·상태와 맞는지 따로 적는다. 사진 비교는 하지 않는다(연결 전) */
 export function verifyOffer(t: SearchTarget, o: ProductOffer, want: Want): ProductOffer {
-  const r = compareProduct({ brand: t.brand, name: t.name, modelCode: t.modelCode }, { title: o.name, brand: o.brand });
+  const r = compareProduct({ brand: t.brand, name: t.name, modelCode: t.modelCode, aliases: t.aliases }, { title: o.name, brand: o.brand });
   const checks: Check[] = [...r.checks];
   // 색상: 원하는 색(없으면 식별한 색)과 옵션·상품명의 색
   const wantColor = want.color || t.color;
@@ -187,9 +201,32 @@ export function verifyOffer(t: SearchTarget, o: ProductOffer, want: Want): Produ
     similarPoints: checks.filter(c => c.result === 'match').map(c => c.text), diffPoints: diff.slice(0, 6) };
 }
 
+/** 여러 식별 후보로 찾았으면 후보마다 검증해 가장 가까운 후보 기준 결과를 쓴다(같으면 앞 후보). 어느 후보 기준인지 남긴다 */
+export function verifyBest(ts: SearchTarget[], o: ProductOffer, want: Want): ProductOffer {
+  const vs = ts.map((t, i) => ({ v: verifyOffer(t, o, want), i }));
+  const best = vs.sort((a, b) => V_ORDER[a.v.verdict] - V_ORDER[b.v.verdict] || a.i - b.i)[0];
+  return { ...best.v, targetRef: ts[best.i].ref, targetRank: best.i + 1 };
+}
+/** 여러 후보로 같은 소스를 여러 번 검색했으면 소스별로 합친다(검색어·건수·오류를 모으고, 결과가 가장 좋은 것을 남긴다) */
+export function mergeReports(rs: SourceReport[][]): SourceReport[] {
+  if (rs.length === 1) return rs[0];
+  const RANK: Record<SourceReport['outcome'], number> = { ok: 0, empty: 1, failed: 2, blocked: 3, not_run: 4 };
+  const out = new Map<string, SourceReport>();
+  for (const list of rs) for (const r of list) {
+    const cur = out.get(r.id);
+    if (!cur) { out.set(r.id, { ...r, queries: [...r.queries], errors: [...r.errors] }); continue; }
+    cur.queries.push(...r.queries); cur.errors.push(...r.errors); cur.hits += r.hits; cur.ms += r.ms;
+    if (RANK[r.outcome] < RANK[cur.outcome]) Object.assign(cur, { outcome: r.outcome, status: r.status, reason: r.reason });
+  }
+  return [...out.values()];
+}
+
 // ── 7 · 비교 결과 ────────────────────────────────────────────
+export type Candidate = { rank: number; basis: Basis; basisLabel: string; brand: string | null; name: string; modelCode: string | null; same: number; likely: number };
 export type FindSearchResult = {
   identification: { basis: Basis; basisLabel: string; brand: string | null; name: string; modelCode: string | null; season: string | null; color: string | null; note: string };
+  /** 이번에 찾아본 식별 후보(확정 전이면 여러 개) — 후보마다 같은 상품(품번)·가능성 높음 개수 */
+  candidates: Candidate[];
   sale: { state: 'found_same' | 'possible_only' | 'unverified_only' | 'none'; same: ProductOffer[]; likely: ProductOffer[]; unverified: ProductOffer[]; different: ProductOffer[] };
   sources: SourceReport[]; limits: string[]; isMock: boolean;
 };
@@ -200,7 +237,7 @@ export function rankOffers(xs: ProductOffer[]) {
   const price = (o: ProductOffer) => totalPrice(o) ?? (itemPrice(o) != null ? itemPrice(o)! + 1e8 : 2e9);
   return [...xs].sort((a, b) => V_ORDER[a.verdict] - V_ORDER[b.verdict] || FIT[a.wantSize] - FIT[b.wantSize] || (a.detail === 'fetched' ? 0 : 1) - (b.detail === 'fetched' ? 0 : 1) || price(a) - price(b));
 }
-export function assemble(t: SearchTarget, offers: ProductOffer[], report: SourceReport[]): FindSearchResult {
+export function assemble(t: SearchTarget, offers: ProductOffer[], report: SourceReport[], targets: SearchTarget[] = [t]): FindSearchResult {
   const xs = rankOffers(offers);
   const by = (v: Verdict) => xs.filter(o => o.verdict === v);
   const same = by('same_code'), likely = by('likely'), unverified = by('unverified');
@@ -214,6 +251,8 @@ export function assemble(t: SearchTarget, offers: ProductOffer[], report: Source
   return {
     identification: { basis: t.basis, basisLabel: BASIS_LABEL[t.basis], brand: t.brand, name: t.name, modelCode: t.modelCode, season: t.season, color: t.color,
       note: '어떤 옷인지 식별한 결과예요. 판매 중인지는 아래 판매처 탐색 결과로 따로 확인해요.' },
+    candidates: targets.map((x, i) => ({ rank: i + 1, basis: x.basis, basisLabel: BASIS_LABEL[x.basis], brand: x.brand, name: x.name, modelCode: x.modelCode,
+      same: offers.filter(o => (o.targetRank ?? 1) === i + 1 && o.verdict === 'same_code').length, likely: offers.filter(o => (o.targetRank ?? 1) === i + 1 && o.verdict === 'likely').length })),
     sale: { state: same.length ? 'found_same' : likely.length ? 'possible_only' : unverified.length ? 'unverified_only' : 'none', same, likely, unverified, different: by('different') },
     sources: report, limits, isMock: t.isMock,
   };
@@ -222,19 +261,23 @@ export function assemble(t: SearchTarget, offers: ProductOffer[], report: Source
 // ── 실행 · 대기열 ────────────────────────────────────────────
 export type SearchEnv = { sources: SearchSource[]; mockAllowed: boolean; env: Record<string, string | undefined>; malls: SourceCtx['malls'];
   fetcher?: SourceCtx['fetcher']; resolve?: SourceCtx['resolve']; pace: SourceCtx['pace']; maxDetails: number; reuseMs: number;
+  /** 확정 전 식별 후보를 함께 찾을 최대 개수(1~3, 기본 3) */
+  maxTargets?: number;
   /** 대체 상품 추천 엔진(테스트 큐레이터 · 패션 브레인 자리) — 없으면 기본 목록 */
   similar?: SimilarProductProvider[] };
 export function searchEnvFrom(opts: { mockAllowed: boolean; env?: Record<string, string | undefined> }): SearchEnv {
   const env = opts.env || process.env;
   return { sources: SEARCH_SOURCES, mockAllowed: opts.mockAllowed, env, malls: loadMalls(), pace: pacer(Number(env.WALF_SEARCH_PACE_MS ?? 1000)),
-    maxDetails: Number(env.WALF_SEARCH_MAX_DETAILS || 6), reuseMs: 20 * 3600_000, similar: SIMILAR_PROVIDERS };
+    maxDetails: Number(env.WALF_SEARCH_MAX_DETAILS || 6), reuseMs: 20 * 3600_000, similar: SIMILAR_PROVIDERS, maxTargets: Number(env.WALF_SEARCH_MAX_TARGETS || MAX_TARGETS) };
 }
 const ctxOf = (e: SearchEnv, isMock: boolean): SourceCtx => ({ isMock, mockAllowed: e.mockAllowed, env: e.env, malls: e.malls, fetcher: e.fetcher, resolve: e.resolve, pace: e.pace });
 export const usableSources = (e: SearchEnv, t: SearchTarget) => e.sources.filter(s => s.availability(t, ctxOf(e, t.isMock)).usable).map(s => s.id);
 
-/** 같은 대상·같은 소스면 같은 열쇠(하루 안에 다시 검색하지 않는다) */
-export function searchKeyOf(t: SearchTarget, sourceIds: string[]) {
-  return crypto.createHash('sha256').update(json([compact(t.brand), compact(t.name), compact(t.modelCode), compact(t.season), [...sourceIds].sort(), t.isMock])).digest('hex').slice(0, 32);
+/** 같은 대상·같은 소스면 같은 열쇠(하루 안에 다시 검색하지 않는다). 여러 후보를 함께 찾으면 후보 목록 전체가 열쇠다 */
+export function searchKeyOf(t: SearchTarget | SearchTarget[], sourceIds: string[]) {
+  const ts = Array.isArray(t) ? t : [t];
+  const one = (x: SearchTarget) => [compact(x.brand), compact(x.name), compact(x.modelCode), compact(x.season)];
+  return crypto.createHash('sha256').update(json([...(ts.length === 1 ? one(ts[0]) : [ts.map(one)]), [...sourceIds].sort(), ts[0].isMock])).digest('hex').slice(0, 32);
 }
 
 /**
@@ -244,19 +287,20 @@ export function searchKeyOf(t: SearchTarget, sourceIds: string[]) {
 export function queueFindSearch(db: DB, e: SearchEnv, requestId: number, opts: { by?: string | null; force?: boolean } = {}): { id?: number; skipped?: string } {
   const r = one(db, 'SELECT * FROM requests WHERE id=?', requestId);
   if (!r) return { skipped: 'not_found' };
-  const t = targetsOf(db, requestId, e.malls)[0];
+  const ts = targetsToSearch(db, requestId, e);
+  const t = ts[0];
   if (!t) return { skipped: '탐색할 식별 결과가 없어요(AI 식별 전이거나 모두 숨김)' };
-  const ids = usableSources(e, t);
+  const ids = [...new Set(ts.flatMap(x => usableSources(e, x)))];
   if (!ids.length) return { skipped: '지금 쓸 수 있는 판매처 소스가 없어요(공식몰 미등록 · 다른 소스는 연동 대기)' };
-  const key = searchKeyOf(t, ids);
+  const key = searchKeyOf(ts, ids);
   const t0 = now();
   if (!opts.force) {
     // 실패한 탐색도 하루 동안은 자동으로 다시 넣지 않는다(운영자가 다시 실행)
     const cur = one(db, `SELECT id FROM offer_searches WHERE request_id=? AND search_key=? AND (status IN ('queued','running') OR (status IN ('done','failed') AND COALESCE(finished_at, created_at)>?)) ORDER BY id DESC LIMIT 1`, requestId, key, t0 - e.reuseMs);
     if (cur) return { id: cur.id, skipped: '같은 조건의 탐색이 이미 있어요' };
   }
-  const id = Number(run(db, `INSERT INTO offer_searches(request_id, product_id, purpose, target, target_basis, search_key, status, requested_by, is_mock, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    requestId, r.product_id ?? null, 'find', json(t), t.basis, key, 'queued', opts.by ?? null, t.isMock ? 1 : 0, t0).lastInsertRowid);
+  const id = Number(run(db, `INSERT INTO offer_searches(request_id, product_id, purpose, target, targets, target_basis, search_key, status, requested_by, is_mock, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    requestId, r.product_id ?? null, 'find', json(t), json(ts), t.basis, key, 'queued', opts.by ?? null, t.isMock ? 1 : 0, t0).lastInsertRowid);
   return { id };
 }
 
@@ -277,27 +321,36 @@ export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
   if (s.purpose === 'discovery') return runDiscoverySearch(db, e, s);
   const r = s.request_id ? one(db, 'SELECT * FROM requests WHERE id=?', s.request_id) : undefined;
   const t: SearchTarget = parse(s.target, null);
+  const targets: SearchTarget[] = parse(s.targets ?? null, null) || [t];
   const want = r ? wantOf(r) : { size: null, color: null, usedOk: true, maxPrice: null };
   const ctx = ctxOf(e, t.isMock);
   const prev = s.requested_by ? undefined : one(db, `SELECT * FROM offer_searches WHERE search_key=? AND status='done' AND id<>? AND reused_from IS NULL AND finished_at>? ORDER BY id DESC LIMIT 1`, s.search_key, s.id, now() - e.reuseMs);
   let offers: ProductOffer[], report: SourceReport[], queries: SearchQuery[];
   if (prev) {
-    offers = offersOf(db, prev.id).map(o => verifyOffer(t, { ...o }, want));
+    offers = offersOf(db, prev.id).map(o => verifyBest(targets, { ...o }, want));
     report = parse(prev.report, []).map((x: SourceReport) => ({ ...x, reason: x.outcome === 'not_run' ? x.reason : `${x.reason} · ${Math.round((now() - prev.finished_at) / 3600_000)}시간 전 탐색 결과를 다시 씀` }));
     queries = parse(prev.queries, []);
   } else {
-    queries = buildQueries(t);                                                       // 2
-    const found = await searchSources(e.sources, t, queries, ctx);                   // 3
-    const merged = mergeHits(found.hits);                                            // 4
-    const normalized = await normalizeHits(merged, t, e.sources, ctx, e.maxDetails); // 5
-    offers = normalized.map(o => verifyOffer(t, o, want));                           // 6
-    report = found.report;
+    // 2·3 식별 후보마다 검색어를 만들고 소스를 검색한다(두 번째 후보부터는 검색어 3개까지). 막힌 소스는 다음 후보에서 다시 두드리지 않는다
+    queries = []; const hits: RawHit[] = [], reports: SourceReport[][] = [], blocked = new Set<string>();
+    for (const [i, ti] of targets.entries()) {
+      const qs = buildQueries(ti).slice(0, i === 0 ? 6 : 3);
+      queries.push(...(targets.length > 1 ? qs.map(q => ({ ...q, target: i + 1 })) : qs));
+      const found = await searchSources(e.sources.filter(x => !blocked.has(x.id)), ti, qs, ctx);
+      found.report.filter(x => x.outcome === 'blocked').forEach(x => blocked.add(x.id));
+      hits.push(...found.hits); reports.push(found.report);
+    }
+    const merged = mergeHits(hits);                                                        // 4
+    const normalized = await normalizeHits(merged, targets, e.sources, ctx, e.maxDetails); // 5 상세 확인은 후보 합쳐 maxDetails개까지
+    offers = normalized.map(o => verifyBest(targets, o, want));                            // 6 후보마다 검증해 가장 가까운 후보 기준
+    report = mergeReports(reports);
   }
-  const result = assemble(t, offers, report);                                        // 7
+  const result = assemble(t, offers, report, targets);                                     // 7
   const ranked = [...result.sale.same, ...result.sale.likely, ...result.sale.unverified, ...result.sale.different];
   const st = result.sale;
   const summary = st.state === 'none' ? (report.some(x => x.outcome === 'ok' || x.outcome === 'empty') ? '검색한 곳에서 판매 페이지를 찾지 못했어요' : '검색할 수 있었던 곳이 없거나 모두 실패했어요')
-    : `같은 상품(품번) ${st.same.length} · 가능성 높음 ${st.likely.length} · 확인 못 함 ${st.unverified.length} · 다른 상품 ${st.different.length}`;
+    : `같은 상품(품번) ${st.same.length} · 가능성 높음 ${st.likely.length} · 확인 못 함 ${st.unverified.length} · 다른 상품 ${st.different.length}`
+      + (targets.length > 1 ? ` · 식별 후보 ${targets.length}개 탐색(${result.candidates.filter(c => c.same || c.likely).map(c => `후보 ${c.rank}`).join('·') || '어느 후보로도 같은 상품 못 찾음'})` : '');
   run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, reused_from=?, finished_at=? WHERE id=?`, json(queries), json(report), summary, prev?.id ?? null, now(), s.id);
   saveOffers(db, s.id, { requestId: s.request_id }, ranked);
   return result;
@@ -306,7 +359,7 @@ export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
 /** 저장된 탐색 결과를 다시 7단계 모양으로(어드민·검수 화면) */
 export function searchResultOf(db: DB, s: Row): FindSearchResult & { search: Row } {
   const t: SearchTarget = parse(s.target, null);
-  return { ...assemble(t, offersOf(db, s.id), parse(s.report, [])), search: s };
+  return { ...assemble(t, offersOf(db, s.id), parse(s.report, []), parse(s.targets ?? null, null) || [t]), search: s };
 }
 export function latestSearchesFor(db: DB, watchId: number, purpose: 'discovery' | 'similar', limit = 3) {
   return all(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose=? ORDER BY id DESC LIMIT ?`, watchId, purpose, limit);
@@ -344,6 +397,30 @@ export function createOfferSearcher(db: DB, e: SearchEnv, more: (() => void)[] =
   };
 }
 
+
+// ── 사용자 화면: 어디서 찾아봤는지(실제 판매처 · 테스트 판매처 · 연결 준비 중) ──────
+// 지금 자동으로 찾는 실제 판매처는 등록한 브랜드 공식몰뿐이다(네이버 쇼핑 등은 키·연동 대기). 결과 화면에서 이 한계를 숨기지 않는다.
+export type Coverage = { kind: 'real' | 'test' | 'none'; real: string[]; pending: string[]; searched: boolean; note: string };
+const SOURCE_NAME: Record<string, string> = { naver_shopping: '네이버 쇼핑' };
+/** 이 대상에 소스마다 지금 쓸 수 있는지 */
+export const sourceStates = (e: SearchEnv, t: SearchTarget) => e.sources.map(x => ({ id: x.id, label: x.label, cost: x.cost, ...x.availability(t, ctxOf(e, t.isMock)) }));
+export function coverageOf(db: DB, requestId: number, e?: SearchEnv): Coverage | null {
+  const last = one(db, `SELECT target, report FROM offer_searches WHERE request_id=? AND purpose='find' AND status='done' ORDER BY id DESC LIMIT 1`, requestId);
+  let t: SearchTarget | null = last ? parse(last.target, null) : null;
+  let rows: { id: string; label: string; status: string; ran: boolean; cost: string }[] = last
+    ? parse(last.report, []).map((x: SourceReport) => ({ id: x.id, label: x.label, status: x.status, ran: x.outcome !== 'not_run', cost: x.cost })) : [];
+  if (!last && e) { t = targetsToSearch(db, requestId, e)[0] || null; if (t) rows = sourceStates(e, t).map(x => ({ id: x.id, label: x.label, status: x.status, ran: x.usable, cost: x.cost })); }
+  if (!rows.length) return null;
+  const name = (x: { id: string; label: string }) => x.id === 'official' ? `${t?.brand || '브랜드'} 공식몰` : SOURCE_NAME[x.id] || x.label;
+  const real = rows.filter(x => x.ran && x.id !== 'mock').map(name);
+  const test = rows.some(x => x.ran && x.id === 'mock');
+  const pending = rows.filter(x => !x.ran && x.id !== 'mock' && x.cost !== 'paid' && ['PENDING_EXTERNAL_SETUP', 'PENDING_INTEGRATION'].includes(x.status)).map(name);
+  const later = pending.length ? ` ${pending.slice(0, 3).join('·')}${pending.length > 3 ? ` 등 ${pending.length}곳` : ''}은 연결을 준비하고 있어 ${last ? '찾지 않았어요' : '아직 찾지 않아요'}.` : '';
+  const note = test && !real.length ? '테스트 판매처(가상의 상점·가격)에서만 찾았어요. 실제 판매처 결과가 아니에요.'
+    : !real.length ? `이 옷은 아직 자동으로 찾아볼 수 있는 실제 판매처가 없어요.${later}`
+    : `지금 자동으로 찾아보는 실제 판매처는 ${real.join('·')} ${real.length}곳${real.length === 1 ? '뿐' : ''}이에요.${later}`;
+  return { kind: test && !real.length ? 'test' : real.length ? 'real' : 'none', real, pending, searched: !!last, note };
+}
 
 // ── 대체 상품(비슷한 디자인의 실제 판매 상품) ─────────────────────
 // 같은 상품을 못 찾았거나 기다리는 동안 볼 대안. 찾는 옷의 디자인(사진에서 읽은 스타일)으로 고르고, 정렬은 curation.ts(디자인·실루엣 우선)가 한다.
@@ -405,7 +482,7 @@ async function runSimilarSearch(db: DB, e: SearchEnv, s: Row) {
   const summary = offers.length ? `비슷한 디자인 ${offers.length}개(정렬 ${ranker}) · ${out[0]}` : `고를 만한 비슷한 디자인이 없어요 · ${out[0]}`;
   run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, ranker=?, finished_at=? WHERE id=?`, json([{ text: styleWords(t.style).join(' · '), kind: 'style' }]), json(report), summary, ranker, now(), s.id);
   saveOffers(db, s.id, { requestId: s.request_id, watchId: s.watch_id }, offers);
-  return { identification: { basis: t.basis, basisLabel: BASIS_LABEL[t.basis], brand: t.brand, name: t.name, modelCode: t.modelCode, season: t.season, color: t.color, note: '' },
+  return { identification: { basis: t.basis, basisLabel: BASIS_LABEL[t.basis], brand: t.brand, name: t.name, modelCode: t.modelCode, season: t.season, color: t.color, note: '' }, candidates: [],
     sale: { state: 'none' as const, same: [], likely: [], unverified: [], different: [] }, sources: report, limits: [], isMock: t.isMock };
 }
 
@@ -472,9 +549,9 @@ async function runDiscoverySearch(db: DB, e: SearchEnv, s: Row) {
   saveOffers(db, s.id, { watchId: w.id }, ranked);
   return result;
 }
-/** 운영자에게 올릴 새 매물 후보: 같은 상품(품번·상품명) · 원하는 사이즈가 없거나 품절이 아님 · “새 상품만”이면 중고 제외 */
-export function discoveryCandidate(o: Pick<ProductOffer, 'verdict' | 'wantSize' | 'condition'>, w: Row) {
-  return (o.verdict === 'same_code' || o.verdict === 'likely') && !['sold_out', 'missing'].includes(o.wantSize) && !(w.condition === 'new' && o.condition === 'used');
+/** 운영자에게 올릴 새 매물 후보: 같은 상품(품번·상품명) · 원하는 사이즈가 없거나 품절이 아님 · 원하는 색이 아님이 아님 · “새 상품만”이면 중고 제외 */
+export function discoveryCandidate(o: Pick<ProductOffer, 'verdict' | 'wantSize' | 'wantColor' | 'condition'>, w: Row) {
+  return (o.verdict === 'same_code' || o.verdict === 'likely') && !['sold_out', 'missing'].includes(o.wantSize) && o.wantColor !== 'other' && !(w.condition === 'new' && o.condition === 'used');
 }
 /** 기다리는 동안 볼 대체 상품: 찾아줘에서 넘어온 기다려줘만(사진에서 읽은 디자인이 있어야 한다) */
 export function queueWatchSimilar(db: DB, e: SearchEnv, watchId: number, opts: { by?: string | null; force?: boolean } = {}): { id?: number; skipped?: string } {

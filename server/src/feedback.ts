@@ -80,7 +80,8 @@ export function exportFeedback(db: DB, secret: string, opts: { mock?: boolean } 
   }));
 }
 export function exportReviews(db: DB, opts: { mock?: boolean } = {}) {
-  return all(db, `SELECT * FROM review_log WHERE is_mock<=? ORDER BY id`, opts.mock ? 1 : 0).map(r => ({
+  // 계정 이어받기(account)는 보안 기록이라 평가 데이터에 넣지 않는다
+  return all(db, `SELECT * FROM review_log WHERE is_mock<=? AND subject<>'account' ORDER BY id`, opts.mock ? 1 : 0).map(r => ({
     type: 'review', at: new Date(r.at).toISOString(), operator: r.operator, subject: r.subject, subjectId: r.subject_id, requestId: r.request_id, watchId: r.watch_id,
     decision: r.action, auto: parse(r.auto), before: parse(r.before), after: parse(r.after), reason: r.reason, isMock: !!r.is_mock,
   }));

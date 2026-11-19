@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { type DB, tx, WANTED_CHANNELS } from './db.ts';
+import { logReview } from './reviewlog.ts';
 import { now, DAY, HUNT_MS, kDate, kTime, kWhen, kRelDay, kDayNum, won } from './time.ts';
 import { uploadUrl } from './media.ts';
 import { currentSimilar } from './offers.ts';
@@ -60,22 +61,65 @@ export function userByDevice(db: DB, deviceId: string) { return one(db, 'SELECT 
 // ── 기기 세션 ────────────────────────────────────────────────
 // 처음 세션을 열 때 서버가 토큰을 발급하고(해시만 저장), 그 뒤로는 기기 ID + 토큰이 함께 맞아야 그 사용자로 요청할 수 있다.
 // 토큰이 이미 있는 기기 ID로 토큰 없이 세션을 열면 거절한다(기기 ID만 알아낸 사람이 남의 계정을 가져가지 못하게).
+// 토큰 발급 전(이전 버전) 계정도 기기 ID만으로는 열 수 없다 — 누가 먼저 세션을 여느냐로 계정이 넘어가지 않게.
+// 이전 기록이 필요한 사용자는 왈프 팀이 확인한 뒤 일회용 이어받기 코드(30분)를 받아, 새 세션에서 그 코드로 이어받는다.
 const tokenHash = (t: string) => crypto.createHash('sha256').update(`walf-session|${t}`).digest('hex');
 export function tokenOk(u: Row, token: string | null | undefined) {
-  if (!u.token_hash) return true;  // 토큰 발급 전(이전 버전) 계정 — 다음 세션 열기 때 발급된다
+  if (!u.token_hash) return false;  // 이전 버전 계정 — 기기 ID만으로는 열 수 없다(이어받기 코드로만)
   if (!token || token.length < 20 || token.length > 200) return false;
   const a = Buffer.from(tokenHash(token)), b = Buffer.from(u.token_hash);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+export const LEGACY_MSG = '이전 버전 기록은 기기 ID만으로 열 수 없어요. 앱이 새로 시작해요. 이전 기록이 필요하면 왈프 팀에 알려 주세요.';
 export function openSession(db: DB, deviceId: string, platform: string | undefined, token: string | null | undefined): { user: Row; token?: string } {
-  const u = upsertUser(db, deviceId, platform);
-  if (u.token_hash) {
-    if (!tokenOk(u, token)) throw new HttpError(401, 'device_claimed', '이 기기 ID는 다른 세션이 쓰고 있어요. 앱이 새 기기로 다시 시작해요.');
-    return { user: u };
-  }
-  const fresh = crypto.randomBytes(32).toString('base64url');
-  run(db, 'UPDATE users SET token_hash=?, token_at=? WHERE id=?', tokenHash(fresh), now(), u.id);
-  return { user: one(db, 'SELECT * FROM users WHERE id=?', u.id)!, token: fresh };
+  return tx(db, () => {
+    const had = userByDevice(db, deviceId);
+    if (had && !had.token_hash) throw new HttpError(401, 'legacy_locked', LEGACY_MSG);
+    const u = had || upsertUser(db, deviceId, platform);
+    if (u.token_hash) {
+      if (!tokenOk(u, token)) throw new HttpError(401, 'device_claimed', '이 기기 ID는 다른 세션이 쓰고 있어요. 앱이 새 기기로 다시 시작해요.');
+      return { user: u };
+    }
+    const fresh = crypto.randomBytes(32).toString('base64url');
+    run(db, 'UPDATE users SET token_hash=?, token_at=? WHERE id=?', tokenHash(fresh), now(), u.id);
+    return { user: one(db, 'SELECT * FROM users WHERE id=?', u.id)!, token: fresh };
+  });
+}
+
+// 이어받기 코드 — 헷갈리는 글자(0·O·1·I)를 뺀 8자, 해시만 저장, 30분, 한 번만
+const CLAIM_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const claimNorm = (c: unknown) => String(c ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const claimHash = (c: string) => crypto.createHash('sha256').update(`walf-claim|${claimNorm(c)}`).digest('hex');
+export const CLAIM_TTL = 30 * 60_000;
+/** 운영자: 사용자를 확인한 뒤 이전 버전 계정의 이어받기 코드를 만든다(새로 만들면 예전 코드는 못 쓴다) */
+export function issueClaimCode(db: DB, userId: number, operator: string, t = now()) {
+  const u = one(db, 'SELECT * FROM users WHERE id=?', userId);
+  if (!u || u.deleted_at) throw new HttpError(404, 'not_found');
+  if (u.token_hash) throw new HttpError(409, 'has_token', '이미 토큰 세션이 있는 계정이에요. 이어받기 코드가 필요 없어요.');
+  const raw = Array.from(crypto.randomBytes(8), b => CLAIM_ABC[b % CLAIM_ABC.length]).join('');
+  run(db, 'UPDATE users SET claim_hash=?, claim_until=? WHERE id=?', claimHash(raw), t + CLAIM_TTL, u.id);
+  logReview(db, { operator, subject: 'account', subjectId: u.id, action: 'claim_code', after: { until: t + CLAIM_TTL }, at: t });
+  return { code: `${raw.slice(0, 4)}-${raw.slice(4)}`, until: t + CLAIM_TTL };
+}
+/**
+ * 새 세션(토큰 있음)이 이어받기 코드로 이전 버전 계정을 이어받는다 — 이 기기의 기기 ID·토큰이 그 계정으로 옮겨 가고, 지금의 빈 계정은 지운다.
+ * 지금 계정에 이미 의뢰·기다려줘·저장이 있으면 섞지 않고 거절한다.
+ */
+export function claimLegacy(db: DB, current: Row, code: unknown, t = now()) {
+  const c = claimNorm(code);
+  if (c.length !== 8) throw new HttpError(400, 'bad_code', '이어받기 코드 8자리를 넣어 주세요.');
+  const legacy = one(db, 'SELECT * FROM users WHERE claim_hash=? AND claim_until>=? AND token_hash IS NULL AND deleted_at IS NULL', claimHash(c), t);
+  if (!legacy || legacy.id === current.id) throw new HttpError(400, 'bad_code', '코드가 맞지 않거나 만료됐어요. 왈프 팀에 새 코드를 받아 주세요.');
+  const busy = ['requests', 'watches', 'offer_signals', 'offer_saves'].some(tb => one(db, `SELECT 1 FROM ${tb} WHERE user_id=? LIMIT 1`, current.id));
+  if (busy) throw new HttpError(409, 'has_data', '이 기기에 새 기록이 있어 이어받을 수 없어요. 왈프 팀에 알려 주세요.');
+  tx(db, () => {
+    run(db, 'DELETE FROM users WHERE id=?', current.id);
+    // 예전 기기의 푸시 토큰은 버린다(이 기기에서 알림을 다시 켠다)
+    run(db, 'UPDATE users SET device_id=?, platform=COALESCE(?, platform), token_hash=?, token_at=?, claim_hash=NULL, claim_until=NULL, push_token=NULL WHERE id=?',
+      current.device_id, current.platform, current.token_hash, t, legacy.id);
+    logReview(db, { operator: '사용자(이어받기 코드)', subject: 'account', subjectId: legacy.id, action: 'claimed', before: { userId: current.id }, after: { userId: legacy.id }, at: t });
+  });
+  return { userId: legacy.id as number };
 }
 
 export function getRequest(db: DB, id: number) {

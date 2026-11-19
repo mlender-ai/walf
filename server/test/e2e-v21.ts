@@ -159,7 +159,8 @@ async function main() {
   // ── Gate C: 기다려줘 — 상품 페이지 가격 감시와 새 매물 탐색 분리 · 대체 상품 ──
   const conf = await api('POST', `/requests/${id}/find/confirm`, { identityId: f.match.id, next: 'watch' });
   assert.equal(conf.status, 200);
-  const cw = await api('POST', '/watches', { productId: String(conf.j.productId), requestId: String(id), targetPrice: '180000', size: 'M' });
+  // 원하는 가격 195,000 — 공식몰 판매가 189,000 + 배송비 3,000(할인가만으로는 조건 충족으로 치지 않는다)
+  const cw = await api('POST', '/watches', { productId: String(conf.j.productId), requestId: String(id), targetPrice: '195000', size: 'M' });
   assert.equal(cw.status, 201);
   const wid = cw.j.id;
   assert.equal(cw.j.status, 'needs_info', '상품 페이지가 없으니 가격 감시는 확인 대기');
@@ -168,7 +169,7 @@ async function main() {
   assert.ok(cw.j.discovery.sources.some((x: any) => x.id === 'bunjang' && !x.usable && /제39조/.test(x.reason)), '지원하지 않는 곳은 이유와 함께 “찾지 않는 곳”');
   const wh = await waitFor(`/watches/${wid}`, /data-discovery="done:3"/);
   assert.match(wh, /1 · 상품 페이지 가격 감시[\s\S]*?상품 페이지 없음[\s\S]*?2 · 새 판매처·새 매물 탐색/);
-  assert.match(wh, /알림 후보 3[\s\S]*?원하는 조건 충족\(페이지 기준\)[\s\S]*?테스트 공식몰/);
+  assert.match(wh, /알림 후보 3[\s\S]*?원하는 조건 모두 확인\(페이지 기준\)[\s\S]*?테스트 공식몰/);
   assert.match(await page('/'), new RegExp(`기다려줘: 새 판매처 후보[\\s\\S]*?W${wid} `));
   let wv = (await api('GET', `/watches/${wid}`)).j;
   assert.equal(wv.discovery.state, 'reviewing'); assert.equal(wv.discovery.items.length, 0, '검수 전 후보는 앱에 보이지 않는다');
@@ -182,7 +183,7 @@ async function main() {
   const al = ((await api('GET', '/alerts')).j as any[]).filter(n => n.kind === 'watch_discovery');
   assert.equal(al.length, 1); assert.equal(al[0].title, '다른 판매처에서 원하는 조건의 매물을 찾았어요');
   assert.ok(!/구매 가능/.test(JSON.stringify(wv) + al[0].body));
-  ok('운영자 검수 후 앱에 새 판매처 2곳(같은 상품 확인 · 같은 상품일 수 있음) · 원하는 조건 충족(173,100원 ≤ 180,000 · M)만 알림 1번 · 가격 감시 상태는 그대로');
+  ok('운영자 검수 후 앱에 새 판매처 2곳(같은 상품 확인 · 같은 상품일 수 있음) · 원하는 조건을 모두 확인한 곳(판매가+배송비 192,000원 ≤ 195,000 · M)만 알림 1번 · 배송비 모르는 곳은 알림 없음 · 가격 감시 상태는 그대로');
   assert.equal((await api('PATCH', `/watches/${wid}`, { discoverySources: ['mock', 'bunjang'] })).status, 400, '지원하지 않는 곳은 고를 수 없다');
   const wsh = await waitFor(`/watches/${wid}`, /data-watch-similar="done"/);
   const simW = [...wsh.matchAll(/id="offer-(\d+)"/g)].map(x => Number(x[1])).filter(n => { const d = new DatabaseSync(DB_FILE, { readOnly: true }); try { return (d.prepare(`SELECT relation FROM offers WHERE id=?`).get(n) as any)?.relation === 'similar'; } finally { d.close(); } });

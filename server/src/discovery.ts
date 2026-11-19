@@ -4,7 +4,7 @@
 import { type DB } from './db.ts';
 import { HttpError } from './domain.ts';
 import * as S from './findsearch.ts';
-import { card, meetsWatch, type OfferCard } from './offerreview.ts';
+import { card, wantOfWatch, watchFit, type OfferCard } from './offerreview.ts';
 import { currentSimilar, offerOf } from './offers.ts';
 import { feedbackMap, priorityOptions, recordSignal, savedSet } from './feedback.ts';
 import { now, kWhen } from './time.ts';
@@ -23,7 +23,8 @@ const noteOf = (status: string, usable: boolean, paid: boolean, isMock: boolean,
   : status === 'PENDING_INTEGRATION' ? '약관·연동을 확인하고 있어요'
   : status === 'PENDING_EXTERNAL_SETUP' ? (paid ? '유료 기능이라 아직 쓰지 않아요' : '연결을 준비하고 있어요')
   : isMock ? '테스트 기다려줘라 실제 판매처는 열지 않아요' : /공식몰/.test(reason) ? '이 브랜드 공식몰은 아직 등록 전이에요' : '지금은 찾아볼 수 없어요';
-export type DiscoveryCard = OfferCard & { isNew: boolean; meetsTarget: boolean };
+/** meetsTarget: 원하는 조건이 모두 확인됨(확인 못 한 값이 있으면 false) · targetNote: 맞지 않거나 확인하지 못한 조건 한 줄 */
+export type DiscoveryCard = OfferCard & { isNew: boolean; meetsTarget: boolean; targetNote: string | null };
 
 /** 이 기다려줘에서 찾아볼 수 있는 곳 — 사용자가 켜고 끌 수 있는 곳(usable)과 찾지 않는 곳(이유) */
 export function discoverySources(db: DB, e: S.SearchEnv, w: Row): DiscoverySource[] {
@@ -63,21 +64,29 @@ export function updateDiscovery(db: DB, userId: number, watchId: number, patch: 
 
 /** 기다려줘 화면: 새 판매처(검수 후 공개분) · 기다리는 동안 볼 대체 상품 · 저장 표시 */
 export function watchExtrasView(db: DB, w: Row, base: string, e: S.SearchEnv, userId: number, t = now()) {
-  const size = w.size ? String(w.size).toUpperCase() : null;
   const saved = savedSet(db, userId, w.id);
   const rows = all(db, `SELECT * FROM offers WHERE watch_id=? AND published=1 AND ${currentSimilar('watch_id')} ORDER BY CASE publish_tier WHEN 'exact' THEN 0 WHEN 'possible' THEN 1 ELSE 2 END, search_id DESC, rank`, w.id).map(offerOf);
   const last = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='discovery' ORDER BY id DESC LIMIT 1`, w.id);
   const lastDone = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='discovery' AND status='done' ORDER BY id DESC LIMIT 1`, w.id);
   // “새로 찾음”: 마지막 탐색에서 이 기다려줘가 처음 본 페이지
   const isNew = (id: number) => !!lastDone && !!one(db, `SELECT 1 FROM offers o WHERE o.id=? AND o.search_id=? AND NOT EXISTS (SELECT 1 FROM offers p WHERE p.watch_id=o.watch_id AND p.url_key=o.url_key AND p.id<o.id)`, id, lastDone.id);
-  const items: DiscoveryCard[] = rows.filter(o => o.relation === 'same').map(o => ({ ...card(o, size, base), isNew: isNew(o.id), meetsTarget: meetsWatch(o, w) }));
+  const items: DiscoveryCard[] = rows.filter(o => o.relation === 'same').map(o => {
+    const f = watchFit(o, w);
+    return { ...card(o, wantOfWatch(w), base), isNew: isNew(o.id), meetsTarget: f.state === 'met',
+      targetNote: f.state === 'unmet' ? `조건과 달라요 · ${f.unmet[0]}` : f.state === 'unknown' ? `확인하지 못한 조건 · ${f.unknown[0]}` : null };
+  });
   const sources = discoverySources(db, e, w);
+  // 실제 판매처가 몇 곳뿐인지 숨기지 않는다(테스트 기다려줘는 가상의 판매처만)
+  const tg = S.watchTargetOf(db, w, e.malls);
+  const realSel = sources.filter(x => x.selected && x.id !== 'mock').map(x => x.id === 'official' ? `${tg?.brand || '브랜드'} 공식몰` : x.id === 'naver_shopping' ? '네이버 쇼핑' : x.label);
+  const coverageNote = w.is_mock ? '테스트 판매처(가상의 상점·가격)에서만 찾아요. 실제 판매처 결과가 아니에요.'
+    : realSel.length ? `지금 자동으로 찾아보는 실제 판매처는 ${realSel.join('·')} ${realSel.length}곳${realSel.length === 1 ? '뿐' : ''}이에요.` : '지금 자동으로 찾아볼 수 있는 실제 판매처가 없어요.';
   const pendingCands = lastDone ? all(db, `SELECT * FROM offers WHERE search_id=? AND review_state='pending'`, lastDone.id).map(offerOf).filter(o => S.discoveryCandidate(o, w)).length : 0;
   const state = !w.discovery ? 'off' : items.length ? 'ready' : !sources.some(x => x.selected) ? 'unavailable' : !last ? 'not_started'
     : ['queued', 'running'].includes(last.status) ? 'searching' : last.status === 'failed' ? 'failed' : pendingCands ? 'reviewing' : 'none';
   const searched = parse(lastDone?.report ?? null, []).filter((x: any) => x.outcome !== 'not_run').map((x: any) => x.label);
   const fb = feedbackMap(db, userId, rows.filter(o => o.relation === 'similar').map(o => o.id));
-  const alts = rows.filter(o => o.relation === 'similar').map(o => ({ ...card(o, size, base), saved: saved.has(o.id), feedback: fb.get(o.id) ?? null }));
+  const alts = rows.filter(o => o.relation === 'similar').map(o => ({ ...card(o, wantOfWatch(w), base), saved: saved.has(o.id), feedback: fb.get(o.id) ?? null }));
   const simLast = one(db, `SELECT * FROM offer_searches WHERE watch_id=? AND purpose='similar' ORDER BY id DESC LIMIT 1`, w.id);
   const simPending = simLast?.status === 'done' && !!one(db, `SELECT 1 FROM offers WHERE search_id=? AND review_state='pending'`, simLast.id);
   return {
@@ -85,7 +94,7 @@ export function watchExtrasView(db: DB, w: Row, base: string, e: S.SearchEnv, us
       enabled: !!w.discovery, state, items,
       lastLabel: lastDone?.finished_at ? kWhen(lastDone.finished_at, t) : null,
       nextLabel: w.discovery && w.next_discovery_at && ['active', 'needs_info'].includes(w.status) ? (w.next_discovery_at <= t ? '곧 확인' : kWhen(w.next_discovery_at, t)) : null,
-      searchedSources: searched, sources,
+      searchedSources: searched, sources, coverageNote,
       note: '번개장터·무신사 등은 약관·제휴 확인 전이라 자동으로 찾지 않아요. 찾은 곳은 왈프 팀이 같은 상품인지 확인한 뒤 보여 드려요.',
     },
     alternatives: {

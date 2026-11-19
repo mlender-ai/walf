@@ -127,8 +127,11 @@ export default function WatchScreen() {
         {dv ? <>
           <Gap h={8} />
           <Head title="새 판매처" sub="같은 상품을 파는 다른 곳" desc="위 상품 페이지와 따로, 같은 상품을 파는 다른 판매처를 하루 한 번 찾아요. 왈프 팀이 확인한 곳만 보여 드려요." />
+          {dv.enabled && dv.coverageNote ? <View style={{ marginHorizontal: 20, marginTop: 10, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+            {w.isMock ? <MockPill /> : <Icon name="search" size={14} stroke={2} color={C.gray500} />}<T size={12.5} lh={18} color={w.isMock ? C.black : C.gray500} style={{ flex: 1 }}>{dv.coverageNote}</T></View> : null}
           {dv.items.length ? dv.items.map(o => <OfferCard key={o.id} o={o} onOpen={() => opened(o.id)} extra={o.isNew ? [{ kind: 'p', text: '새로 찾음' } as TagT] : []}
-              note={o.meetsTarget ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 8 }}><Icon name="check" size={14} stroke={2.4} /><T size={12.5} w={700}>원하는 가격({won(w.conditions.targetPrice)}) 이하 · 원하는 옵션 있음</T></View> : null} />)
+              note={o.meetsTarget ? <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 8 }}><Icon name="check" size={14} stroke={2.4} /><T size={12.5} w={700} style={{ flex: 1 }}>{o.tier === 'exact' ? `원하는 조건 모두 확인 · ${won(w.conditions.targetPrice)} 이하` : `가격·옵션은 원하는 조건에 맞아요 · 같은 상품인지는 확정 전`}</T></View>
+                : o.targetNote ? <T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 8 }}>{o.targetNote}</T> : null} />)
             : <View style={st.box}><T size={14} w={700}>{DISC_TITLE[dv.state]}</T><T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 4 }}>{discDesc}</T></View>}
           {dv.enabled && (dv.lastLabel || dv.nextLabel) ? <T size={12} color={C.gray500} style={{ marginHorizontal: 20, marginTop: 10 }}>{[dv.lastLabel && `마지막 확인 ${dv.lastLabel}`, dv.nextLabel && `다음 확인 ${dv.nextLabel}`].filter(Boolean).join(' · ')}</T> : null}
           {w.actions.edit ? <View style={{ marginHorizontal: 20, marginTop: 14 }}>

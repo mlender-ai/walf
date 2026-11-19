@@ -10,7 +10,7 @@ import * as F from './find.ts';
 import * as W from './watch.ts';
 import { SOURCES } from './sources.ts';
 import sharp from 'sharp';
-import type { SearchEnv } from './findsearch.ts';
+import { coverageOf, type SearchEnv } from './findsearch.ts';
 import * as X from './discovery.ts';
 import * as FB from './feedback.ts';
 import { uploadUrl } from './media.ts';
@@ -90,6 +90,13 @@ export function userApi(db: DB, cfg: Cfg) {
     res.json({ userId: s.user.id, ...(s.token ? { token: s.token } : {}) }); // 토큰은 처음 한 번만 준다(앱이 저장)
   });
 
+  // 이전 버전 계정 이어받기 — 왈프 팀이 사용자를 확인하고 준 일회용 코드로만(기기 ID만으로는 열 수 없다). 시도 횟수를 따로 제한한다
+  const claimTries = rateLimiter(5, 10 * 60_000);
+  r.post('/session/claim', auth, (req, res) => {
+    if (!claimTries(String(uid(req)))) return res.status(429).json({ error: 'rate_limited', message: '시도가 많아요. 10분 뒤에 다시 넣어 주세요.' });
+    res.json(D.claimLegacy(db, (req as any).user, req.body?.code));
+  });
+
   r.get('/me', auth, (req, res) => {
     const base = baseOf(req);
     const open = D.openRequestOf(db, uid(req));
@@ -111,17 +118,19 @@ export function userApi(db: DB, cfg: Cfg) {
   r.get('/items', auth, (req, res) => res.json(W.myItems(db, uid(req), baseOf(req), cfg.policy)));
   r.get('/sources', auth, (_q, res) => res.json(SOURCES.filter(s => s.status !== 'TEST_ONLY').map(s => ({ id: s.id, label: s.label, kind: s.kind, status: s.status, reason: s.reason, checked: s.checked }))));
 
-  r.get('/requests/:id/find', auth, (req, res) => res.json(F.findView(db, D.ownRequest(db, uid(req), idp(req.params.id)), baseOf(req))));
+  // 찾아줘 결과 — 어디서 찾아봤는지(실제 판매처 몇 곳·테스트 판매처)를 함께 준다
+  const findOut = (req: express.Request, r: any) => F.findView(db, r, baseOf(req), coverageOf(db, r.id, cfg.search));
+  r.get('/requests/:id/find', auth, (req, res) => res.json(findOut(req, D.ownRequest(db, uid(req), idp(req.params.id)))));
   r.post('/requests/:id/find/confirm', auth, (req, res) => {
     const id = idp(req.params.id), next = req.body?.next;
     if (!['hunt', 'watch', 'save'].includes(next)) throw new HttpError(400, 'bad_next');
     const out = F.confirmFind(db, uid(req), id, Number(req.body?.identityId), next);
-    res.json({ ...out, find: F.findView(db, D.getRequest(db, id), baseOf(req)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
+    res.json({ ...out, find: findOut(req, D.getRequest(db, id)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
   });
   r.post('/requests/:id/find/reject', auth, (req, res) => {
     const id = idp(req.params.id);
     F.rejectFind(db, uid(req), id, req.body?.reason);
-    res.json(F.findView(db, D.getRequest(db, id), baseOf(req)));
+    res.json(findOut(req, D.getRequest(db, id)));
   });
 
   // 상품 페이지 가격 감시(Price Watch) + 새 판매처 탐색(Listing Discovery) · 대체 상품 — 서로 다른 작업, 화면에서도 나눠 보여 준다
@@ -151,7 +160,7 @@ export function userApi(db: DB, cfg: Cfg) {
   r.post('/requests/:id/priority', auth, (req, res) => {
     const id = idp(req.params.id);
     FB.setPriority(db, uid(req), { requestId: id }, req.body?.priority ?? null);
-    res.json(F.findView(db, D.ownRequest(db, uid(req), id), baseOf(req)));
+    res.json(findOut(req, D.ownRequest(db, uid(req), id)));
   });
   r.post('/offers/:id/feedback', auth, (req, res) => res.json(FB.recordSignal(db, uid(req), idp(req.params.id), String(req.body?.kind || '') as FB.SignalKind)));
   r.post('/offers/:id/open', auth, (req, res) => res.json(FB.recordSignal(db, uid(req), idp(req.params.id), 'open')));

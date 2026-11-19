@@ -6,6 +6,7 @@ import { Platform } from 'react-native';
 const K_DEVICE = 'walf.device';
 const K_TOKEN = 'walf.token';  // 서버가 처음 세션을 열 때 준 토큰 — 기기 ID와 함께 보내야 내 계정으로 요청된다
 const K_BASE = 'walf.apiBase';
+const K_LEGACY = 'walf.legacy'; // 이 기기의 이전 버전 기록이 잠겨 새로 시작했음(이어받기 코드로만 열 수 있다)
 export const DEFAULT_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4300').replace(/\/$/, '');
 
 let base = DEFAULT_BASE;
@@ -31,9 +32,20 @@ async function openSession(retry = true): Promise<void> {
     const r = await call<{ userId: number; token?: string }>('POST', '/session', { deviceId: device, platform: Platform.OS });
     if (r.token) { token = r.token; await AsyncStorage.setItem(K_TOKEN, r.token); }
   } catch (e) {
-    if (retry && e instanceof ApiError && e.code === 'device_claimed') { device = Crypto.randomUUID(); token = null; await AsyncStorage.setItem(K_DEVICE, device); await AsyncStorage.removeItem(K_TOKEN); return openSession(false); }
+    // 다른 세션이 쓰는 기기 ID이거나, 기기 ID만으로는 열 수 없는 이전 버전 기록이면 새 기기 ID로 다시 시작한다
+    if (retry && e instanceof ApiError && (e.code === 'device_claimed' || e.code === 'legacy_locked')) {
+      if (e.code === 'legacy_locked') await AsyncStorage.setItem(K_LEGACY, '1');
+      device = Crypto.randomUUID(); token = null; await AsyncStorage.setItem(K_DEVICE, device); await AsyncStorage.removeItem(K_TOKEN); return openSession(false);
+    }
     throw e;
   }
+}
+/** 이전 버전 기록이 잠겨 새로 시작한 기기인가(MY에서 이어받기 안내를 보여 준다) */
+export const legacyLocked = async () => (await AsyncStorage.getItem(K_LEGACY)) === '1';
+/** 왈프 팀이 사용자를 확인하고 준 이어받기 코드로 이전 버전 기록을 이 기기로 옮긴다 */
+export async function claimLegacy(code: string) {
+  await call('POST', '/session/claim', { code });
+  await AsyncStorage.removeItem(K_LEGACY);
 }
 export const getBase = () => base;
 export const getDevice = () => device;

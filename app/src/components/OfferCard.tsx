@@ -8,6 +8,16 @@ import type { OfferCard as Offer, TagT } from '@/lib/types';
 const won = (n: number | null | undefined) => (n == null ? '—' : `${n.toLocaleString('ko-KR')}원`);
 const TAG = { exact: { kind: 'v', text: '같은 상품 확인' }, possible: { kind: 'o', text: '같은 상품일 수 있어요' }, alternative: { kind: 'x', text: '같은 상품 아님' } } as const;
 const COND = { new: '새 상품', used: '중고', unknown: '' };
+/** 색상·사이즈·상태 한 줄 — 원하는 조건과 다르면 굵게, 확인 못 한 값은 “확인 필요”로(맞는 것처럼 보이지 않게) */
+function Facts({ o }: { o: Offer }) {
+  if (!o.facts?.length) return null;
+  return (
+    <T size={12} lh={17} color={C.gray500} style={{ marginTop: 2 }} accessibilityLabel={`옵션: ${o.facts.map(f => f.text).join(', ')}`}>
+      {o.facts.map((f, i) => <T key={i} size={12} lh={17} w={f.state === 'no' ? 700 : f.state === 'ok' ? 600 : 400} color={f.state === 'no' || f.state === 'ok' ? C.black : C.gray500}>
+        {i ? ' · ' : ''}{f.state === 'ok' ? '✓ ' : ''}{f.text}</T>)}
+    </T>
+  );
+}
 
 /**
  * 판매처 후보·대체 상품 한 장. 가격·재고는 페이지를 읽은 시각 기준이라 “구매 가능”이라고 말하지 않는다.
@@ -35,12 +45,13 @@ export function OfferCard({ o, extra = [], note, footer, onFeedback, onOpen }: {
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Tag t={TAG[o.tier]} />{extra.map((t, i) => <Tag key={i} t={t} />)}{o.isMock ? <MockPill /> : null}</View>
           {o.brand ? <T size={11.5} w={800} ls={0.5} style={{ marginTop: 8 }} numberOfLines={1}>{o.brand.toUpperCase()}</T> : null}
           <T size={14.5} w={700} lh={20} style={{ marginTop: o.brand ? 1 : 8 }} numberOfLines={2}>{o.name}</T>
-          <T size={12} color={C.gray500} style={{ marginTop: 2 }} numberOfLines={1}>{[o.seller, COND[o.condition]].filter(Boolean).join(' · ')}</T>
+          <T size={12} color={C.gray500} style={{ marginTop: 2 }} numberOfLines={1}>{o.facts?.length ? o.seller : [o.seller, COND[o.condition]].filter(Boolean).join(' · ')}</T>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
             {o.salePrice != null && o.price != null && o.salePrice < o.price ? <T size={12} color={C.gray500} style={{ textDecorationLine: 'line-through' }}>{won(o.price)}</T> : null}
             <T size={16} w={800} ls={-0.3}>{won(item)}</T>
           </View>
-          <T size={12} color={C.gray500}>{o.total != null ? `배송비 포함 ${won(o.total)}` : '배송비 확인 필요'}{o.sizeLabel ? ` · ${o.sizeLabel}` : ''}</T>
+          <T size={12} color={C.gray500}>{o.total != null ? `배송비 포함 ${won(o.total)}` : '배송비 확인 필요'}{!o.facts?.length && o.sizeLabel ? ` · ${o.sizeLabel}` : ''}</T>
+          <Facts o={o} />
         </View>
       </View>
       {o.tier === 'alternative' && facts.length ? (

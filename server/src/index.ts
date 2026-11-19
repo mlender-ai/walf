@@ -11,7 +11,7 @@ import { aiFromEnv } from './ai.ts';
 import { createAiWorker, recoverAiJobs, ensureAiJobs } from './aijobs.ts';
 import { loadSeedFile } from './catalog.ts';
 import { limitsFromEnv } from './cost.ts';
-import { createChecker, policyFromEnv, tickWatches } from './watch.ts';
+import { createChecker, policyFromEnv, resettleAutoMatched, tickWatches } from './watch.ts';
 import { createOfferSearcher, ensureDiscoveries, recoverOfferSearches, searchEnvFrom } from './findsearch.ts';
 import { setMediaSecret, verifyUpload } from './media.ts';
 
@@ -76,6 +76,9 @@ if (ai) {
 }
 // 기다려줘: 하루 한 번 가격 확인(AI 호출 없음). 끊긴 조회는 tick 이 회수한다
 const w0 = tickWatches(db, policy);
+// 예전 규칙(상품명·품번 일부)으로 자동 “같음”이 된 상품 페이지는 지금 규칙으로 다시 판정한다(페이지를 다시 열지 않음)
+const resettled = resettleAutoMatched(db, policy);
+if (resettled) console.log(`상품 페이지 동일성 ${resettled}건을 지금 규칙으로 다시 판정했어요.`);
 if (w0.recovered) console.log(`가격 확인 ${w0.recovered}건을 다시 대기열에 넣었어요(서버 재시작).`);
 checker.start(Number(process.env.WALF_WATCH_POLL_MS || 10_000));
 const s0 = recoverOfferSearches(db);

@@ -25,7 +25,7 @@ const policy = { ...W.policyFromEnv({ WALF_QA_TOOLS: '1' } as any) };
 const runAll = async (db: any, e: S.SearchEnv) => { const w = S.createOfferSearcher(db, e); while (await w.step()) {} };
 
 /** 사진으로 찾아줘 → 운영자 MATCH 공개 → “원하는 가격 기다리기” → 기다려줘(원하는 가격 180,000 · M) */
-async function setup(opts: { url?: string; condition?: string; device?: string } = {}) {
+async function setup(opts: { url?: string; condition?: string; device?: string; target?: string } = {}) {
   setClock(T0);
   const db = openDb(':memory:');
   loadBrandSeed(db, [{ name: 'BADBLOOD', ko: ['배드블러드'], tags: [] }] as any, 'fixture');
@@ -34,7 +34,7 @@ async function setup(opts: { url?: string; condition?: string; device?: string }
   const p = mockProvider(); A.ensureAiJobs(db, p); await A.createAiWorker(db, p, '/tmp').step();
   F.publishFind(db, rid, { items: [{ aiIdentityId: F.findDraft(db, rid).identities[0].id, tier: 'match' }], discover: [] }, '운영자');
   const { productId } = F.confirmFind(db, u.id, rid, F.findView(db, D.getRequest(db, rid)).match!.id, 'watch');
-  const wid = W.createWatch(db, u.id, { productId, requestId: rid, productUrl: opts.url, targetPrice: '180000', size: 'M', condition: opts.condition }, policy);
+  const wid = W.createWatch(db, u.id, { productId, requestId: rid, productUrl: opts.url, targetPrice: opts.target || '180000', size: 'M', condition: opts.condition }, policy);
   return { db, u, rid, wid, w: () => db.prepare('SELECT * FROM watches WHERE id=?').get(wid) as any };
 }
 const count = (db: any, sql: string, ...p: any[]) => (db.prepare(sql).get(...p) as any).n as number;
@@ -80,19 +80,20 @@ test('[새 매물] 지켜보는 상품 페이지는 빼고 · 같은 상품·원
 });
 
 test('[검수·알림] 운영자가 확인해야 사용자에게 보이고, 원하는 조건(가격·사이즈) 충족 판매처만 알림 — 같은 판매처 알림은 한 번', async () => {
-  const { db, u, wid, w } = await setup();
+  // 원하는 가격 195,000 — 공식몰 판매가 189,000 + 배송비 3,000(할인가가 아니라 판매가로 충족)
+  const { db, u, wid, w } = await setup({ target: '195000' });
   S.queueDiscovery(db, env(), wid); await runAll(db, env());
   const sid = S.latestSearchesFor(db, wid, 'discovery', 1)[0].id;
   const by = (url: string) => offersOf(db, sid).find(o => o.url === url)!;
   let v = X.watchExtrasView(db, w(), 'http://h', env(), u.id);
   assert.equal(v.discovery.state, 'reviewing'); assert.equal(v.discovery.items.length, 0, '검수 전에는 보이지 않는다');
-  R.reviewOffer(db, by('mock://shop/official-055-navy').id, 'exact', {}, '운영자');           // 173,100원 ≤ 180,000 · M 재고
+  R.reviewOffer(db, by('mock://shop/official-055-navy').id, 'exact', {}, '운영자');           // 192,000원 ≤ 195,000 · M 재고
   R.reviewOffer(db, by('mock://shop/select-mystic-navy').id, 'possible', {}, '운영자');      // 배송비 모름 → 알림 없음
   R.reviewOffer(db, by('mock://shop/other-brand').id, 'reject', { reason: '다른 상품' }, '운영자');
   const n = db.prepare('SELECT * FROM notifications WHERE user_id=? AND kind=?').all(u.id, 'watch_discovery') as any[];
   assert.equal(n.length, 1);
   assert.equal(n[0].title, '다른 판매처에서 원하는 조건의 매물을 찾았어요');
-  assert.match(n[0].body, /테스트 공식몰 · 배송비 포함 173,100원 · M 재고 있음\(페이지를 읽은 시각 기준\)\. 왈프 팀이 같은 상품인지 확인했어요/);
+  assert.match(n[0].body, /테스트 공식몰 · 배송비 포함 192,000원 · M 재고 있음\(페이지를 읽은 시각 기준\)\. 왈프 팀이 같은 상품인지 확인했어요/);
   assert.ok(!/구매 가능/.test(n[0].body + n[0].title));
   v = X.watchExtrasView(db, w(), 'http://h', env(), u.id);
   assert.equal(v.discovery.state, 'ready');

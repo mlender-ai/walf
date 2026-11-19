@@ -89,10 +89,12 @@
 |---|---|---|
 | `identity` 식별 결과 공개 | `match` 같은 옷 확인 · `likely` 유력 후보 · `skip` 공개 안 함 | `tier` 서버 판정 · `confidence` · `brand` · `name` · `modelCode` · `season` · `refs` 근거 수 · `uncertain` |
 | `discover` 비슷한 스타일 브랜드 | `publish` | `brand` · `scope` · `score` · `reasons` · `status` |
-| `offer` 판매처 후보·대체 상품 | `exact` 같은 상품 확인 · `possible` 같은 상품일 수 있음 · `alternative` 비슷한 디자인 · `reject` 제외 · `hide` 숨김 | `relation` · `verdict`(`same_code`·`likely`·`unverified`·`different`) · `checks`(`[항목, 결과]`, 항목 `model_code`·`brand`·`name`·`color`·`size`·`image`, 결과 `match`·`mismatch`·`unknown`·`not_checked`) · `score` · `rank` · `recommender` · `recommenderVersion` · `seller` · `name` · `url` · `price` · `shipping` · `similarPoints` · `diffPoints` · 기다려줘면 `meetsWatch` |
+| `offer` 판매처 후보·대체 상품 | `exact` 같은 상품 확인 · `possible` 같은 상품일 수 있음 · `alternative` 비슷한 디자인 · `reject` 제외 · `hide` 숨김 | `relation` · `verdict`(`same_code`·`likely`·`unverified`·`different`) · `checks`(`[항목, 결과]`, 항목 `model_code`·`brand`·`name`·`color`·`size`·`image`, 결과 `match`·`mismatch`·`unknown`·`not_checked`) · `score` · `rank` · `recommender` · `recommenderVersion` · `seller` · `name` · `url` · `price` · `shipping` · `similarPoints` · `diffPoints` · `targetRef`·`targetRank`(여러 식별 후보로 찾았을 때 어느 후보 기준인지) · 기다려줘면 `meetsWatch`와 `fit`(`state` `met`·`unmet`·`unknown` · `met`/`unmet`/`unknown` 조건 문장) |
 | `watch_url` 상품 페이지 연결 | `attach` | — (`before.url` → `after.url`) |
 | `watch_page` 페이지 동일성 | `page_same` · `page_diff` | `pageIdentity` · `note` · `url` · `title` |
 | `shipping` 배송비 확인 | `shipping` | `url` (`before.fee` → `after.fee`) |
+
+계정 이어받기 기록(`subject="account"`)은 보안 기록이라 내보내기에 넣지 않아요.
 
 `identity`에서 운영자가 브랜드·이름을 고쳤으면 `before`·`after`에 `{brand, name}`이 들어가요. 고치지 않았으면 둘 다 `null`이에요.
 

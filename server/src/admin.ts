@@ -87,7 +87,7 @@ function offerCardHtml(o: ProductOffer, size: string | null, forWatch = false) {
       <button class="btn sm" style="flex:none">저장</button></form>${so.published ? `<form method="post" action="/admin/offers/${so.id}/review" style="margin-top:4px"><input type="hidden" name="action" value="hide"><button class="btn s sm">사용자 화면에서 내리기</button></form>` : ''}` : '';
     const sizes = [...new Set(o.options.map(x => `${x.size || '?'}${x.color ? `(${x.color})` : ''} ${x.stock === 'in_stock' ? '있음' : x.stock === 'sold_out' ? '품절' : '모름'}`))];
     const head = o.relation === 'similar' ? `<span class="tg x">비슷한 디자인 · 같은 상품 아님</span> <span class="sub">디자인 점수 ${o.score ?? '—'} · ${esc(o.recommender)} ${esc(o.recommenderVersion)}</span>`
-      : `<span class="tg ${o.verdict === 'same_code' ? 'v' : o.verdict === 'likely' ? 'o' : 'x'}">${VERDICT_LABEL[o.verdict]}</span> <span class="tg p">${DETAIL_LABEL[o.detail]}</span>`;
+      : `<span class="tg ${o.verdict === 'same_code' ? 'v' : o.verdict === 'likely' ? 'o' : 'x'}">${VERDICT_LABEL[o.verdict]}</span> <span class="tg p">${DETAIL_LABEL[o.detail]}</span>${o.targetRank && o.targetRank > 1 ? ` <span class="tg o">식별 후보 ${o.targetRank} 기준</span>` : ''}`;
     return `<div class="of" id="offer-${so.id}">${offerImg(o)}<div><p style="margin:0">${head} ${state}${o.isMock ? MOCK : ''}</p>
       <p style="margin:4px 0 0"><b>${esc(o.seller)}</b> · <a href="${o.url.startsWith('mock://') ? '#' : esc(o.url)}" target="_blank" rel="noopener noreferrer">${esc(o.name || o.url)}</a></p>
       <ul class="ck">${o.checks.map(c => `<li class="${c.result === 'match' ? 'm' : c.result === 'mismatch' ? 'x' : ''}">${CHECK_MARK[c.result]} ${esc(c.text)}</li>`).join('')}</ul>
@@ -120,6 +120,7 @@ function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
   return `<section class="ob" data-offers="${esc(s.status)}:${r.sale.state}"><h2>판매처 탐색 <span class="sub">· 실제 판매 상품 후보(AI 식별과 별도) · 검수 전에는 사용자에게 보이지 않아요</span>${s.is_mock ? MOCK : ''}</h2>
     <div class="aibar"><b>탐색 대상</b><span>${esc([id.brand, id.name].filter(Boolean).join(' '))}${id.modelCode ? ` · 품번 ${esc(id.modelCode)}` : ''}</span><span class="sub">${esc(id.basisLabel)} · ${busy ? (s.status === 'queued' ? '대기 중' : '탐색 중') : s.status === 'failed' ? `실패 · ${esc(s.error)}` : `${kWhen(s.finished_at, t)} 완료${s.reused_from ? ` · #${s.reused_from} 결과 다시 씀(소스를 다시 열지 않음)` : ''}`}</span><span class="sp"></span>${busy ? '' : button}</div>
     ${s.summary ? `<p><b>${esc(s.summary)}</b></p>` : ''}
+    ${r.candidates.length > 1 ? `<p class="sub">식별이 확정 전이라 후보 ${r.candidates.length}개를 함께 찾았어요(첫 후보가 틀렸을 수 있어서): ${r.candidates.map(c => `<b>후보 ${c.rank}</b> ${esc([c.brand, c.name].filter(Boolean).join(' '))}${c.modelCode ? ` · ${esc(c.modelCode)}` : ''} — 품번 일치 ${c.same} · 가능성 ${c.likely}`).join(' / ')}. 두 번째 후보부터는 검색어 3개까지, 상세 확인은 후보 합쳐 ${e.maxDetails}개까지예요.</p>` : ''}
     <details ${r.sale.state === 'none' ? 'open' : ''}><summary>소스별 처리 ${r.sources.filter(x => x.outcome !== 'not_run').length}곳 검색 · ${r.sources.filter(x => x.outcome === 'not_run').length}곳 검색하지 않음</summary><table><thead><tr><th>소스</th><th>상태</th><th>이번 탐색</th><th>근거·검색어</th></tr></thead><tbody>${rows}</tbody></table></details>
     ${group('같은 상품 · 품번 일치', r.sale.same)}${group('같은 상품일 가능성 높음', r.sale.likely)}${group('같은 상품인지 확인 못 함', r.sale.unverified)}${group('다른 상품(제외)', r.sale.different, false)}
     <ul class="sub" style="list-style:disc;padding-left:18px;margin-top:10px">${r.limits.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
@@ -226,7 +227,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
       ['24시간 안에 7일 종료', '종료 보고가 자동으로 발송돼요', q(`SELECT * FROM requests WHERE status='active' AND expires_at<=?`, t + DAY).map(x => link(x, `${kWhen(x.expires_at, t)} 종료`)).join('')],
       ['찾아줘 결과: 사용자가 아니라고 함', '다시 확인해 결과를 공개하거나 보완을 요청하세요', F.rejectedQueue(db).map(x => link(x, `${kWhen(x.rejected_at, t)} · 사용자가 다른 옷이라고 했어요`)).join('')],
       ['기다려줘 확인 필요', '상품 페이지가 없거나, 등록한 옷과 같은 페이지인지·배송비·색상·재고를 확인하지 못했거나, 연속으로 확인 못 한 것', q(`SELECT * FROM watches WHERE status='needs_info'
-          OR (status='active' AND (last_state IN ('stock_unknown','shipping_unknown','color_unknown','unverified','mismatch','sale_only') OR page_identity IN ('unverified','mismatch') OR fail_streak>=?)) ORDER BY updated_at`, cfg.policy?.unreachableAfter ?? 3)
+          OR (status='active' AND (last_state IN ('stock_unknown','shipping_unknown','color_unknown','unverified','mismatch','sale_only') OR page_identity IN ('unverified','likely','mismatch') OR fail_streak>=?)) ORDER BY updated_at`, cfg.policy?.unreachableAfter ?? 3)
         .map(w => `<div class="q"><a href="/admin/watches#w${w.id}"><b>W${w.id} ${esc(w.title)}</b>${w.is_mock ? MOCK : ''}</a><span class="sub">${w.status === 'needs_info' ? '상품 페이지 필요' : w.fail_streak >= (cfg.policy?.unreachableAfter ?? 3) ? `연속 ${w.fail_streak}번 확인 실패` : esc(JSON.parse(w.last_result || '{}').reasons?.[0] || '')}</span></div>`).join('')],
       ['판매처 탐색: 같은 상품 후보', '품번·모델명으로 찾은 판매 페이지(사진 비교 없음) — 검수 전에는 사용자에게 보이지 않아요', q(`SELECT r.*, s.summary, s.status sst, s.error FROM offer_searches s JOIN requests r ON r.id=s.request_id
           WHERE s.id IN (SELECT MAX(id) FROM offer_searches WHERE purpose='find' AND status IN ('done','failed') GROUP BY request_id) AND r.status IN ('submitted','active')
@@ -274,7 +275,9 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const mockBox = (on = false) => `<label class="in"><input type="checkbox" name="mock" value="1" ${on || rq.is_mock ? 'checked' : ''} ${rq.is_mock ? 'disabled' : ''}>모의 데이터(테스트용 — 사용자 화면에 “모의” 표시)</label>`;
 
     const owner = db.prepare('SELECT * FROM users WHERE id=?').get(rq.user_id) as any;
-    const pushRow = `<dt>기기 알림</dt><dd>${owner?.push_token ? '푸시 토큰 등록됨' : '푸시 토큰 없음 — 앱 안 알림만'} · 권한 ${esc(owner?.push_permission || '아직 묻지 않음')} · ${esc(owner?.platform || '')}</dd>`;
+    const pushRow = `<dt>기기 알림</dt><dd>${owner?.push_token ? '푸시 토큰 등록됨' : '푸시 토큰 없음 — 앱 안 알림만'} · 권한 ${esc(owner?.push_permission || '아직 묻지 않음')} · ${esc(owner?.platform || '')}</dd>
+      <dt>세션</dt><dd>${!owner ? '—' : owner.token_hash ? '토큰 세션' : `<b>이전 버전 계정</b> — 기기 ID만으로는 열 수 없어요. 사용자를 확인한 뒤에만 이어받기 코드를 주세요.
+        <form method="post" action="/admin/users/${owner.id}/claim-code" style="display:inline"><button class="btn s sm">이어받기 코드 만들기(30분·1회)</button></form>`}</dd>`;
     const qaPush = cfg.qaTools ? `<form method="post" action="/admin/requests/${rq.id}/qa/push"><button class="btn s sm" ${owner?.push_token ? '' : 'disabled'}>이 기기로 테스트 푸시 보내기</button></form>` : '';
     const head = `<a id="top"></a>${m}${e}<div class="row" style="align-items:flex-start;gap:20px"><div class="ph" style="background-image:${v.product.photoUrl ? `url('${esc(v.product.photoUrl)}')` : 'none'}"></div>
       <div style="flex:3"><p class="sub">의뢰 #${rq.id} · 접수 ${kWhen(rq.created_at, t)}${rq.is_mock ? MOCK : ''} · <a href="/admin/requests/${rq.id}/review"><b>한 화면 검수 →</b></a></p><h1>${esc(v.product.title)}</h1>
@@ -465,6 +468,18 @@ export function adminRouter(db: DB, cfg: Cfg) {
       throw e;
     }
   };
+  // 이전 버전 계정 이어받기 코드 — 주소(쿼리)에 남기지 않고 이 화면에서 한 번만 보여 준다
+  r.post('/users/:id/claim-code', (req, res) => {
+    const uid = Number(req.params.id);
+    try {
+      const c = D.issueClaimCode(db, uid, OP(req));
+      const rq = db.prepare('SELECT id FROM requests WHERE user_id=? ORDER BY id DESC LIMIT 1').get(uid) as any;
+      send(req, res, page('이어받기 코드', `<section style="max-width:520px"><h1>이어받기 코드</h1><p style="font-size:28px;font-weight:800;letter-spacing:2px">${esc(c.code)}</p>
+        <p class="sub">${esc(kWhen(c.until))}까지 · 한 번만 쓸 수 있어요. 사용자 본인인지 확인한 뒤에만 전달하세요. 앱 MY → “이전 기록 이어받기”에 넣으면 이 계정의 기록이 그 기기로 옮겨 가요.</p>
+        <p class="sub">이 화면을 닫으면 다시 볼 수 없어요(서버는 코드의 해시만 저장해요). 잃어버리면 새로 만드세요 — 예전 코드는 쓸 수 없게 돼요.</p>
+        ${rq ? `<a href="/admin/requests/${rq.id}">의뢰 #${rq.id}로 돌아가기</a>` : '<a href="/admin">대기열로</a>'}</section>`, OP(req)));
+    } catch (e: any) { if (e instanceof HttpError) return res.status(e.status).send(page('오류', `<div class="flash err">${esc(e.message)}</div>`, OP(req))); throw e; }
+  });
   r.post('/requests/:id/activate', act(req => { const id = Number(req.params.id); D.activate(db, id, req.body, OP(req)); return [id, '상품을 확인했어요. 7일 탐색이 시작됐어요.']; }));
   r.post('/requests/:id/info-request', act(req => { const id = Number(req.params.id); D.requestInfo(db, id, req.body.message, OP(req)); return [id, '보완 요청을 보냈어요.']; }));
   r.post('/runs/:id/complete', (req, res, next) => {
@@ -612,7 +627,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
       <section class="ob" data-discovery="${esc(s0?.status || 'none')}:${cands.length}"><h2>2 · 새 판매처·새 매물 탐색 <span class="sub">(Listing Discovery · 지켜보는 상품 페이지는 뺌 · 사진 비교 전이라 검수해야 사용자에게 보임)</span></h2>
         <div class="aibar"><b>탐색 대상</b><span>${tg ? esc([tg.brand, tg.name].filter(Boolean).join(' ')) + (tg.modelCode ? ` · 품번 ${esc(tg.modelCode)}` : '') : '상품 이름을 몰라 찾을 수 없어요'}</span><span class="sub">${w.discovery ? '사용자 설정: 켜짐' : '<b>사용자가 껐어요</b>'}${w.discovery_sources ? ` · 고른 곳 ${esc(JSON.parse(w.discovery_sources).join(', ') || '없음')}` : ''} · ${s0 ? `${esc(s0.status)} ${kWhen(s0.finished_at || s0.created_at, t)}` : '아직 안 함'}</span><span class="sp"></span>${btn('discovery', '지금 다시 찾기')}</div>
         ${s0?.summary ? `<p><b>${esc(s0.summary)}</b></p>` : ''}${s0 ? `<details><summary>소스별 처리</summary>${repTable(rep(s0))}</details>` : ''}
-        ${cands.length ? `<h3>알림 후보 ${cands.length} <span class="sub">같은 상품(품번·상품명) · 원하는 사이즈 품절·없음 아님 · 상태 조건 맞음 — 사진·옵션을 열어 확인한 뒤 공개하세요. 원하는 가격 이하면 공개할 때 사용자에게 알림이 가요</span></h3>${cands.map(o => `<div>${R.meetsWatch(o, w) ? '<span class="tg v">원하는 조건 충족(페이지 기준)</span>' : '<span class="tg x">조건 미충족 · 알림 없음</span>'}${offerCardHtml(o, w.size, true)}</div>`).join('')}` : s0 ? '<p class="empty">알림 후보가 없어요.</p>' : ''}
+        ${cands.length ? `<h3>알림 후보 ${cands.length} <span class="sub">같은 상품(품번·상품명) · 원하는 사이즈 품절·없음 아님 · 상태 조건 맞음 — 사진·옵션을 열어 확인한 뒤 공개하세요. 가격·색상·사이즈 재고·상태가 모두 확인된 후보만 공개할 때 알림이 가요(같은 상품일 수 있음은 확정 아님 알림)</span></h3>${cands.map(o => { const f = R.watchFit(o, w); return `<div>${f.state === 'met' ? '<span class="tg v">원하는 조건 모두 확인(페이지 기준) · 같은 상품 확인/같은 상품일 수 있음은 알림을 따로 보냄</span>' : f.state === 'unknown' ? `<span class="tg o">확인하지 못한 조건 · 알림 없음</span> <span class="sub">${esc(f.unknown.join(' · '))}</span>` : `<span class="tg x">조건과 다름 · 알림 없음</span> <span class="sub">${esc(f.unmet.join(' · '))}</span>`}${offerCardHtml(o, w.size, true)}</div>`; }).join('')}` : s0 ? '<p class="empty">알림 후보가 없어요.</p>' : ''}
         ${others.length ? `<details><summary>후보에서 뺀 것 ${others.length}(다른 상품·원하는 사이즈 없음·품절·중고 등)</summary>${others.map(o => offerCardHtml(o, w.size, true)).join('')}</details>` : ''}</section>
       <section class="ob" data-watch-similar="${esc(sim?.status || 'none')}"><h2>3 · 기다리는 동안 볼 대체 상품 <span class="sub">(같은 상품 아님 · 저장·열람해도 기다려줘는 계속)</span></h2>
         ${!w.request_id ? '<p class="sub">찾아줘(사진)에서 넘어온 기다려줘만 디자인 정보가 있어 고를 수 있어요.</p>' : `<div class="aibar"><span class="sub">${sim ? `${esc(sim.summary || sim.status)} · ${kWhen(sim.finished_at || sim.created_at, t)}` : '아직 안 함'}</span><span class="sp"></span>${btn('similar', '비슷한 디자인 다시 고르기')}</div>
@@ -662,7 +677,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
       return hit.length ? `<span class="y">✓ ${esc(hit.map(styleLabel).join('·'))}</span>` : h.length ? `<span class="ng">✕ ${esc(h.map(styleLabel).join('·'))}</span>` : '<span class="sub">–</span>'; };
     const won0 = (o: StoredOffer) => { const it = o.salePrice ?? o.price; return it == null ? '—' : `${it.toLocaleString()}원${o.shipping != null ? `<div class="sub">총 ${(it + o.shipping).toLocaleString()}원</div>` : '<div class="sub">배송비 모름</div>'}`; };
     const sameRows = [...same.map(o => ({ ...o, _from: '찾아줘 판매처 탐색' })), ...disc].filter(o => o.verdict !== 'different' || o.reviewState !== 'pending')
-      .map((o: any) => `<tr><td class="rt">${offerImg(o)}</td><td><b>${esc(o.seller)}</b><div>${esc(o.name || '')}</div><div class="sub">${esc(o._from)} · ${esc(o.source)}</div></td><td>${VERDICT_LABEL[o.verdict]}<div class="sub">${DETAIL_LABEL[o.detail]}</div></td>
+      .map((o: any) => `<tr><td class="rt">${offerImg(o)}</td><td><b>${esc(o.seller)}</b><div>${esc(o.name || '')}</div><div class="sub">${esc(o._from)} · ${esc(o.source)}</div></td><td>${VERDICT_LABEL[o.verdict]}<div class="sub">${DETAIL_LABEL[o.detail]}${o.targetRank && o.targetRank > 1 ? ` · 식별 후보 ${o.targetRank} 기준` : ''}</div></td>
         <td>${checkCell(o)}</td><td>${won0(o)}</td><td>${esc(rq.size || '무관')} · ${WANT_SIZE[o.wantSize]}</td><td>${stateOf(o)}<div class="sub"><a href="${o.watchId && !o.requestId ? `/admin/watches/${o.watchId}` : `/admin/requests/${rq.id}`}#offer-${o.id}">검수하기</a></div></td></tr>`).join('');
     const simRows = sims.map(o => `<tr><td class="rt">${offerImg(o)}</td><td><b>${esc(o.brand || '')}</b> ${esc(o.name || '')}<div class="sub">${esc(o.seller)}</div></td><td>${o.score ?? '—'}<div class="mono">${esc(o.recommender)}@${esc(o.recommenderVersion)}</div><div class="sub">${o.rank}위</div></td>
         ${kinds.map(k => `<td>${designCell(o, k)}</td>`).join('')}<td class="sub">${esc(fbCount(o.id)) || '없음'}</td><td>${stateOf(o)}</td></tr>`).join('');
@@ -725,7 +740,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
     const rows = W.adminWatchRows(db);
     const LS: Record<string, string> = { met: '조건 충족', above: '목표가 위', sold_out: '품절', size_missing: '사이즈 없음', color_missing: '색상 없음', color_unknown: '색상 미확인', stock_unknown: '재고 미확인',
       shipping_unknown: '상품가 충족·배송비 미확인', unverified: '같은 상품 페이지 미확인', mismatch: '다른 상품 페이지', sale_only: '할인가만 목표 이하', condition: '상태 불일치', no_price: '가격 없음', check_failed: '확인 실패' };
-    const PI: Record<string, string> = { pending: '아직 판단 전', page_defined: '사용자가 준 링크 자체가 상품', matched: '자동 확인: 같은 상품', operator_confirmed: '왈프 팀 확인: 같은 상품', unverified: '<b>같은 상품인지 확인 필요</b>', mismatch: '<b>다른 상품으로 보임</b>' };
+    const PI: Record<string, string> = { pending: '아직 판단 전', page_defined: '사용자가 준 링크 자체가 상품', matched: '자동 확인: 같은 상품(품번 정확히 일치)', likely: '<b>같은 상품일 가능성 높음 · 확인 필요</b>(상품명만 같음 — 확인 전 알림 없음)', operator_confirmed: '왈프 팀 확인: 같은 상품', unverified: '<b>같은 상품인지 확인 필요</b>', mismatch: '<b>다른 상품으로 보임</b>' };
     const qa = cfg.qaTools ? `<form method="post" action="/admin/watches/qa/check" style="display:inline"><button class="btn s sm">지금 확인할 차례인 가격 확인 실행(QA)</button></form>` : '';
     const body = `${flash(req)}<h1>기다려줘</h1><p class="sub">사용자당 활성 ${policy.maxActive}개 · ${policy.checkEveryMs / 3600_000}시간마다 상품 페이지 한 번 · AI 호출 없음 · 같은 페이지는 한 번만 읽어 함께 써요. ${qa}</p>
       <section><h2>판매처 자동 확인 범위</h2><table><thead><tr><th>판매처</th><th>상태</th><th>근거</th></tr></thead><tbody>${SOURCES.map(s => `<tr><td><b>${esc(s.label)}</b></td><td><span class="st">${s.status}</span></td><td class="sub">${esc(s.reason)} (${s.checked})</td></tr>`).join('')}</tbody></table></section>
