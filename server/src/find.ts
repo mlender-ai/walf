@@ -4,7 +4,11 @@ import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now, kWhen } from './time.ts';
-import { curate, requestStyle, styleWords, upsertProduct, SIMILAR_PRODUCTS, type Curated } from './catalog.ts';
+import { curate, requestStyle, styleWords, upsertProduct, type Curated } from './catalog.ts';
+import { FASHION_BRAIN } from './curation.ts';
+import { logPublished, offersView, publishPendingOffers } from './offerreview.ts';
+import { logReview } from './reviewlog.ts';
+import type { Coverage } from './findsearch.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -54,9 +58,11 @@ export function publishFind(db: DB, requestId: number, input: PublishInput, oper
   if (items.length > 3) throw new HttpError(400, 'too_many', '후보는 3개까지 공개할 수 있어요.');
   const hasMatch = items.some(x => x.tier === 'match');
   const disc = hasMatch ? [] : input.discover.slice(0, 3).map(d => draft.discover.find(c => c.brandKey === d.brandKey && (d.scope ?? '') === c.scope)).filter(Boolean) as Curated[];
-  if (!items.length && !disc.length) throw new HttpError(400, 'empty', '공개할 결과를 하나 이상 골라 주세요.');
+  const pendingOffers = one(db, `SELECT COUNT(*) n FROM offers WHERE request_id=? AND review_state='approved' AND published=0`, requestId)!.n;
+  if (!items.length && !disc.length && !pendingOffers) throw new HttpError(400, 'empty', '공개할 결과를 하나 이상 골라 주세요(검수해 둔 판매처·대체 상품도 함께 공개돼요).');
   const t = now();
   const mock = draft.isMock || !!r.is_mock;
+  let tiers: string[] = [];
   tx(db, () => {
     db.prepare(`UPDATE product_identities SET status='withdrawn', decided_at=? WHERE request_id=? AND status='published'`).run(t, requestId);
     const ins = db.prepare(`INSERT INTO product_identities(request_id, ai_identity_id, tier, rank, brand, name, model_code, season, color, category, matched, uncertain, evidence, reasons, status, published_by, is_mock, created_at)
@@ -73,10 +79,25 @@ export function publishFind(db: DB, requestId: number, input: PublishInput, oper
     });
     disc.forEach((c, i) => ins.run(requestId, null, 'discover', i + 1, c.brand, c.scope ? `${c.brand} ${c.scope}` : c.brand, null, null, null, null,
       json(c.reasons), json([]), json(c.sources), json([`스타일 근거: ${c.status === 'verified' ? '왈프 팀 확인' : c.status === 'fixture' ? '테스트 데이터' : '출처 있음 · 검수 전'}`]), 'published', operator, mock ? 1 : 0, t));
-    D.log(db, requestId, 'team', 'find_ready', '찾아줘 결과', hasMatch ? '같은 옷을 확인했어요 · 결과를 확인해 주세요' : items.length ? `유력 후보 ${items.length}개를 골랐어요` : '같은 옷은 못 찾았어요 · 비슷한 스타일의 브랜드를 골랐어요', { operator, isMock: mock });
+    tiers = publishPendingOffers(db, requestId, t);
+    // 검수 기록: 서버 판정과 운영자 결정(등급·이름 수정·확인 근거)을 나란히 남긴다(평가 데이터)
+    for (const x of input.items) {
+      const a = draft.identities.find(v => v.id === Number(x.aiIdentityId));
+      if (!a) continue;
+      const edited = ((x.name || '').trim() !== '' && norm(x.name) !== norm(identityName(a))) || (x.brand != null && norm(x.brand) !== norm(a.brand));
+      logReview(db, { operator, subject: 'identity', subjectId: a.id, requestId, action: x.tier, at: t, isMock: mock, reason: x.verifyReason?.trim() || null,
+        auto: { tier: a.tier, confidence: a.confidence, brand: a.brand, name: identityName(a), modelCode: a.model_code || null, season: a.season || null, refs: a.refs.length, uncertain: a.uncertain },
+        before: edited ? { brand: a.brand, name: identityName(a) } : null, after: edited ? { brand: x.brand ?? a.brand, name: (x.name || '').trim() || identityName(a) } : null });
+    }
+    for (const c of disc) logReview(db, { operator, subject: 'discover', requestId, action: 'publish', at: t, isMock: mock, auto: { brand: c.brand, scope: c.scope, score: c.score, reasons: c.reasons, status: c.status } });
+    D.log(db, requestId, 'team', 'find_ready', '찾아줘 결과', hasMatch ? '같은 옷을 확인했어요 · 결과를 확인해 주세요' : items.length ? `유력 후보 ${items.length}개를 골랐어요`
+      : tiers.includes('alternative') ? '같은 옷은 못 찾았어요 · 비슷한 디자인의 옷을 골랐어요' : '같은 옷은 못 찾았어요 · 비슷한 스타일의 브랜드를 골랐어요', { operator, isMock: mock });
+    if (tiers.length) logPublished(db, r, tiers, operator, mock);
   });
-  D.notify(db, r, 'find_ready', hasMatch ? '같은 옷을 찾았어요' : items.length ? '이 옷일 가능성이 높아요' : '비슷한 스타일의 브랜드를 골라봤어요',
-    hasMatch ? '맞는지 확인하고, 매물을 찾을지 가격을 기다릴지 골라 주세요.' : items.length ? '후보를 확인해 주세요. 확인되지 않은 부분도 함께 적었어요.' : '같은 상품은 아직 못 찾았어요. 대신 비슷한 스타일의 브랜드를 골라 뒀어요(판매 상품 추천은 아직 없어요).',
+  const alt = tiers.includes('alternative'), sold = tiers.includes('exact') ? ' 같은 상품을 파는 곳도 확인했어요.' : tiers.includes('possible') ? ' 같은 상품일 수 있는 판매처도 함께 적었어요.' : '';
+  D.notify(db, r, 'find_ready', hasMatch ? '같은 옷을 찾았어요' : items.length ? '이 옷일 가능성이 높아요' : alt ? '비슷한 디자인의 옷을 골라 봤어요' : '비슷한 스타일의 브랜드를 골라봤어요',
+    hasMatch ? `맞는지 확인하고, 매물을 찾을지 가격을 기다릴지 골라 주세요.${sold}` : items.length ? `후보를 확인해 주세요. 확인되지 않은 부분도 함께 적었어요.${sold}`
+      : alt ? '같은 상품은 아직 못 찾았어요. 대신 비슷한 디자인의 옷을 골라 뒀어요. 같은 상품은 아니에요.' : '같은 상품은 아직 못 찾았어요. 대신 비슷한 스타일의 브랜드를 골라 뒀어요.',
     `walf://find/${requestId}`, { isMock: mock, dedupeKey: `find:${requestId}:${t}` });
 }
 
@@ -98,8 +119,10 @@ function matchCheck(a: Row, x: PublishInput['items'][number]) {
 const identityName = (a: Row) => a.color && !String(a.name).includes(a.color) ? `${a.name} ${a.color}` : a.name;
 
 /** 앱 화면용 — 공개된 결과만 */
-export function findView(db: DB, r: Row) {
+export function findView(db: DB, r: Row, base = '', coverage: Coverage | null = null) {
   const rows = all(db, `SELECT * FROM product_identities WHERE request_id=? AND status IN ('published','confirmed') ORDER BY tier, rank`, r.id);
+  const offers = offersView(db, r, base, coverage);
+  const anyOffer = offers.sale.state === 'ready' || offers.alternatives.state === 'ready';
   const host = (u: string) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return u; } };
   const item = (x: Row) => ({
     id: x.id, tier: x.tier, brand: x.brand, name: x.name, modelCode: x.model_code, season: x.season, color: x.color, category: x.category,
@@ -109,14 +132,20 @@ export function findView(db: DB, r: Row) {
   const confirmed = rows.find(x => x.status === 'confirmed');
   const style = styleWords(requestStyle(db, r.id));
   return {
-    requestId: r.id, status: r.status, state: confirmed ? 'confirmed' : rows.length ? 'ready' : 'pending',
-    publishedLabel: rows[0] ? kWhen(rows[0].created_at) : null,
+    requestId: r.id, status: r.status, state: confirmed ? 'confirmed' : rows.length || anyOffer ? 'ready' : 'pending',
+    // 식별 결과 없이 판매처·대체 상품만 공개했으면 그 공개 시각
+    publishedLabel: rows[0] ? kWhen(rows[0].created_at) : anyOffer ? kWhen(one(db, 'SELECT MAX(published_at) t FROM offers WHERE request_id=? AND published=1', r.id)!.t) : null,
     match: rows.filter(x => x.tier === 'match').map(item)[0] || null,
     likely: rows.filter(x => x.tier === 'likely').map(item),
     discover: rows.filter(x => x.tier === 'discover').map(item),
-    // DISCOVER 는 브랜드 단위 스타일 추천이다. 판매 중인 비슷한 상품 큐레이션은 아직 없다(catalog.ts SIMILAR_PRODUCTS)
-    discoverKind: 'brand' as const, similarProducts: { status: SIMILAR_PRODUCTS.status, items: [] as unknown[] },
-    styleWords: style, productId: r.product_id ?? null, canHunt: r.status === 'submitted', isMock: rows.some(x => x.is_mock) || !!r.is_mock,
+    // DISCOVER 는 브랜드 단위 스타일 추천이다. 판매 중인 비슷한 “상품”은 alternatives(curation.ts — 추천 엔진 연결 전에는 테스트 Fixture만)
+    discoverKind: 'brand' as const, similarProducts: { status: FASHION_BRAIN.status, items: offers.alternatives.items },
+    // 식별 결과와 따로: 판매처(같은 상품) · 대체 상품(비슷한 디자인). 운영자가 공개한 것만
+    sale: offers.sale, alternatives: offers.alternatives,
+    // 무엇이 중요한지(선택) — 대체 상품 정렬에 반영
+    priority: offers.priority, priorities: offers.priorities,
+    styleWords: style, productId: r.product_id ?? null, canHunt: r.status === 'submitted',
+    isMock: rows.some(x => x.is_mock) || !!r.is_mock || [...offers.sale.exact, ...offers.sale.possible, ...offers.alternatives.items].some(c => c.isMock),
   };
 }
 const splitAttr = (s: string) => { const m = s.match(/^([^:：]{1,12})\s*[:：]\s*(.+)$/); return m ? { label: m[1].trim(), text: m[2].trim() } : { label: '', text: s }; };

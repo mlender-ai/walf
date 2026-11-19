@@ -5,8 +5,11 @@ import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
-import { colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
+import { brandKey, colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
 import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type Snapshot } from './sources.ts';
+import { compareProduct, type Verdict } from './sameproduct.ts';
+import { uploadUrl } from './media.ts';
+import { logReview } from './reviewlog.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -165,6 +168,7 @@ export function attachUrl(db: DB, id: number, url: string, operator: string, pol
       u, src.source.id, `${operator}가 상품 페이지를 연결함`, t, t, id);
     if (w.product_id) run(db, 'UPDATE products SET url=COALESCE(url, ?), updated_at=? WHERE id=?', u, t, w.product_id);
     event(db, w, 'team', 'url', '왈프 팀이 상품 페이지를 찾았어요', `${operator} · 하루 한 번 이 페이지의 가격을 확인해요`, t);
+    logReview(db, { operator, subject: 'watch_url', subjectId: w.id, watchId: w.id, action: 'attach', before: { url: w.url, pageIdentity: w.page_identity }, after: { url: u, pageIdentity: 'operator_confirmed' }, isMock: !!w.is_mock, at: t });
   });
 }
 
@@ -175,6 +179,7 @@ export function confirmPage(db: DB, id: number, same: boolean, operator: string,
   if (!w.url) throw new HttpError(409, 'bad_state', '연결된 상품 페이지가 없어요.');
   const t = now();
   tx(db, () => {
+    logReview(db, { operator, subject: 'watch_page', subjectId: w.id, watchId: w.id, action: same ? 'page_same' : 'page_diff', auto: { pageIdentity: w.page_identity, note: w.identity_note, url: w.url, title: w.title }, isMock: !!w.is_mock, at: t });
     if (same) {
       run(db, `UPDATE watches SET page_identity='operator_confirmed', identity_note=?, updated_at=? WHERE id=?`, `${operator}가 같은 상품 페이지임을 확인함`, t, id);
       event(db, w, 'team', 'page_ok', '같은 상품 페이지임을 확인했어요', operator, t);
@@ -198,6 +203,7 @@ export function confirmShipping(db: DB, id: number, fee: unknown, operator: stri
   const t = now();
   tx(db, () => {
     run(db, 'UPDATE listings SET shipping_fee=?, shipping_by=?, shipping_at=? WHERE id=?', f, operator, t, l.id);
+    logReview(db, { operator, subject: 'shipping', subjectId: l.id, watchId: w.id, action: 'shipping', before: { fee: l.shipping_fee ?? null }, after: { fee: f }, auto: { url: l.url }, isMock: !!w.is_mock, at: t });
     event(db, w, 'team', 'shipping', '왈프 팀이 배송비를 확인했어요', `${won(f)} · ${operator}`, t);
   });
   for (const x of all(db, `SELECT id, url FROM watches WHERE status='active' AND url IS NOT NULL`)) if (urlKey(x.url) === l.url_key) reevaluate(db, x.id, policy);
@@ -205,43 +211,26 @@ export function confirmShipping(db: DB, id: number, fee: unknown, operator: stri
 
 // ── 이 상품 페이지가 등록한 옷인가 ─────────────────────────────
 // 사용자가 A 상품을 등록하고 B 상품 페이지를 연결해도 A의 조건 충족 알림이 나가면 안 된다.
-// 자동으로는 품번이 같거나 상품명 핵심 단어가 대부분 같을 때만 “같음”으로 보고, 다른 브랜드·다른 품번은 “다름”, 나머지는 운영자 확인을 기다린다.
+// 자동으로 “같음”(matched)은 품번이 정확히 같을 때만이다. 상품명 핵심 단어만 같으면 “가능성 높음”(likely)으로 두고 알림을 보내지 않는다 — 운영자가 확인해야 같음이 된다.
+// 다른 브랜드·다른 품번은 “다름”, 나머지는 운영자 확인을 기다린다.
 export const PAGE_OK = ['page_defined', 'matched', 'operator_confirmed'];
-const words = (s: unknown) => String(s ?? '').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const compact = (s: unknown) => words(s).replace(/\s+/g, '');
-const CODE_RE = /[a-z]{1,5}[-_]?[a-z]{0,5}\d{2,}(?:[-_][a-z0-9]+)*/gi;
-const STOP = new Set(['the', 'and', 'with', 'for', 'new', '신상', '정품', '새상품', '상품', '공용', '남녀공용']);
+const PAGE_OF: Record<Verdict, string> = { same_code: 'matched', likely: 'likely', different: 'mismatch', unverified: 'unverified' };
 export function pageIdentity(w: { page_identity?: string | null; identity_note?: string | null; title: string; brand?: string | null }, prod: { name?: string | null; brand?: string | null; model_code?: string | null } | undefined,
-  s: { title: string | null; brand: string | null }): { identity: string; note: string } {
+  s: { title: string | null; brand: string | null }, aliases: string[] = []): { identity: string; note: string } {
   if (w.page_identity === 'page_defined' || w.page_identity === 'operator_confirmed') return { identity: w.page_identity, note: w.identity_note || '' };
-  const title = s.title || '';
-  const tw = words(`${title} ${s.brand || ''}`), tc = tw.replace(/\s+/g, '');
-  const code = prod?.model_code;
-  if (code) {
-    const c = compact(code);
-    if (c && tc.includes(c)) return { identity: 'matched', note: `품번 ${code}이(가) 페이지 상품명에 있어요` };
-    const other = (title.match(CODE_RE) || []).find(x => compact(x).length >= 5 && compact(x) !== c);
-    if (other) return { identity: 'mismatch', note: `품번이 달라요(등록 ${code} · 페이지 ${other})` };
-  }
-  const brand = w.brand || prod?.brand;
-  const bk = compact(brand);
-  if (bk && s.brand && !compact(s.brand).includes(bk) && !bk.includes(compact(s.brand)) && !tc.includes(bk)) return { identity: 'mismatch', note: `브랜드가 달라요(페이지: ${s.brand})` };
-  const brandWords = new Set(words(brand).split(' '));
-  const tokens = [...new Set(words(w.title || prod?.name).split(' '))].filter(x => x.length >= 2 && !brandWords.has(x) && !STOP.has(x) && !colorsIn(x).length && !/^(xxs|xs|s|m|l|xl|xxl|free|\d{2,3})$/.test(x));
-  if (tokens.length >= 2) {
-    const hit = tokens.filter(x => tw.includes(x)).length;
-    if (hit / tokens.length >= 0.8) return { identity: 'matched', note: `상품명 핵심 단어 ${hit}/${tokens.length}개가 페이지 상품명과 같아요` };
-  }
-  return { identity: 'unverified', note: '등록한 옷과 같은 상품 페이지인지 자동으로 확인하지 못했어요(표기·언어 차이 등). 왈프 팀이 확인해요' };
+  const r = compareProduct({ brand: w.brand || prod?.brand, name: w.title || prod?.name, modelCode: prod?.model_code, aliases }, s);
+  return { identity: PAGE_OF[r.verdict], note: r.note };
 }
 /** 판정 전에 페이지 동일성을 정하고 바뀌었으면 기록한다 */
 function settleIdentity(db: DB, w: Row, s: { title: string | null; brand: string | null }, t: number) {
   const prod = w.product_id ? one(db, 'SELECT * FROM products WHERE id=?', w.product_id) : undefined;
-  const r = pageIdentity(w, prod, s);
+  const brand = w.brand || prod?.brand;
+  const aliases = brand ? parse(one(db, 'SELECT aliases FROM brands WHERE key=?', brandKey(brand))?.aliases ?? null, []) as string[] : [];
+  const r = pageIdentity(w, prod, s, aliases);
   if (r.identity !== w.page_identity) {
     run(db, 'UPDATE watches SET page_identity=?, identity_note=?, updated_at=? WHERE id=?', r.identity, r.note, t, w.id);
     if (r.identity === 'mismatch') event(db, w, 'walf', 'page_mismatch', '등록한 옷과 다른 상품 페이지로 보여요', `${r.note} · 확인 전에는 가격 알림을 보내지 않아요`, t);
-    else if (r.identity === 'unverified') event(db, w, 'walf', 'page_check', '같은 상품 페이지인지 확인하고 있어요', r.note, t);
+    else if (r.identity === 'unverified' || r.identity === 'likely') event(db, w, 'walf', 'page_check', '같은 상품 페이지인지 확인하고 있어요', `${r.note} · 확인 전에는 가격 알림을 보내지 않아요`, t);
   }
   return r.identity;
 }
@@ -413,12 +402,13 @@ export function evaluate(w: { size?: string | null; color?: string | null; targe
     if (stock !== 'in_stock') return { ...base, state: 'stock_unknown', price, total, stock, option, reasons: [!opt && w.size ? '페이지에 사이즈별 재고가 없어 원하는 사이즈 재고를 확인하지 못했어요' : '재고를 확인하지 못했어요'] };
     if (basis === 'total' && s.shipping == null) return { ...base, state: 'shipping_unknown', price, total, stock, option, reasons: [`상품 가격 ${won(price)}은 원하는 가격 이하지만 배송비를 확인하지 못했어요`] };
     if (colorState === 'unknown') return { ...base, state: 'color_unknown', price, total, stock, option, reasons: [`원하는 색(${w.color})인지 페이지에서 확인하지 못했어요`] };
-    if (!PAGE_OK.includes(identity)) return { ...base, state: 'unverified', price, total, stock, option, reasons: ['등록한 옷과 같은 상품 페이지인지 아직 확인하지 않았어요'] };
+    if (!PAGE_OK.includes(identity)) return { ...base, state: 'unverified', price, total, stock, option,
+      reasons: [identity === 'likely' ? '상품명은 같아 보이지만 품번으로 같은 상품인지 확인하지 못했어요' : '등록한 옷과 같은 상품 페이지인지 아직 확인하지 않았어요'] };
     return { ...base, state: 'met', price, total, stock, option, reasons: [] };
   }
   const sale = s.salePrice != null ? s.salePrice + (basis === 'item' ? 0 : s.shipping ?? 0) : null;
   if (sale != null && sale <= w.target_price)
-    return { ...base, state: 'sale_only', price, total, stock, option, reasons: [`표시된 할인가 ${won(s.salePrice)}는 적용 조건(회원·쿠폰 등)을 확인하지 못했어요`] };
+    return { ...base, state: 'sale_only', price, total, stock, option, reasons: [`표시된 할인가 ${won(s.salePrice)}은 적용 조건(회원·쿠폰 등)을 확인하지 못했어요`] };
   return { ...base, state: 'above', price, total, stock, option, reasons: [`원하는 가격보다 ${won(compare - w.target_price)} 높아요${basis === 'item' ? '(배송비 제외)' : s.shipping == null ? '(배송비 미확인)' : ''}`] };
 }
 /** 알림·화면에 쓰는 금액 문구 */
@@ -466,6 +456,16 @@ function reevaluate(db: DB, id: number, _policy: WatchPolicy, nextAt: number | n
     pageStock: obs.some(o => o.stock === 'in_stock') ? 'in_stock' : 'unknown', basis: [], isMock: !!obs[0].is_mock };
   const s = withShipping(s0, l);
   applyEval(db, w, evaluate(w, s, settleIdentity(db, w, s, obs[0].checked_at)), obs[0].checked_at, nextAt);
+}
+
+/**
+ * 예전 규칙으로 자동 “같음”(matched)이 된 감시를 지금 규칙으로 다시 판정한다(서버 시작 때 한 번, 페이지를 다시 열지 않음).
+ * 상품명만 같았거나 품번 일부만 겹쳤던 페이지는 “가능성 높음·확인 필요”로 내려가고, 다시 확인되기 전에는 조건 충족 알림을 보내지 않는다.
+ */
+export function resettleAutoMatched(db: DB, policy: WatchPolicy) {
+  const ids = all(db, `SELECT id FROM watches WHERE page_identity='matched' AND status='active'`).map(x => x.id as number);
+  for (const id of ids) reevaluate(db, id, policy);
+  return ids.length;
 }
 
 // ── 화면용 ───────────────────────────────────────────────────
@@ -516,7 +516,7 @@ export function watchView(db: DB, w: Row, base: string, policy: Pick<WatchPolicy
   const events = all(db, 'SELECT * FROM watch_events WHERE watch_id=? ORDER BY at DESC, id DESC LIMIT 50', w.id).map(e => ({ id: e.id, at: e.at, label: kWhen(e.at, t), clock: kClock(e.at), actor: D.ACTOR_LABEL[e.actor] || e.actor, kind: e.kind, title: e.title, detail: e.detail, isMock: !!e.is_mock }));
   return {
     id: w.id, status: w.status, isMock: !!w.is_mock, display: watchDisplay(w, policy, t),
-    product: { title: w.title, brand: w.brand || p?.brand || null, url: w.url && !w.url.startsWith('mock://') ? w.url : null, photoUrl: w.photo ? `${base}/uploads/${w.photo}` : p?.image || null,
+    product: { title: w.title, brand: w.brand || p?.brand || null, url: w.url && !w.url.startsWith('mock://') ? w.url : null, photoUrl: uploadUrl(base, w.photo) || p?.image || null,
       pageTitle: listing?.title || null, seller: listing?.seller || null, productId: w.product_id },
     conditions: { size: w.size, color: w.color, targetPrice: w.target_price, condition: w.condition, priceBasis: w.price_basis === 'item' ? 'item' : 'total',
       label: [`${won(w.target_price)} 이하${w.price_basis === 'item' ? '(배송비 제외)' : ''}`, w.size, w.color, w.condition === 'new' ? '새 상품만' : '중고도 OK'].filter(Boolean).join(' · ') },
@@ -535,12 +535,12 @@ export function myItems(db: DB, userId: number, base: string, policy: Pick<Watch
   const reqs = all(db, 'SELECT * FROM requests WHERE user_id=? ORDER BY id DESC LIMIT 30', userId).map(r => {
     const d = D.display(db, r, t);
     const ended = !D.OPEN_STATUSES.includes(r.status);
-    return { kind: 'find' as const, id: r.id, title: D.shortName(r), brand: r.identified_brand || r.brand || null, photoUrl: r.photo ? `${base}/uploads/${r.photo}` : null,
+    return { kind: 'find' as const, id: r.id, title: D.shortName(r), brand: r.identified_brand || r.brand || null, photoUrl: uploadUrl(base, r.photo),
       stateKey: d.key, stateLabel: ended ? '완료·종료' : r.status === 'active' && !['offer_verified', 'lead_found'].includes(d.key) ? '7일 탐색 중' : d.label, sub: d.title, isMock: !!r.is_mock || !!d.isMock, updatedAt: r.updated_at, ended };
   });
   const watches = all(db, 'SELECT * FROM watches WHERE user_id=? ORDER BY id DESC LIMIT 30', userId).map(w => {
     const d = watchDisplay(w, policy, t);
-    return { kind: 'watch' as const, id: w.id, title: w.title, brand: w.brand, photoUrl: w.photo ? `${base}/uploads/${w.photo}` : null,
+    return { kind: 'watch' as const, id: w.id, title: w.title, brand: w.brand, photoUrl: uploadUrl(base, w.photo),
       stateKey: d.key, stateLabel: d.label, sub: d.title, isMock: !!w.is_mock, updatedAt: w.updated_at, ended: w.status === 'ended', target: `${won(w.target_price)} 이하${w.size ? ` · ${w.size}` : ''}` };
   });
   const items = [...reqs, ...watches].sort((a, b) => Number(a.ended) - Number(b.ended) || b.updatedAt - a.updatedAt);

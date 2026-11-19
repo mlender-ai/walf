@@ -1,0 +1,32 @@
+{
+  "note": "대체 상품 큐레이션 테스트 데이터. 가상의 브랜드·판매처·가격이에요(실제 판매 상품 아님). 이미지는 직접 그린 SVG(search-images)라 권리 문제가 없어요.",
+  "items": [
+    { "id": "sim-wool-blouson-brown", "seller": "테스트 편집숍", "brand": "TEST STUDIO", "name": "울 집업 블루종 브라운", "image": "wool-blouson-brown.svg", "price": 238000, "shipping": 0,
+      "options": [{ "color": "브라운", "size": "M", "stock": "in_stock" }, { "color": "브라운", "size": "L", "stock": "in_stock" }],
+      "style": { "mood": ["minimal"], "material": ["wool"], "silhouette": ["boxy"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["brown"] } },
+    { "id": "sim-work-jacket-brown", "seller": "테스트 워크웨어샵", "brand": "TEST WORKS", "name": "코튼 캔버스 워크 자켓 브라운", "image": "work-jacket-brown.svg", "price": 159000, "shipping": 3000,
+      "options": [{ "color": "브라운", "size": "M", "stock": "sold_out" }, { "color": "브라운", "size": "L", "stock": "in_stock" }],
+      "style": { "mood": ["workwear"], "material": ["cotton"], "silhouette": ["boxy"], "detail": ["utility-pockets"], "category": ["jacket", "outerwear"], "color": ["brown"] } },
+    { "id": "sim-wool-shacket-gray", "seller": "테스트 편집숍", "brand": "TEST MINIMAL", "name": "울 셔켓 차콜", "image": "wool-shacket-gray.svg", "price": 189000, "salePrice": 151200, "shipping": 3000,
+      "options": [{ "color": "차콜", "size": "M", "stock": "in_stock" }],
+      "style": { "mood": ["minimal"], "material": ["wool"], "silhouette": ["relaxed"], "category": ["jacket", "outerwear", "shirts"], "color": ["gray"] } },
+    { "id": "sim-knit-cardigan-brown", "seller": "테스트 편집숍", "brand": "TEST MINIMAL", "name": "울 니트 가디건 브라운", "image": "knit-cardigan-brown.svg", "price": 129000, "shipping": 3000,
+      "options": [{ "color": "브라운", "size": "M", "stock": "in_stock" }],
+      "style": { "mood": ["minimal", "workwear"], "material": ["wool"], "category": ["knitwear"], "color": ["brown"] } },
+    { "id": "sim-mood-only-coat", "seller": "테스트 편집숍", "brand": "TEST MINIMAL", "name": "롱 트렌치 코트 베이지", "price": 279000, "shipping": 0,
+      "options": [{ "color": "베이지", "size": "M", "stock": "in_stock" }],
+      "style": { "mood": ["minimal", "workwear"], "material": ["cotton"], "silhouette": ["relaxed"], "category": ["outerwear"], "color": ["beige"] } },
+    { "id": "sim-fleece-ivory", "seller": "테스트 아웃도어샵", "brand": "TEST OUTDOOR", "name": "플리스 집업 자켓 아이보리", "image": "fleece-ivory.svg", "price": 89000, "shipping": 3000,
+      "options": [{ "color": "아이보리", "size": "M", "stock": "in_stock" }],
+      "style": { "mood": ["outdoor"], "material": ["technical-fabric"], "silhouette": ["relaxed"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["white"] } },
+    { "id": "sim-track-black", "seller": "테스트 스포츠샵", "brand": "TEST ATHLETIC", "name": "나일론 트랙 자켓 블랙", "image": "track-jacket-black.svg", "price": 129000, "shipping": 3000,
+      "options": [{ "color": "블랙", "size": "M", "stock": "in_stock" }],
+      "style": { "mood": ["sportswear"], "material": ["nylon"], "silhouette": ["relaxed"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["black"] } },
+    { "id": "sim-coach-navy", "seller": "테스트 편집숍", "brand": "TEST STREET", "name": "나일론 코치 자켓 네이비", "image": "coach-jacket-navy.svg", "price": 99000, "shipping": 0,
+      "options": [{ "color": "네이비", "size": "M", "stock": "in_stock" }],
+      "style": { "mood": ["street"], "material": ["nylon"], "silhouette": ["boxy"], "category": ["jacket", "outerwear"], "color": ["navy"] } },
+    { "id": "sim-mystic-same", "seller": "테스트 편집숍", "brand": "BADBLOOD", "name": "BADBLOOD Mystic Nylon Track Jacket Navy", "image": "track-jacket-navy.svg", "price": 179000,
+      "options": [{ "color": "네이비", "size": "M", "stock": "in_stock" }],
+      "style": { "mood": ["sportswear", "street"], "material": ["nylon"], "detail": ["zip"], "category": ["jacket", "outerwear"], "color": ["navy"] } }
+  ]
+}

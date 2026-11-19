@@ -20,13 +20,13 @@ const P: Record<string, string[]> = {
   user: ['M4.6 20.2c.9-3.7 3.9-5.7 7.4-5.7s6.5 2 7.4 5.7'],
   back: ['M19.5 12H5M11 5.5 4.5 12l6.5 6.5'], close: ['M6 6l12 12M18 6 6 18'],
   ext: ['M14 4.5h5.5V10M19.5 4.5 11 13M18 14v4.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1H10'],
-  check: ['M5 12.6l4.3 4.3L19 7.2'], chev: ['M9.5 5.5 16 12l-6.5 6.5'], plus: ['M12 5v14M5 12h14'],
+  check: ['M5 12.6l4.3 4.3L19 7.2'], search: ['M15.6 15.6 20 20'], chev: ['M9.5 5.5 16 12l-6.5 6.5'], plus: ['M12 5v14M5 12h14'],
   camera: ['M4 8.5a1.5 1.5 0 0 1 1.5-1.5h2.2l1.4-2h5.8l1.4 2h2.2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5z'],
   link: ['M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1', 'M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1'],
 };
 const DOTS: Record<string, [number, number, number][]> = {
   paw: [[6.5, 10.3, 1.9], [9.9, 6.3, 1.9], [14.1, 6.3, 1.9], [17.5, 10.3, 1.9]], user: [[12, 8.2, 3.7]], camera: [[12, 13, 3.2]],
-  more: [[5.5, 12, 1.4], [12, 12, 1.4], [18.5, 12, 1.4]],
+  more: [[5.5, 12, 1.4], [12, 12, 1.4], [18.5, 12, 1.4]], search: [[10.8, 10.8, 6]],
 };
 export function Icon({ name, size = 24, color = C.black, filled = false, stroke = 1.7 }: { name: string; size?: number; color?: string; filled?: boolean; stroke?: number }) {
   return (

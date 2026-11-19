@@ -171,3 +171,23 @@
 | `server/seed/brand-styles.json` | 브랜드 37개·태그(출처 있음, 검수 전) |
 | `server/fixtures/*.json` | 모의 식별 사례·테스트 가격 시나리오·테스트 스타일 |
 | `app/src/app/find/[id].tsx` · `watch/new.tsx` · `watch/[id].tsx` · `(tabs)/tracking.tsx` | 찾아줘 결과 · 기다려줘 등록 · 상세 · 내가 찾는 옷 |
+
+## 11. V2.1 — 찾아줘 판매처 탐색(Gate A, 2026-11-16)
+
+AI 식별과 판매 매물 탐색을 나눴어요. 7단계 파이프라인·실제 상품 후보 구조(`offer_searches`·`offers`, 스키마 v3)·소스별 접근 판단·검증 결과·한계는 [WALF_V21_GATE_A.md](WALF_V21_GATE_A.md)에 있어요. 같은 상품 판정 규칙은 `server/src/sameproduct.ts`로 옮겨 기다려줘와 함께 써요(동작 같음).
+
+## 12. V2.1 — 실제 상품 큐레이션과 찾아줘 결과 화면(Gate B, 2026-11-19)
+
+찾아줘 결과를 어떤 옷인지 · 판매처(같은 상품 확인 · 같은 상품일 수 있음) · 비슷한 디자인의 옷(같은 상품 아님) · 비슷한 스타일의 브랜드로 나눴어요. 대체 상품은 디자인·실루엣 우선 점수(`server/src/curation.ts`)로 고르고, 판매처·대체 상품 모두 운영자 검수 후에만 공개해요(`server/src/offerreview.ts`). 자세한 내용은 [WALF_V21_GATE_B.md](WALF_V21_GATE_B.md)에 있어요.
+
+## 13. V2.1 — 기다려줘 새 매물 탐색과 대체 추천(Gate C, 2026-11-19)
+
+기다려줘를 상품 페이지 가격 감시(Price Watch, `price_checks`)와 새 매물 탐색(Listing Discovery, `offer_searches.purpose=discovery`)으로 나눴어요. 두 작업은 서로의 상태·기록·알림을 바꾸지 않고, 새 매물은 운영자 확인 뒤 원하는 조건을 충족할 때만 알림이 가요. 기다리는 동안 볼 대체 상품은 찾아줘와 같은 추천 인터페이스를 쓰고, 저장해도 기다려줘는 계속돼요. 자세한 내용은 [WALF_V21_GATE_C.md](WALF_V21_GATE_C.md)에 있어요.
+
+## 14. V2.1 — 선호·피드백, 한 화면 검수, 보안 안정화(Gate D, 2026-11-19)
+
+- **선호와 피드백**: 사용자가 “무엇이 중요한지”(실루엣·소재·디테일·브랜드·아카이브·느낌)를 고르면 대체 상품 정렬 규칙(`walf-design-rank-1:<선호>`)이 바뀌어요. 비슷한 디자인에는 직접 평가를 남기고, 열기·저장은 만족으로 치지 않는 행동 기록으로 따로 남겨요(`offer_signals`).
+- **한 화면 검수**: 운영자 결정은 자동 판정과 함께 `review_log`에 남아요. 둘 다 평가 데이터로 내보낼 수 있어요([WALF_EVAL_DATA.md](WALF_EVAL_DATA.md)).
+- **보안**: 앱 요청은 기기 ID와 서버가 준 토큰이 함께 맞아야 해요. 사용자 사진은 서명·만료가 있는 주소로만 열려요.
+
+자세한 내용은 [WALF_V21_GATE_D.md](WALF_V21_GATE_D.md)에 있어요.

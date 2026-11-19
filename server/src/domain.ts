@@ -1,5 +1,9 @@
+import crypto from 'node:crypto';
 import { type DB, tx, WANTED_CHANNELS } from './db.ts';
+import { logReview } from './reviewlog.ts';
 import { now, DAY, HUNT_MS, kDate, kTime, kWhen, kRelDay, kDayNum, won } from './time.ts';
+import { uploadUrl } from './media.ts';
+import { currentSimilar } from './offers.ts';
 import { sendPush } from './push.ts';
 
 export class HttpError extends Error {
@@ -20,6 +24,9 @@ export const ACTOR_LABEL: Record<string, string> = { walf: '왈프', team: '왈�
 export function deleteUser(db: DB, userId: number) {
   const photos: string[] = [];
   tx(db, () => {
+    // 운영자 검수 기록(상품·판매처 판단)은 평가 데이터로 남기되, 이 사용자의 의뢰·기다려줘와의 연결은 끊는다
+    run(db, 'UPDATE review_log SET request_id=NULL WHERE request_id IN (SELECT id FROM requests WHERE user_id=?)', userId);
+    run(db, 'UPDATE review_log SET watch_id=NULL WHERE watch_id IN (SELECT id FROM watches WHERE user_id=?)', userId);
     for (const r of all(db, 'SELECT * FROM requests WHERE user_id=?', userId)) {
       if (OPEN_STATUSES.includes(r.status)) closeOut(db, r, 'cancelled', 'account_deleted');
       if (r.photo) photos.push(r.photo);
@@ -31,9 +38,12 @@ export function deleteUser(db: DB, userId: number) {
       } else run(db, 'DELETE FROM requests WHERE id=?', r.id);
     }
     for (const w of all(db, 'SELECT photo FROM watches WHERE user_id=? AND photo IS NOT NULL', userId)) photos.push(w.photo);
+    // 추천 피드백·저장·행동 기록은 지운다(운영자 검수 기록의 연결은 위에서 끊었다)
+    run(db, 'DELETE FROM offer_signals WHERE user_id=?', userId);
+    run(db, 'DELETE FROM offer_saves WHERE user_id=?', userId);
     run(db, 'DELETE FROM watches WHERE user_id=?', userId); // 기다려줘·감시 기록(watch_events)도 함께. 상품 페이지 가격 기록은 개인 정보가 아니라 남는다
     run(db, 'DELETE FROM notifications WHERE user_id=?', userId);
-    if (one(db, 'SELECT COUNT(*) n FROM requests WHERE user_id=?', userId)!.n) run(db, `UPDATE users SET device_id='deleted:'||id||':'||?, push_token=NULL, deleted_at=? WHERE id=?`, now(), now(), userId);
+    if (one(db, 'SELECT COUNT(*) n FROM requests WHERE user_id=?', userId)!.n) run(db, `UPDATE users SET device_id='deleted:'||id||':'||?, push_token=NULL, token_hash=NULL, deleted_at=? WHERE id=?`, now(), now(), userId);
     else run(db, 'DELETE FROM users WHERE id=?', userId);
   });
   return photos;
@@ -47,6 +57,70 @@ export function upsertUser(db: DB, deviceId: string, platform?: string) {
   return one(db, 'SELECT * FROM users WHERE device_id=?', deviceId)!;
 }
 export function userByDevice(db: DB, deviceId: string) { return one(db, 'SELECT * FROM users WHERE device_id=?', deviceId); }
+
+// ── 기기 세션 ────────────────────────────────────────────────
+// 처음 세션을 열 때 서버가 토큰을 발급하고(해시만 저장), 그 뒤로는 기기 ID + 토큰이 함께 맞아야 그 사용자로 요청할 수 있다.
+// 토큰이 이미 있는 기기 ID로 토큰 없이 세션을 열면 거절한다(기기 ID만 알아낸 사람이 남의 계정을 가져가지 못하게).
+// 토큰 발급 전(이전 버전) 계정도 기기 ID만으로는 열 수 없다 — 누가 먼저 세션을 여느냐로 계정이 넘어가지 않게.
+// 이전 기록이 필요한 사용자는 왈프 팀이 확인한 뒤 일회용 이어받기 코드(30분)를 받아, 새 세션에서 그 코드로 이어받는다.
+const tokenHash = (t: string) => crypto.createHash('sha256').update(`walf-session|${t}`).digest('hex');
+export function tokenOk(u: Row, token: string | null | undefined) {
+  if (!u.token_hash) return false;  // 이전 버전 계정 — 기기 ID만으로는 열 수 없다(이어받기 코드로만)
+  if (!token || token.length < 20 || token.length > 200) return false;
+  const a = Buffer.from(tokenHash(token)), b = Buffer.from(u.token_hash);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+export const LEGACY_MSG = '이전 버전 기록은 기기 ID만으로 열 수 없어요. 앱이 새로 시작해요. 이전 기록이 필요하면 왈프 팀에 알려 주세요.';
+export function openSession(db: DB, deviceId: string, platform: string | undefined, token: string | null | undefined): { user: Row; token?: string } {
+  return tx(db, () => {
+    const had = userByDevice(db, deviceId);
+    if (had && !had.token_hash) throw new HttpError(401, 'legacy_locked', LEGACY_MSG);
+    const u = had || upsertUser(db, deviceId, platform);
+    if (u.token_hash) {
+      if (!tokenOk(u, token)) throw new HttpError(401, 'device_claimed', '이 기기 ID는 다른 세션이 쓰고 있어요. 앱이 새 기기로 다시 시작해요.');
+      return { user: u };
+    }
+    const fresh = crypto.randomBytes(32).toString('base64url');
+    run(db, 'UPDATE users SET token_hash=?, token_at=? WHERE id=?', tokenHash(fresh), now(), u.id);
+    return { user: one(db, 'SELECT * FROM users WHERE id=?', u.id)!, token: fresh };
+  });
+}
+
+// 이어받기 코드 — 헷갈리는 글자(0·O·1·I)를 뺀 8자, 해시만 저장, 30분, 한 번만
+const CLAIM_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const claimNorm = (c: unknown) => String(c ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const claimHash = (c: string) => crypto.createHash('sha256').update(`walf-claim|${claimNorm(c)}`).digest('hex');
+export const CLAIM_TTL = 30 * 60_000;
+/** 운영자: 사용자를 확인한 뒤 이전 버전 계정의 이어받기 코드를 만든다(새로 만들면 예전 코드는 못 쓴다) */
+export function issueClaimCode(db: DB, userId: number, operator: string, t = now()) {
+  const u = one(db, 'SELECT * FROM users WHERE id=?', userId);
+  if (!u || u.deleted_at) throw new HttpError(404, 'not_found');
+  if (u.token_hash) throw new HttpError(409, 'has_token', '이미 토큰 세션이 있는 계정이에요. 이어받기 코드가 필요 없어요.');
+  const raw = Array.from(crypto.randomBytes(8), b => CLAIM_ABC[b % CLAIM_ABC.length]).join('');
+  run(db, 'UPDATE users SET claim_hash=?, claim_until=? WHERE id=?', claimHash(raw), t + CLAIM_TTL, u.id);
+  logReview(db, { operator, subject: 'account', subjectId: u.id, action: 'claim_code', after: { until: t + CLAIM_TTL }, at: t });
+  return { code: `${raw.slice(0, 4)}-${raw.slice(4)}`, until: t + CLAIM_TTL };
+}
+/**
+ * 새 세션(토큰 있음)이 이어받기 코드로 이전 버전 계정을 이어받는다 — 이 기기의 기기 ID·토큰이 그 계정으로 옮겨 가고, 지금의 빈 계정은 지운다.
+ * 지금 계정에 이미 의뢰·기다려줘·저장이 있으면 섞지 않고 거절한다.
+ */
+export function claimLegacy(db: DB, current: Row, code: unknown, t = now()) {
+  const c = claimNorm(code);
+  if (c.length !== 8) throw new HttpError(400, 'bad_code', '이어받기 코드 8자리를 넣어 주세요.');
+  const legacy = one(db, 'SELECT * FROM users WHERE claim_hash=? AND claim_until>=? AND token_hash IS NULL AND deleted_at IS NULL', claimHash(c), t);
+  if (!legacy || legacy.id === current.id) throw new HttpError(400, 'bad_code', '코드가 맞지 않거나 만료됐어요. 왈프 팀에 새 코드를 받아 주세요.');
+  const busy = ['requests', 'watches', 'offer_signals', 'offer_saves'].some(tb => one(db, `SELECT 1 FROM ${tb} WHERE user_id=? LIMIT 1`, current.id));
+  if (busy) throw new HttpError(409, 'has_data', '이 기기에 새 기록이 있어 이어받을 수 없어요. 왈프 팀에 알려 주세요.');
+  tx(db, () => {
+    run(db, 'DELETE FROM users WHERE id=?', current.id);
+    // 예전 기기의 푸시 토큰은 버린다(이 기기에서 알림을 다시 켠다)
+    run(db, 'UPDATE users SET device_id=?, platform=COALESCE(?, platform), token_hash=?, token_at=?, claim_hash=NULL, claim_until=NULL, push_token=NULL WHERE id=?',
+      current.device_id, current.platform, current.token_hash, t, legacy.id);
+    logReview(db, { operator: '사용자(이어받기 코드)', subject: 'account', subjectId: legacy.id, action: 'claimed', before: { userId: current.id }, after: { userId: legacy.id }, at: t });
+  });
+  return { userId: legacy.id as number };
+}
 
 export function getRequest(db: DB, id: number) {
   const r = one(db, 'SELECT * FROM requests WHERE id=?', id);
@@ -535,6 +609,7 @@ export function display(db: DB, r: Row, t = now()): Display {
     const f = findTiers(db, r.id);
     if (f.match) return d('find_match', '찾아줘 결과 · 7일 시작 전', '같은 옷을 찾았어요', '브랜드·모델을 확인했어요. 맞는지 보고, 매물을 찾을지 가격을 기다릴지 골라 주세요.', { action: { label: '결과 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
     if (f.likely) return d('find_likely', '찾아줘 결과 · 7일 시작 전', `이 옷일 가능성이 높아요`, `후보 ${f.likely}개를 골라 뒀어요. 확인되지 않은 부분도 함께 적었어요.`, { action: { label: '후보 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
+    if (f.alternatives) return d('find_discover', '찾아줘 결과 · 7일 시작 전', '같은 옷은 아직 못 찾았어요', '대신 비슷한 디자인의 옷을 골라 뒀어요. 같은 상품이라는 뜻은 아니에요.', { action: { label: '비슷한 옷 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
     if (f.discover) return d('find_discover', '찾아줘 결과 · 7일 시작 전', '같은 옷은 아직 못 찾았어요', '대신 비슷한 스타일의 브랜드를 골라 뒀어요. 같은 상품이라는 뜻은 아니에요.', { action: { label: '비슷한 브랜드 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
     return d('identification_pending', '의뢰 접수 · 7일 시작 전', '어떤 옷인지 확인하고 있어요', '왈프 팀이 상품을 확인하면 7일 탐색이 시작돼요. 확인 전에는 기간이 흐르지 않아요.');
   }
@@ -594,11 +669,12 @@ export function display(db: DB, r: Row, t = now()): Display {
   return mk(d('searching', `DAY ${dd(day)} · ${kWhen(lastClosed.completed_at, t)}`, `${kRelDay(lastClosed.completed_at, t)} 판매처 ${n}곳을 살폈어요`, `조건에 맞는 매물은 아직 없어요. ${nextText}`), !!lastClosed.is_mock);
 }
 
-/** 사용자에게 공개된 찾아줘 결과 개수(MATCH·LIKELY·DISCOVER) */
+/** 사용자에게 공개된 찾아줘 결과 개수(MATCH·LIKELY·DISCOVER·대체 상품) */
 export function findTiers(db: DB, requestId: number) {
   const rows = all(db, `SELECT tier, is_mock FROM product_identities WHERE request_id=? AND status='published'`, requestId);
+  const alts = all(db, `SELECT is_mock FROM offers WHERE request_id=? AND published=1 AND publish_tier='alternative' AND ${currentSimilar('request_id')}`, requestId);
   const n = (t: string) => rows.filter(x => x.tier === t).length;
-  return { match: n('match'), likely: n('likely'), discover: n('discover'), mock: rows.some(x => x.is_mock) };
+  return { match: n('match'), likely: n('likely'), discover: n('discover'), alternatives: alts.length, mock: rows.some(x => x.is_mock) || alts.some(x => x.is_mock) };
 }
 
 export const STATE_LABEL: Record<string, string> = {
@@ -620,7 +696,7 @@ export function candidateView(db: DB, r: Row, c: Row, base = '') {
   const verified = k.kind === 'offer';
   return {
     id: c.id, kind: k.kind, source: c.source, sourceLabel: c.source === 'report' ? '수배글을 본 판매자 제보' : '왈프 팀 탐색',
-    seller: c.seller, url: c.url, title: c.title, photoUrl: c.photo ? `${base}/uploads/${c.photo}` : null,
+    seller: c.seller, url: c.url, title: c.title, photoUrl: uploadUrl(base, c.photo),
     size: c.size, condition: c.condition, conditionLabel: c.condition === 'new' ? '새 상품' : `중고${c.condition_note ? ' · ' + c.condition_note : ''}`,
     price: c.price, shipping: c.shipping, total: k.total, priceLabel: c.price != null ? won(c.price) : '가격 미기재',
     totalLabel: k.total != null ? `배송비 ${won(c.shipping || 0)} · 총 ${won(k.total)}` : '',
@@ -667,7 +743,7 @@ export function requestView(db: DB, r: Row, base = '', t = now()) {
   });
   return {
     id: r.id, status: r.status, isMock: !!r.is_mock, display: display(db, r, t),
-    product: { name: r.product_name, brand: r.brand, url: r.product_url, note: r.note, photoUrl: r.photo ? `${base}/uploads/${r.photo}` : null,
+    product: { name: r.product_name, brand: r.brand, url: r.product_url, note: r.note, photoUrl: uploadUrl(base, r.photo),
       identifiedName: r.identified_name, identifiedBrand: r.identified_brand, title: shortName(r), brandLabel: r.identified_brand || r.brand || null },
     conditions: { size: r.size, color: r.color, maxPrice: r.max_price, usedOk: !!r.used_ok,
       label: [r.size, r.color, r.max_price ? `${Math.round(r.max_price / 10000 * 10) / 10}만원 이하` : null, r.used_ok ? '중고 OK' : '새 상품만'].filter(Boolean).join(' · ') },

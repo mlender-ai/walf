@@ -36,6 +36,11 @@ test('기다려줘: 220,000 → 190,000 → 145,000(+배송비 3,000) · 목표 
   assert.equal(watch(db, id).last_state, 'above');
   assert.equal(notis(db, u.id).length, 0, '목표가 위에서는 알리지 않는다');
   await day(db, checker, 2);
+  // 상품명만 같은 페이지(품번 없음)는 “가능성 높음”까지 — 가격이 맞아도 알림 없이 왈프 팀 확인을 기다린다
+  assert.equal(watch(db, id).page_identity, 'likely');
+  assert.equal(watch(db, id).last_state, 'unverified');
+  assert.equal(notis(db, u.id).length, 0, '같은 상품 페이지 확인 전에는 알리지 않는다');
+  W.confirmPage(db, id, true, '운영자', policy);
   const w = watch(db, id);
   assert.equal(w.last_state, 'met');
   assert.equal(JSON.parse(w.last_result).total, 148000, '배송비를 확인할 수 있으면 상품가+배송비로 비교');
@@ -162,7 +167,7 @@ test('[리뷰 3] 페이지 동일성 자동 판정: 품번 일치 → 같음 · 
   assert.equal(pi({ title: prod.name, brand: 'BADBLOOD' }, prod, '[w-jkt26-055] 미스틱 나일론 트랙 자켓 - 네이비', 'badblood'), 'matched', '영문 이름·한글 페이지여도 품번이 같으면 같음');
   assert.equal(pi({ title: prod.name, brand: 'BADBLOOD' }, prod, '[w-jkt26-054] 미스틱 나일론 트랙 자켓 - 블루그레이', 'badblood'), 'mismatch', '품번이 다르면 다른 상품');
   assert.equal(pi({ title: 'BADBLOOD Mystic Nylon Track Jacket', brand: 'BADBLOOD' }, undefined, '미스틱 나일론 트랙 자켓', 'badblood'), 'unverified', '표기가 달라 자동으로 못 맞추면 운영자 확인');
-  assert.equal(pi({ title: '미스틱 나일론 트랙 자켓 네이비' }, undefined, '[w-jkt26-055] 미스틱 나일론 트랙 자켓 - 네이비'), 'matched');
+  assert.equal(pi({ title: '미스틱 나일론 트랙 자켓 네이비' }, undefined, '[w-jkt26-055] 미스틱 나일론 트랙 자켓 - 네이비'), 'likely', '상품명만 같으면 같음으로 올리지 않는다(운영자 확인 필요)');
   assert.equal(pi({ title: 'x', page_identity: 'page_defined' }, undefined, '아무 상품'), 'page_defined');
 });
 

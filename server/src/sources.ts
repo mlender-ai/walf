@@ -223,7 +223,9 @@ export function parseProductPage(html: string, url: string): Snapshot {
   const pageStock: Stock = options.length ? (options.some(o => o.stock === 'in_stock') ? 'in_stock' : options.every(o => o.stock === 'sold_out') ? 'sold_out' : 'unknown') : availOf(o0?.availability);
   const brandOf = (x: any) => (typeof x?.brand === 'string' ? x.brand : x?.brand?.name) || null;
   const brand = brandOf(group) || brandOf(group?.hasVariant?.[0]); // 카페24는 브랜드를 옵션(변형) 쪽에만 넣기도 한다
-  const img = Array.isArray(group?.image) ? group.image[0] : group?.image || (options.length ? null : meta(html, 'og:image'));
+  // 카페24는 상품 이미지를 옵션(변형) 쪽에만 넣기도 하고, og:image 첫 줄은 쇼핑몰 배너인 경우가 있다 → 구조화 데이터 이미지를 먼저 쓴다
+  const imgOf = (x: any) => (Array.isArray(x?.image) ? x.image[0] : x?.image) || null;
+  const img = imgOf(group) || imgOf(group?.hasVariant?.[0]) || (options.length ? null : meta(html, 'og:image'));
   const title = group?.name || html.match(/var\s+product_name\s*=\s*'([^']+)'/)?.[1] || meta(html, 'og:title');
   return {
     url, source: 'page', seller: host, title: title ? decodeHtml(String(title)).slice(0, 160) : null, brand, image: typeof img === 'string' ? img : null, condition: 'new',

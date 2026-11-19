@@ -9,8 +9,13 @@ import { HttpError } from './domain.ts';
 import * as F from './find.ts';
 import * as W from './watch.ts';
 import { SOURCES } from './sources.ts';
+import sharp from 'sharp';
+import { coverageOf, type SearchEnv } from './findsearch.ts';
+import * as X from './discovery.ts';
+import * as FB from './feedback.ts';
+import { uploadUrl } from './media.ts';
 
-type Cfg = { uploads: string; pushConfigured: boolean; policy: W.WatchPolicy; rate?: { writes: number; windowMs: number } };
+type Cfg = { uploads: string; pushConfigured: boolean; policy: W.WatchPolicy; rate?: { writes: number; windowMs: number }; search?: SearchEnv };
 
 /** 사용자(기기)별 쓰기 요청 제한 — 메모리 고정 창. 서버 한 대 기준(여러 대면 공용 저장소로 옮겨야 함) */
 export function rateLimiter(max: number, windowMs: number) {
@@ -46,6 +51,8 @@ export function userApi(db: DB, cfg: Cfg) {
     const dev = req.get('x-walf-device');
     const u = dev ? D.userByDevice(db, dev) : undefined;
     if (!u || u.deleted_at) return res.status(401).json({ error: 'no_session', message: '세션이 없어요. 앱을 다시 열어 주세요.' });
+    // 기기 ID만으로는 안 된다 — 세션을 열 때 받은 토큰이 함께 맞아야 한다
+    if (!D.tokenOk(u, req.get('x-walf-token'))) return res.status(401).json({ error: 'bad_token', message: '세션이 만료됐어요. 앱을 다시 열어 주세요.' });
     (req as any).user = u; next();
   };
   const uid = (req: express.Request) => (req as any).user.id as number;
@@ -60,6 +67,16 @@ export function userApi(db: DB, cfg: Cfg) {
   });
 
   r.get('/health', (_q, res) => res.json({ ok: true, service: 'walf', pushConfigured: cfg.pushConfigured }));
+  // 테스트 판매처·대체 상품 그림(직접 그린 SVG → PNG). 테스트 소스가 켜졌을 때만 — 실제 판매처 이미지는 서버가 내려받지 않는다
+  const MOCK_IMG = path.resolve(import.meta.dirname, '..', 'fixtures', 'search-images'), pngCache = new Map<string, Buffer>();
+  r.get('/mock-image/:name', async (req, res, next) => {
+    const name = String(req.params.name);
+    if (!cfg.policy.mockAllowed || !/^[a-z0-9-]+\.svg$/.test(name) || !fs.existsSync(path.join(MOCK_IMG, name))) return res.status(404).end();
+    try {
+      if (!pngCache.has(name)) pngCache.set(name, await sharp(path.join(MOCK_IMG, name)).resize({ width: 600 }).png().toBuffer());
+      res.type('image/png').set('Cache-Control', 'public, max-age=3600').send(pngCache.get(name));
+    } catch (e) { next(e); }
+  });
 
   // 앱이 보낸 실패 한 줄(QA용) — 서버 로그에만 남긴다
   r.post('/client-log', (req, res) => {
@@ -69,8 +86,15 @@ export function userApi(db: DB, cfg: Cfg) {
   });
 
   r.post('/session', (req, res) => {
-    const u = D.upsertUser(db, String(req.body?.deviceId || ''), String(req.body?.platform || ''));
-    res.json({ userId: u.id });
+    const s = D.openSession(db, String(req.body?.deviceId || ''), String(req.body?.platform || ''), req.get('x-walf-token'));
+    res.json({ userId: s.user.id, ...(s.token ? { token: s.token } : {}) }); // 토큰은 처음 한 번만 준다(앱이 저장)
+  });
+
+  // 이전 버전 계정 이어받기 — 왈프 팀이 사용자를 확인하고 준 일회용 코드로만(기기 ID만으로는 열 수 없다). 시도 횟수를 따로 제한한다
+  const claimTries = rateLimiter(5, 10 * 60_000);
+  r.post('/session/claim', auth, (req, res) => {
+    if (!claimTries(String(uid(req)))) return res.status(429).json({ error: 'rate_limited', message: '시도가 많아요. 10분 뒤에 다시 넣어 주세요.' });
+    res.json(D.claimLegacy(db, (req as any).user, req.body?.code));
   });
 
   r.get('/me', auth, (req, res) => {
@@ -84,7 +108,7 @@ export function userApi(db: DB, cfg: Cfg) {
       user: { id: u.id, pushToken: !!u.push_token, pushPermission: u.push_permission || null, createdAt: u.created_at },
       active: open ? D.requestView(db, open, base) : null,
       past: past.map(p => ({ id: p.id, status: p.status, title: D.shortName(p), brand: p.identified_brand || p.brand, isMock: !!p.is_mock,
-        display: D.display(db, p), endedAt: p.ended_at, photoUrl: p.photo ? `${base}/uploads/${p.photo}` : null })),
+        display: D.display(db, p), endedAt: p.ended_at, photoUrl: uploadUrl(base, p.photo) })),
       items: mine.items, watchLimit: mine.watchLimit,
       unread, pushConfigured: cfg.pushConfigured,
     });
@@ -94,34 +118,55 @@ export function userApi(db: DB, cfg: Cfg) {
   r.get('/items', auth, (req, res) => res.json(W.myItems(db, uid(req), baseOf(req), cfg.policy)));
   r.get('/sources', auth, (_q, res) => res.json(SOURCES.filter(s => s.status !== 'TEST_ONLY').map(s => ({ id: s.id, label: s.label, kind: s.kind, status: s.status, reason: s.reason, checked: s.checked }))));
 
-  r.get('/requests/:id/find', auth, (req, res) => res.json(F.findView(db, D.ownRequest(db, uid(req), idp(req.params.id)))));
+  // 찾아줘 결과 — 어디서 찾아봤는지(실제 판매처 몇 곳·테스트 판매처)를 함께 준다
+  const findOut = (req: express.Request, r: any) => F.findView(db, r, baseOf(req), coverageOf(db, r.id, cfg.search));
+  r.get('/requests/:id/find', auth, (req, res) => res.json(findOut(req, D.ownRequest(db, uid(req), idp(req.params.id)))));
   r.post('/requests/:id/find/confirm', auth, (req, res) => {
     const id = idp(req.params.id), next = req.body?.next;
     if (!['hunt', 'watch', 'save'].includes(next)) throw new HttpError(400, 'bad_next');
     const out = F.confirmFind(db, uid(req), id, Number(req.body?.identityId), next);
-    res.json({ ...out, find: F.findView(db, D.getRequest(db, id)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
+    res.json({ ...out, find: findOut(req, D.getRequest(db, id)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
   });
   r.post('/requests/:id/find/reject', auth, (req, res) => {
     const id = idp(req.params.id);
     F.rejectFind(db, uid(req), id, req.body?.reason);
-    res.json(F.findView(db, D.getRequest(db, id)));
+    res.json(findOut(req, D.getRequest(db, id)));
   });
 
-  const watchOut = (req: express.Request, id: number) => W.watchView(db, W.ownWatch(db, uid(req), id), baseOf(req), cfg.policy);
+  // 상품 페이지 가격 감시(Price Watch) + 새 판매처 탐색(Listing Discovery) · 대체 상품 — 서로 다른 작업, 화면에서도 나눠 보여 준다
+  const watchOut = (req: express.Request, id: number) => {
+    const w = W.ownWatch(db, uid(req), id);
+    return { ...W.watchView(db, w, baseOf(req), cfg.policy), ...(cfg.search ? X.watchExtrasView(db, w, baseOf(req), cfg.search, uid(req)) : {}) };
+  };
   r.post('/watches', auth, up.single('photo'), (req, res) => {
     try {
       const b = req.body || {};
       const id = W.createWatch(db, uid(req), { productName: b.productName, productUrl: b.productUrl, brand: b.brand, size: b.size, color: b.color, targetPrice: b.targetPrice,
         condition: b.condition, priceBasis: b.priceBasis, photo: req.file?.filename || null, productId: b.productId ? Number(b.productId) : null, requestId: b.requestId ? Number(b.requestId) : null }, cfg.policy);
+      if (cfg.search && (b.discovery === false || b.discovery === 'false')) X.updateDiscovery(db, uid(req), id, { discovery: false }, cfg.search);
       res.status(201).json(watchOut(req, id));
     } catch (e) { removeUpload(cfg.uploads, req.file); throw e; }
   });
   r.get('/watches/:id', auth, (req, res) => res.json(watchOut(req, idp(req.params.id))));
   r.patch('/watches/:id', auth, (req, res) => {
     const id = idp(req.params.id);
-    W.updateWatch(db, uid(req), id, req.body || {}, cfg.policy);
+    const b = req.body || {};
+    W.updateWatch(db, uid(req), id, b, cfg.policy);
+    if (cfg.search && (b.discovery !== undefined || b.discoverySources !== undefined)) X.updateDiscovery(db, uid(req), id, { discovery: b.discovery, discoverySources: b.discoverySources }, cfg.search);
+    if (b.priority !== undefined) FB.setPriority(db, uid(req), { watchId: id }, b.priority);
     res.json(watchOut(req, id));
   });
+  // 추천 기준(무엇이 중요한지) · 추천 피드백 · 행동 기록(열어 보기는 만족으로 치지 않는다)
+  r.post('/requests/:id/priority', auth, (req, res) => {
+    const id = idp(req.params.id);
+    FB.setPriority(db, uid(req), { requestId: id }, req.body?.priority ?? null);
+    res.json(findOut(req, D.ownRequest(db, uid(req), id)));
+  });
+  r.post('/offers/:id/feedback', auth, (req, res) => res.json(FB.recordSignal(db, uid(req), idp(req.params.id), String(req.body?.kind || '') as FB.SignalKind)));
+  r.post('/offers/:id/open', auth, (req, res) => res.json(FB.recordSignal(db, uid(req), idp(req.params.id), 'open')));
+  // 대체 상품·판매처 저장 — 저장해도 기다려줘·찾아줘 상태는 그대로
+  r.post('/offers/:id/save', auth, (req, res) => res.json(X.saveOffer(db, uid(req), idp(req.params.id), true)));
+  r.delete('/offers/:id/save', auth, (req, res) => res.json(X.saveOffer(db, uid(req), idp(req.params.id), false)));
   r.post('/watches/:id/:action', auth, (req, res) => {
     const id = idp(req.params.id), a = req.params.action;
     if (!['pause', 'resume', 'end', 'renew'].includes(a)) throw new HttpError(404, 'not_found');
