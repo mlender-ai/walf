@@ -70,7 +70,7 @@ DAY n 탐색 작업 생성 ─▶ AI 탐색: 무신사·29CM·W컨셉·번개장
 - 공식몰(카페24·schema.org) 상품 페이지는 가입 없이 동작해요. 번개장터·무신사 등 약관이 자동 수집을 금지한 곳은 열지 않아요(`server/src/sources.ts`).
 - 비용 가드레일: `WALF_AI_MONTHLY_BUDGET_USD`(기본 10) · `WALF_AI_MAX_CALLS_PER_REQUEST`(기본 10). 넘으면 작업이 멈추고 어드민 **비용** 화면에서 확인해요. 기다려줘 설정: `WALF_WATCH_*`(`server/.env.example`).
 - 문서: [구조](docs/WALF_V2_ARCHITECTURE.md) · [진행 보고](docs/WALF_V2_PROGRESS.md) · [비용 모델](docs/WALF_V2_COST_MODEL.md) · [주말 설정 체크리스트](docs/WEEKEND_SETUP_CHECKLIST.md)
-- Discovery Upgrade: [Gate 0 진단](docs/WALF_DISCOVERY_GATE0.md) · [Gate 3·4](docs/WALF_DISCOVERY_GATE34.md) · [Gate 5](docs/WALF_DISCOVERY_GATE5.md) · [판매처 접근 매트릭스](docs/WALF_SOURCE_ACCESS_MATRIX.md) · [운영 비용 시나리오](docs/WALF_COST_SCENARIOS.md)(`node server/tools/cost-scenarios.ts`)
+- Discovery Upgrade: [Gate 0 진단](docs/WALF_DISCOVERY_GATE0.md) · [Gate 3·4](docs/WALF_DISCOVERY_GATE34.md) · [Gate 5](docs/WALF_DISCOVERY_GATE5.md) · **[통합 보고](docs/WALF_DISCOVERY_REPORT.md)** · 회귀 확인 `cd server && npm run verify` · [판매처 접근 매트릭스](docs/WALF_SOURCE_ACCESS_MATRIX.md) · [운영 비용 시나리오](docs/WALF_COST_SCENARIOS.md)(`node server/tools/cost-scenarios.ts`)
 
 ## 2. 앱
 
