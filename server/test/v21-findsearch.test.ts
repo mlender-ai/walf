@@ -263,7 +263,7 @@ test('[실행] 식별했어도 판매 매물이 없으면 “없음”으로 끝
   assert.match(S.queueFindSearch(real.db, env(), real.id).skipped!, /쓸 수 있는 판매처 소스가 없어요/);
   assert.equal((real.db.prepare('SELECT COUNT(*) n FROM offer_searches').get() as any).n, 0);
 
-  const broken = env({ sources: [{ ...mockSource, async search() { throw new Error('boom'); }, pick: () => { throw new Error('pick 실패'); } }] });
+  const broken = env({ sources: [{ ...mockSource, async search() { throw new Error('boom'); }, pick: () => { throw new Error('pick 실패'); } }], similar: [] });
   const { db: db3, id: id3 } = await setup('[테스트:정확]');
   const q3 = S.queueFindSearch(db3, broken, id3);
   await S.createOfferSearcher(db3, broken).step();

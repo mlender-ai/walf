@@ -535,6 +535,7 @@ export function display(db: DB, r: Row, t = now()): Display {
     const f = findTiers(db, r.id);
     if (f.match) return d('find_match', '찾아줘 결과 · 7일 시작 전', '같은 옷을 찾았어요', '브랜드·모델을 확인했어요. 맞는지 보고, 매물을 찾을지 가격을 기다릴지 골라 주세요.', { action: { label: '결과 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
     if (f.likely) return d('find_likely', '찾아줘 결과 · 7일 시작 전', `이 옷일 가능성이 높아요`, `후보 ${f.likely}개를 골라 뒀어요. 확인되지 않은 부분도 함께 적었어요.`, { action: { label: '후보 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
+    if (f.alternatives) return d('find_discover', '찾아줘 결과 · 7일 시작 전', '같은 옷은 아직 못 찾았어요', '대신 비슷한 디자인의 옷을 골라 뒀어요. 같은 상품이라는 뜻은 아니에요.', { action: { label: '비슷한 옷 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
     if (f.discover) return d('find_discover', '찾아줘 결과 · 7일 시작 전', '같은 옷은 아직 못 찾았어요', '대신 비슷한 스타일의 브랜드를 골라 뒀어요. 같은 상품이라는 뜻은 아니에요.', { action: { label: '비슷한 브랜드 보기', target: `find:${r.id}`, primary: true }, isMock: f.mock });
     return d('identification_pending', '의뢰 접수 · 7일 시작 전', '어떤 옷인지 확인하고 있어요', '왈프 팀이 상품을 확인하면 7일 탐색이 시작돼요. 확인 전에는 기간이 흐르지 않아요.');
   }
@@ -594,11 +595,12 @@ export function display(db: DB, r: Row, t = now()): Display {
   return mk(d('searching', `DAY ${dd(day)} · ${kWhen(lastClosed.completed_at, t)}`, `${kRelDay(lastClosed.completed_at, t)} 판매처 ${n}곳을 살폈어요`, `조건에 맞는 매물은 아직 없어요. ${nextText}`), !!lastClosed.is_mock);
 }
 
-/** 사용자에게 공개된 찾아줘 결과 개수(MATCH·LIKELY·DISCOVER) */
+/** 사용자에게 공개된 찾아줘 결과 개수(MATCH·LIKELY·DISCOVER·대체 상품) */
 export function findTiers(db: DB, requestId: number) {
   const rows = all(db, `SELECT tier, is_mock FROM product_identities WHERE request_id=? AND status='published'`, requestId);
+  const alts = all(db, `SELECT is_mock FROM offers WHERE request_id=? AND published=1 AND publish_tier='alternative'`, requestId);
   const n = (t: string) => rows.filter(x => x.tier === t).length;
-  return { match: n('match'), likely: n('likely'), discover: n('discover'), mock: rows.some(x => x.is_mock) };
+  return { match: n('match'), likely: n('likely'), discover: n('discover'), alternatives: alts.length, mock: rows.some(x => x.is_mock) || alts.some(x => x.is_mock) };
 }
 
 export const STATE_LABEL: Record<string, string> = {

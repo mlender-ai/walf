@@ -15,7 +15,9 @@ import path from 'node:path';
 import { STYLE_LABEL, styleLabel } from './catalog.ts';
 import { SOURCES } from './sources.ts';
 import * as S from './findsearch.ts';
-import { itemPrice, totalPrice, type ProductOffer } from './offers.ts';
+import { itemPrice, offersOf, totalPrice, type ProductOffer, type StoredOffer } from './offers.ts';
+import * as R from './offerreview.ts';
+import { styleLabel as sl } from './catalog.ts';
 
 type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null; limits?: C.Limits; policy?: W.WatchPolicy; checker?: { step: (t?: number) => Promise<number | null> };
   search?: { env: S.SearchEnv; step: () => Promise<number | null> } };
@@ -70,11 +72,24 @@ function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
     : `<img src="${esc(o.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
   const won = (n: number | null) => n == null ? '—' : `${n.toLocaleString('ko-KR')}원`;
   const card = (o: ProductOffer) => {
+    const so = o as StoredOffer;
+    const state = so.reviewState === 'rejected' ? `<span class="tg x">제외 · ${esc(so.reviewNote || '')}</span>`
+      : so.reviewState === 'approved' ? `<span class="tg ${so.published ? 'v' : 'p'}">${so.published ? '공개됨' : '공개 대기(찾아줘 결과 공개 때 함께)'} · ${esc(R.TIER_LABEL[so.publishTier!] || '')}</span>` : '<span class="tg p">검수 전</span>';
+    const acts: [string, string][] = o.relation === 'similar' ? [['alternative', '비슷한 디자인으로 공개'], ['reject', '제외']]
+      : [['exact', '같은 상품 확인으로 공개'], ['possible', '같은 상품일 수 있음으로 공개'], ['reject', '제외']];
+    const review = so.id ? `<form method="post" action="/admin/offers/${so.id}/review" class="row" style="margin-top:8px;align-items:center">
+      <select name="action" style="flex:2">${acts.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+      <select name="reason" style="flex:2"><option value="">제외 사유(제외할 때)</option>${R.REJECT_REASONS.map(x => `<option>${esc(x)}</option>`).join('')}</select>
+      <input type="text" name="note" maxlength="300" placeholder="${o.relation === 'same' && o.verdict !== 'same_code' ? '같은 상품 확인 근거(품번 미확인이면 필수, 10자 이상)' : '메모(선택)'}" style="flex:3">
+      <button class="btn sm" style="flex:none">저장</button></form>${so.published ? `<form method="post" action="/admin/offers/${so.id}/review" style="margin-top:4px"><input type="hidden" name="action" value="hide"><button class="btn s sm">사용자 화면에서 내리기</button></form>` : ''}` : '';
     const sizes = [...new Set(o.options.map(x => `${x.size || '?'}${x.color ? `(${x.color})` : ''} ${x.stock === 'in_stock' ? '있음' : x.stock === 'sold_out' ? '품절' : '모름'}`))];
-    return `<div class="of">${img(o)}<div><p style="margin:0"><span class="tg ${o.verdict === 'same_code' ? 'v' : o.verdict === 'likely' ? 'o' : 'x'}">${VERDICT_LABEL[o.verdict]}</span> <span class="tg p">${DETAIL_LABEL[o.detail]}</span>${o.isMock ? MOCK : ''}</p>
+    const head = o.relation === 'similar' ? `<span class="tg x">비슷한 디자인 · 같은 상품 아님</span> <span class="sub">디자인 점수 ${o.score ?? '—'} · ${esc(o.recommender)} ${esc(o.recommenderVersion)}</span>`
+      : `<span class="tg ${o.verdict === 'same_code' ? 'v' : o.verdict === 'likely' ? 'o' : 'x'}">${VERDICT_LABEL[o.verdict]}</span> <span class="tg p">${DETAIL_LABEL[o.detail]}</span>`;
+    return `<div class="of" id="offer-${so.id}">${img(o)}<div><p style="margin:0">${head} ${state}${o.isMock ? MOCK : ''}</p>
       <p style="margin:4px 0 0"><b>${esc(o.seller)}</b> · <a href="${o.url.startsWith('mock://') ? '#' : esc(o.url)}" target="_blank" rel="noopener noreferrer">${esc(o.name || o.url)}</a></p>
       <ul class="ck">${o.checks.map(c => `<li class="${c.result === 'match' ? 'm' : c.result === 'mismatch' ? 'x' : ''}">${CHECK_MARK[c.result]} ${esc(c.text)}</li>`).join('')}</ul>
-      ${o.diffPoints.length ? `<p class="sub" style="margin:4px 0 0">다른 점·주의: ${o.diffPoints.map(esc).join(' · ')}</p>` : ''}${o.detailNote ? `<p class="sub" style="margin:2px 0 0">${esc(o.detailNote)}</p>` : ''}</div>
+      ${o.relation === 'similar' && o.similarPoints.length ? `<p style="margin:4px 0 0;font-size:12.5px"><b>비슷한 점</b> ${o.similarPoints.map(esc).join(' · ')}</p>` : ''}
+      ${o.diffPoints.length ? `<p class="sub" style="margin:4px 0 0">다른 점·주의: ${o.diffPoints.map(esc).join(' · ')}</p>` : ''}${o.detailNote ? `<p class="sub" style="margin:2px 0 0">${esc(o.detailNote)}</p>` : ''}${review}</div>
       <div><dl class="kv" style="grid-template-columns:70px 1fr"><dt>판매가</dt><dd>${won(o.price)}${o.salePrice ? ` → <b>${won(o.salePrice)}</b>` : ''}</dd><dt>배송비</dt><dd>${o.shipping == null ? '모름' : won(o.shipping)}</dd>
       <dt>총액</dt><dd>${totalPrice(o) != null ? won(totalPrice(o)) : itemPrice(o) != null ? `${won(itemPrice(o))} + 배송비 모름` : '—'}</dd><dt>상태</dt><dd>${{ new: '새 상품', used: '중고', unknown: '모름' }[o.condition]}</dd>
       <dt>원하는 옵션</dt><dd>${esc(rq.size || '사이즈 무관')} · ${WANT_SIZE[o.wantSize]}</dd></dl>${sizes.length ? `<p class="sub" style="margin:4px 0 0">옵션: ${esc(sizes.join(' · '))}</p>` : ''}</div></div>`;
@@ -99,7 +114,29 @@ function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
     <details ${r.sale.state === 'none' ? 'open' : ''}><summary>소스별 처리 ${r.sources.filter(x => x.outcome !== 'not_run').length}곳 검색 · ${r.sources.filter(x => x.outcome === 'not_run').length}곳 검색하지 않음</summary><table><thead><tr><th>소스</th><th>상태</th><th>이번 탐색</th><th>근거·검색어</th></tr></thead><tbody>${rows}</tbody></table></details>
     ${group('같은 상품 · 품번 일치', r.sale.same)}${group('같은 상품일 가능성 높음', r.sale.likely)}${group('같은 상품인지 확인 못 함', r.sale.unverified)}${group('다른 상품(제외)', r.sale.different, false)}
     <ul class="sub" style="list-style:disc;padding-left:18px;margin-top:10px">${r.limits.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
-    ${searches.length > 1 ? `<p class="sub">이전 탐색: ${searches.slice(1).map(x => `#${x.id} ${esc(x.status)} ${kWhen(x.finished_at || x.created_at, t)} · ${esc(x.summary || '')}`).join(' / ')}</p>` : ''}</section>`;
+    ${searches.length > 1 ? `<p class="sub">이전 탐색: ${searches.slice(1).map(x => `#${x.id} ${esc(x.status)} ${kWhen(x.finished_at || x.created_at, t)} · ${esc(x.summary || '')}`).join(' / ')}</p>` : ''}</section>
+    ${similarHtml(db, rq, cfg, t, card)}`;
+}
+
+/** 대체 상품(비슷한 디자인의 실제 판매 상품) — 추천 엔진별 처리와 디자인 점수 순 후보. 공개하면 “같은 상품 아님”으로 보인다 */
+function similarHtml(db: DB, rq: any, cfg: Cfg, t: number, card: (o: ProductOffer) => string) {
+  const e = cfg.search?.env;
+  if (!e) return '';
+  const s = S.latestSearches(db, rq.id, 1, 'similar')[0];
+  const button = `<form method="post" action="/admin/requests/${rq.id}/offers/similar" style="display:inline"><button class="btn s sm">비슷한 디자인 ${s ? '다시 ' : ''}고르기</button></form>`;
+  if (!s) {
+    const tg = S.similarTargetOf(db, rq.id, e.malls);
+    return `<section class="ob" data-similar="none"><h2>대체 상품 <span class="sub">· 비슷한 디자인의 실제 판매 상품(같은 상품 아님)</span></h2><p class="sub">${tg ? '곧 자동으로 골라요.' : '사진에서 읽은 디자인(스타일)이 없어 고를 수 없어요.'}</p>${tg ? button : ''}</section>`;
+  }
+  const target = JSON.parse(s.target || '{}');
+  const offers = offersOf(db, s.id);
+  const rep = JSON.parse(s.report || '[]') as S.SourceReport[];
+  const busy = ['queued', 'running'].includes(s.status);
+  return `<section class="ob" data-similar="${esc(s.status)}:${offers.length}"><h2>대체 상품 <span class="sub">· 비슷한 디자인의 실제 판매 상품(같은 상품 아님) · 정렬: 제품군·실루엣 > 디테일·소재 > 색·무드(브랜드는 점수에 넣지 않음)</span>${s.is_mock ? MOCK : ''}</h2>
+    <div class="aibar"><b>기준 디자인</b><span>${esc(Object.values(target.style || {}).flat().map((v: any) => sl(String(v))).join(' · '))}</span><span class="sub">${esc(S.BASIS_LABEL[target.basis as S.Basis] || '')}${target.name ? ` · 같은 상품(${esc([target.brand, target.name].filter(Boolean).join(' '))})은 뺌` : ''} · ${busy ? '고르는 중' : s.status === 'failed' ? `실패 · ${esc(s.error)}` : `${kWhen(s.finished_at, t)} 완료`}</span><span class="sp"></span>${busy ? '' : button}</div>
+    ${s.summary ? `<p><b>${esc(s.summary)}</b></p>` : ''}
+    <table><thead><tr><th>추천 엔진</th><th>상태</th><th>이번 실행</th><th>근거</th></tr></thead><tbody>${rep.map(x => `<tr><td><b>${esc(x.label)}</b></td><td><span class="st">${esc(x.status)}</span></td><td>${S.OUTCOME_LABEL[x.outcome]}${x.outcome === 'ok' || x.outcome === 'empty' ? ` · 후보 ${x.hits}개` : ''}</td><td class="sub">${esc(x.reason)}${x.errors.length ? `<br>오류: ${x.errors.map(esc).join(' / ')}` : ''}</td></tr>`).join('')}</tbody></table>
+    ${offers.length ? offers.map(card).join('') : '<p class="empty">공개할 만한 비슷한 디자인이 없어요.</p>'}</section>`;
 }
 const FONT = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">';
 
@@ -276,6 +313,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
         ${fd.discover.length ? `<div class="id"><p style="margin:0 0 6px"><b>DISCOVER · 비슷한 스타일</b> <span class="sub">MATCH가 없을 때만 공개돼요. 같은 상품이라고 말하지 않아요. 사진에서 본 스타일: ${esc(fd.styleWords.join(' · ') || '없음')}</span></p>
           ${fd.discover.map(c => `<label class="in" style="display:flex;margin:6px 0"><input type="checkbox" name="disc" value="${esc(c.brandKey + '|' + c.scope)}" checked><b>${esc(c.brand)}${c.scope ? ' ' + esc(c.scope) : ''}</b>&nbsp;<span class="sub">점수 ${c.score} · ${esc(c.reasons.join(' · '))} · ${c.status === 'verified' ? '왈프 팀 확인' : c.status === 'fixture' ? '테스트 데이터' : '출처 있음·검수 전'}${c.sources.length ? ` · <a href="${esc(c.sources[0])}" target="_blank" rel="noopener noreferrer">출처</a>` : ''}</span></label>`).join('')}</div>`
           : `<p class="sub">비슷한 스타일 후보 없음${fd.styleWords.length ? ` — 사진에서 본 스타일(${esc(fd.styleWords.join(' · '))})과 2가지 이상 겹치는 브랜드 매핑이 없어요` : ''}.</p>`}
+        ${(() => { const n = (db.prepare(`SELECT COUNT(*) n FROM offers WHERE request_id=? AND review_state='approved' AND published=0`).get(rq.id) as any).n; return n ? `<p><b>검수해 둔 판매처·대체 상품 ${n}개도 함께 공개돼요.</b> <span class="sub">아래 “판매처 탐색”·“대체 상품”에서 고른 것</span></p>` : ''; })()}
         <p><button class="btn sm">고른 결과를 사용자에게 공개</button> <span class="sub">공개하면 앱에 결과가 보이고 알림이 가요. 사용자가 확인하면 7일 탐색 또는 기다려줘로 이어져요.</span></p></form>` : ''}
       ${pubRows ? `<table><tbody>${pubRows}</tbody></table>` : ''}</div>`;
     let ident = '';
@@ -507,6 +545,28 @@ export function adminRouter(db: DB, cfg: Cfg) {
       next(e);
     }
   });
+  r.post('/requests/:id/offers/similar', async (req, res, next) => {
+    const id = Number(req.params.id);
+    try {
+      D.getRequest(db, id);
+      if (!cfg.search) throw new HttpError(409, 'search_off', '판매처 탐색이 꺼져 있어요.');
+      const q = S.queueSimilarSearch(db, cfg.search.env, id, { by: OP(req), force: true });
+      if (!q.id) return res.redirect(`/admin/requests/${id}?e=${encodeURIComponent(q.skipped || '시작하지 못했어요.')}`);
+      await cfg.search.step();
+      back(res, id, '비슷한 디자인을 다시 골랐어요. 결과는 아래 “대체 상품”에 있어요.');
+    } catch (e: any) {
+      if (e instanceof HttpError) return res.redirect(`/admin/requests/${id}?e=${encodeURIComponent(e.message)}`);
+      next(e);
+    }
+  });
+  const ACTIONS = ['exact', 'possible', 'alternative', 'reject', 'hide'];
+  r.post('/offers/:id/review', withRow('SELECT * FROM offers WHERE id=?', (o, req) => {
+    const action = String(req.body.action || '');
+    if (!ACTIONS.includes(action)) throw new HttpError(400, 'bad_action', '검수 동작을 골라 주세요.');
+    const reason = action === 'reject' ? [req.body.reason, req.body.note].map(x => String(x || '').trim()).filter(Boolean).join(' · ') : String(req.body.note || '').trim();
+    const x = R.reviewOffer(db, o.id, action as R.ReviewAction, { reason }, OP(req));
+    return [o.request_id, action === 'reject' ? '후보를 제외했어요.' : action === 'hide' ? '사용자 화면에서 내렸어요.' : x.published ? `${R.TIER_LABEL[action]}(으)로 공개했어요.` : `${R.TIER_LABEL[action]}(으)로 검수했어요. 찾아줘 결과를 공개할 때 함께 공개돼요.`];
+  }));
   // 테스트 판매처 이미지(직접 그린 SVG) — 테스트 소스가 켜졌을 때만
   const MOCK_IMG = path.resolve(import.meta.dirname, '..', 'fixtures', 'search-images');
   r.get('/mock-image/:name', (req, res) => {

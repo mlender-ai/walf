@@ -44,8 +44,18 @@ export type FindItem = { id: number; tier: 'match' | 'likely' | 'discover'; bran
   matched: Attr[]; uncertain: Attr[]; evidence: { url: string; host: string }[]; note: string | null; confirmed: boolean; isMock: boolean };
 export type FindView = { requestId: number; status: string; state: 'pending' | 'ready' | 'confirmed'; publishedLabel: string | null; match: FindItem | null; likely: FindItem[]; discover: FindItem[];
   styleWords: string[]; productId: number | null; canHunt: boolean; isMock: boolean;
-  /** DISCOVER 는 브랜드 단위 추천. 판매 중인 비슷한 상품 큐레이션은 아직 연결 전(PENDING_INTEGRATION) */
-  discoverKind: 'brand'; similarProducts: { status: string; items: unknown[] } };
+  /** DISCOVER 는 브랜드 단위 추천. 판매 중인 비슷한 “상품”은 alternatives(실제 추천 엔진은 연결 전 — PENDING_INTEGRATION) */
+  discoverKind: 'brand'; similarProducts: { status: string; items: OfferCard[] };
+  /** 식별 결과와 따로: 같은 상품을 파는 곳(운영자가 공개한 것만) */
+  sale: OfferPart & { exact: OfferCard[]; possible: OfferCard[]; searchedSources: string[]; notSearchedCount: number; note: string };
+  /** 비슷한 디자인의 실제 판매 상품(같은 상품 아님) */
+  alternatives: OfferPart & { items: OfferCard[] } };
+export type OfferPart = { state: 'not_started' | 'searching' | 'reviewing' | 'ready' | 'none' | 'failed'; searchedLabel: string | null };
+/** 판매처 후보·대체 상품 카드 — 가격·재고는 basisLabel 시각 기준이고 바뀔 수 있다(“구매 가능” 확정 아님) */
+export type OfferCard = {
+  id: number; tier: 'exact' | 'possible' | 'alternative'; seller: string; brand: string | null; name: string | null; imageUrl: string | null; url: string | null; isMock: boolean;
+  price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'used' | 'unknown';
+  sizeLabel: string | null; basisLabel: string; confirmed: string[]; unconfirmed: string[]; similarPoints: string[]; diffPoints: string[]; teamNote: string | null };
 
 export type WatchDisplay = { key: string; label: string; title: string; desc: string; eyebrow?: string; notice?: string; isMock: boolean };
 export type PricePoint = { at: number; label: string; ok: boolean; error: string | null; price: number | null; shipping: number | null; shippingKnown: boolean; total: number | null;

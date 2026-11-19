@@ -107,13 +107,49 @@ async function main() {
   const tiers = [...(await page(`/requests/${id}`)).matchAll(/name="tier_(\d+)"/g)].map(x => x[1]);
   await post(`/requests/${id}/find/publish`, { [`tier_${tiers[0]}`]: 'match' });
   await sleep(600);
-  assert.equal(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id=?', id), 1, '운영자가 같은 상품으로 공개해도 같은 조건이라 다시 검색하지 않는다');
+  assert.equal(count(`SELECT COUNT(*) n FROM offer_searches WHERE request_id=? AND purpose='find'`, id), 1, '운영자가 같은 상품으로 공개해도 같은 조건이라 다시 검색하지 않는다');
   assert.match(decodeURIComponent(await post(`/requests/${id}/offers/search`, {})), /판매처 탐색을 실행했어요/);
   await waitFor(`/requests/${id}`, 'data-offers="done:found_same"');
-  assert.equal(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id=?', id), 2);
+  assert.equal(count(`SELECT COUNT(*) n FROM offer_searches WHERE request_id=? AND purpose='find'`, id), 2);
   assert.match(await page(`/requests/${id}`), /왈프 팀이 공개한 식별 결과[\s\S]*?이전 탐색: #1 done/);
-  assert.equal(count(`SELECT COUNT(*) n FROM listings WHERE is_mock=1`), 7, '같은 상품 페이지는 다시 찾아도 listings 한 줄');
+  assert.equal(count(`SELECT COUNT(*) n FROM listings WHERE is_mock=1 AND url NOT LIKE 'mock://shop/sim-%'`), 7, '같은 상품 페이지는 다시 찾아도 listings 한 줄');
   ok('같은 조건 재검색 막기(공개 후에도 1번) → 운영자 “다시 실행”은 새로 검색(2번째 · 근거: 왈프 팀 공개) · 상품 페이지는 한 줄씩');
+
+  // ── Gate B: 대체 상품 · 운영자 검수 · 앱 공개 ──
+  html = await waitFor(`/requests/${id}`, /data-similar="done:\d+"/);
+  assert.match(html, /대체 상품[\s\S]*?정렬: 제품군·실루엣 > 디테일·소재 > 색·무드\(브랜드는 점수에 넣지 않음\)/);
+  assert.match(html, /테스트 큐레이터\(Fixture\)[\s\S]*?패션 브레인\(별도 연구\)[\s\S]*?PENDING_INTEGRATION/);
+  assert.match(html, /나일론 트랙 자켓 블랙[\s\S]*?비슷한 디자인 · 같은 상품 아님/);
+  assert.ok(!/sim-mystic-same/.test(html), '찾는 옷과 같은 상품은 대체 상품에서 뺀다');
+  ok('대체 상품: 테스트 큐레이터 후보를 디자인·실루엣 순으로 정렬(브랜드 점수 없음) · 패션 브레인은 연결 전 · 같은 상품은 뺌');
+  const offerId = (url: string, purpose = 'find') => { const d = new DatabaseSync(DB_FILE, { readOnly: true }); try { return (d.prepare(`SELECT o.id FROM offers o JOIN offer_searches s ON s.id=o.search_id WHERE o.request_id=? AND o.url=? AND s.purpose=? ORDER BY o.id DESC LIMIT 1`).get(id, url, purpose) as any).id as number; } finally { d.close(); } };
+  const simIds = (() => { const d = new DatabaseSync(DB_FILE, { readOnly: true }); try { return (d.prepare(`SELECT o.id FROM offers o JOIN offer_searches s ON s.id=o.search_id WHERE o.request_id=? AND s.purpose='similar' AND s.id=(SELECT MAX(id) FROM offer_searches WHERE request_id=? AND purpose='similar') ORDER BY o.rank`).all(id, id) as any[]).map(x => x.id); } finally { d.close(); } })();
+  await assert.rejects(post(`/offers/${offerId('mock://shop/select-mystic-navy')}/review`, { action: 'exact' }), /직접 확인한 근거/);
+  await post(`/offers/${offerId('mock://shop/official-055-navy')}/review`, { action: 'exact' });
+  await post(`/offers/${offerId('mock://shop/select-mystic-navy')}/review`, { action: 'exact', note: '로고 자수·소매 절개선·지퍼 위치가 공식몰 사진과 같음' });
+  await post(`/offers/${offerId('mock://shop/slow-shop')}/review`, { action: 'possible' });
+  await assert.rejects(post(`/offers/${offerId('mock://shop/other-brand')}/review`, { action: 'reject' }), /제외 사유/);
+  await post(`/offers/${offerId('mock://shop/other-brand')}/review`, { action: 'reject', reason: '다른 상품' });
+  await post(`/offers/${simIds[0]}/review`, { action: 'alternative' });
+  await post(`/offers/${simIds[1]}/review`, { action: 'alternative' });
+  await assert.rejects(post(`/offers/${simIds[2]}/review`, { action: 'exact' }), /비슷한 디자인/);
+  ok('운영자 검수: 품번 미확인 후보를 근거 없이 “같은 상품 확인”으로 공개 못 함 · 제외는 사유 필수 · 대체 상품은 “같은 상품”으로 공개 못 함');
+  const f = (await api('GET', `/requests/${id}/find`)).j;
+  assert.equal(f.sale.state, 'ready');
+  assert.deepEqual(f.sale.exact.map((o: any) => o.seller), ['테스트 공식몰', '테스트 편집숍']);
+  assert.deepEqual(f.sale.possible.map((o: any) => o.seller), ['테스트 편집숍2']);
+  assert.equal(f.alternatives.items.length, 2);
+  assert.equal(f.alternatives.items[0].name, '나일론 트랙 자켓 블랙');
+  assert.ok(f.alternatives.items[0].similarPoints.length && f.alternatives.items[0].diffPoints.length);
+  assert.equal(f.sale.exact[0].url, null, '테스트 상품은 판매 페이지 주소를 주지 않는다');
+  assert.ok(!/구매 가능|other-brand|mock:\/\//.test(JSON.stringify(f)), '“구매 가능”·제외한 후보·테스트 주소가 앱에 가지 않는다');
+  const png = await fetch(f.sale.exact[0].imageUrl);
+  assert.equal(png.status, 200); assert.equal(png.headers.get('content-type'), 'image/png');
+  const notis = (await api('GET', '/alerts')).j;
+  const list = Array.isArray(notis) ? notis : notis.items || [];
+  assert.equal(list.filter((n: any) => n.title === '같은 옷을 파는 곳을 찾았어요').length, 1);
+  assert.equal(list.filter((n: any) => n.title === '비슷한 디자인의 옷을 골라 봤어요').length, 1);
+  ok('앱: 판매처(같은 상품 확인 2 · 같은 상품일 수 있음 1)와 비슷한 디자인 2개가 보임 · 이미지(PNG) · “구매 가능” 표현 없음 · 알림은 종류별 한 번');
 }
 
 async function main2() {
@@ -144,7 +180,7 @@ async function main2() {
   assert.equal((await api('DELETE', '/me')).status, 200);
   assert.equal(count('SELECT COUNT(*) n FROM offers WHERE request_id=?', FIRST), 0);
   assert.equal(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id=?', FIRST), 0);
-  assert.equal(count('SELECT COUNT(*) n FROM offer_searches'), 1, '다른 사용자의 탐색은 그대로');
+  assert.ok(count('SELECT COUNT(*) n FROM offer_searches WHERE request_id<>?', FIRST) >= 1, '다른 사용자의 탐색은 그대로');
   assert.ok(count('SELECT COUNT(*) n FROM listings') > 0, '판매처 상품 페이지 기록(개인 정보 아님)은 남는다');
   ok('계정 삭제 → 그 사용자 의뢰의 판매처 탐색·후보도 삭제(판매처 상품 페이지 기록만 남음)');
 }

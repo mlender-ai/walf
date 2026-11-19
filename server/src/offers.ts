@@ -3,7 +3,7 @@
 // 외부 추천 엔진(패션 브레인 등)이 주는 값도 cleanOffer 를 거쳐야 저장된다. 검수 전에는 사용자에게 보이지 않는다.
 import { type DB, tx } from './db.ts';
 import { urlKey, type Stock } from './sources.ts';
-import { normSize } from './catalog.ts';
+import { cleanStyle, normSize, type Style } from './catalog.ts';
 import type { Check, Verdict } from './sameproduct.ts';
 import { now } from './time.ts';
 
@@ -26,6 +26,8 @@ export type ProductOffer = {
   verdict: Verdict; checks: Check[];
   /** 원래 옷과 비슷한 점·다른 점(추천 상품은 필수, 같은 상품 후보는 색·상태 차이 등) */
   similarPoints: string[]; diffPoints: string[];
+  /** 이 상품의 디자인 요소(실루엣·소재·디테일 등 통제 어휘) — 대체 상품 정렬에 쓴다 */
+  style: Style | null;
   /** 누가 골랐는지 — 규칙 탐색이면 walf-rules, 외부 추천 엔진이면 그 이름과 버전 */
   recommender: string; recommenderVersion: string; score: number | null;
   detail: 'fetched' | 'listed_only' | 'failed'; detailNote: string | null; queries: string[]; fetchedAt: number | null;
@@ -65,7 +67,7 @@ export function cleanOffer(raw: any, opts: { mockAllowed?: boolean; relation?: '
     condition: pick(raw?.condition, ['new', 'used', 'unknown'] as const, 'unknown'),
     options, stock: pick(raw?.stock, STOCKS, 'unknown'), wantSize: 'unknown', wantColor: 'unknown',
     verdict: 'unverified', checks: [],
-    similarPoints: strs(raw?.similarPoints, 6, 120), diffPoints: strs(raw?.diffPoints, 6, 120),
+    similarPoints: strs(raw?.similarPoints, 6, 120), diffPoints: strs(raw?.diffPoints, 6, 120), style: raw?.style ? cleanStyle(raw.style) : null,
     recommender: recommender!, recommenderVersion: version!, score: Number.isFinite(score) ? Math.round(score * 1000) / 1000 : null,
     detail: 'listed_only', detailNote: null, queries: [], fetchedAt: null, groupKey: null, isMock: url!.startsWith('mock://'),
   };
@@ -82,7 +84,7 @@ export function saveOffers(db: DB, searchId: number, requestId: number | null, o
   tx(db, () => {
     const ins = db.prepare(`INSERT INTO offers(search_id, request_id, listing_id, relation, rank, group_key, source, seller, url, url_key, brand, name, model_code, season, image_url,
       price, sale_price, currency, shipping, condition, options, stock, want_size, want_color, verdict, checks, similar_points, diff_points, recommender, recommender_version, score,
-      detail, detail_note, queries, fetched_at, is_mock, created_at) VALUES (${Array(37).fill('?').join(',')})`);
+      detail, detail_note, queries, fetched_at, is_mock, created_at, style) VALUES (${Array(38).fill('?').join(',')})`);
     offers.forEach((o, i) => {
       const key = urlKey(o.url);
       let l = one(db, 'SELECT id FROM listings WHERE url_key=?', key);
@@ -93,14 +95,28 @@ export function saveOffers(db: DB, searchId: number, requestId: number | null, o
       } else db.prepare('UPDATE listings SET last_seen=? WHERE id=?').run(t, l.id);
       ins.run(searchId, requestId, l.id, o.relation, i + 1, o.groupKey, o.source, o.seller, o.url, key, o.brand, o.name, o.modelCode, o.season, o.imageUrl,
         o.price, o.salePrice, o.currency, o.shipping, o.condition, json(o.options), o.stock, o.wantSize, o.wantColor, o.verdict, json(o.checks), json(o.similarPoints), json(o.diffPoints),
-        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t);
+        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t, o.style ? json(o.style) : null);
+      // 같은 의뢰에서 같은 페이지를 다시 찾으면 운영자 검수를 이어받는다(공개 중이면 새 줄로 옮겨 최신 가격으로 보이게)
+      const id = Number(one(db, 'SELECT last_insert_rowid() id')!.id);
+      if (requestId != null) {
+        const prev = one(db, `SELECT * FROM offers WHERE request_id=? AND url_key=? AND relation=? AND id<? AND review_state<>'pending' ORDER BY id DESC LIMIT 1`, requestId, key, o.relation, id);
+        if (prev) {
+          db.prepare('UPDATE offers SET review_state=?, publish_tier=?, published=?, published_at=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?')
+            .run(prev.review_state, prev.publish_tier, prev.published, prev.published_at, prev.reviewed_by, prev.reviewed_at, prev.review_note, id);
+          if (prev.published) db.prepare('UPDATE offers SET published=0 WHERE id=?').run(prev.id);
+        }
+      }
     });
   });
 }
 
-export function offerOf(r: Row): ProductOffer & { id: number; rank: number; reviewState: string; listingId: number | null } {
+export type StoredOffer = ProductOffer & { id: number; searchId: number; requestId: number | null; rank: number; listingId: number | null;
+  reviewState: 'pending' | 'approved' | 'rejected'; publishTier: 'exact' | 'possible' | 'alternative' | null; published: boolean; publishedAt: number | null;
+  reviewedBy: string | null; reviewedAt: number | null; reviewNote: string | null };
+export function offerOf(r: Row): StoredOffer {
   return {
-    id: r.id, rank: r.rank, listingId: r.listing_id, reviewState: r.review_state,
+    id: r.id, searchId: r.search_id, requestId: r.request_id, rank: r.rank, listingId: r.listing_id, reviewState: r.review_state, publishTier: r.publish_tier ?? null,
+    published: !!r.published, publishedAt: r.published_at ?? null, reviewedBy: r.reviewed_by ?? null, reviewedAt: r.reviewed_at ?? null, reviewNote: r.review_note ?? null, style: parse(r.style, null),
     relation: r.relation, source: r.source, seller: r.seller, url: r.url, brand: r.brand, name: r.name, modelCode: r.model_code, season: r.season, imageUrl: r.image_url,
     price: r.price, salePrice: r.sale_price, currency: r.currency, shipping: r.shipping, condition: r.condition, options: parse(r.options, []), stock: r.stock,
     wantSize: r.want_size, wantColor: r.want_color, verdict: VERDICTS.includes(r.verdict) ? r.verdict : 'unverified', checks: parse(r.checks, []),

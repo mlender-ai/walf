@@ -316,7 +316,7 @@ CREATE TABLE IF NOT EXISTS offers(
   recommender TEXT NOT NULL, recommender_version TEXT NOT NULL, score REAL,
   detail TEXT NOT NULL,                 -- fetched(상품 페이지를 읽음) | listed_only(검색 결과만) | failed
   detail_note TEXT, queries TEXT, fetched_at INTEGER,
-  review_state TEXT NOT NULL DEFAULT 'pending',  -- pending | confirmed_same | rejected (운영자 검수)
+  review_state TEXT NOT NULL DEFAULT 'pending',  -- pending | approved(publish_tier 로 공개) | rejected (운영자 검수)
   reviewed_by TEXT, reviewed_at INTEGER, review_note TEXT,
   is_mock INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
 );
@@ -385,6 +385,11 @@ export function openDb(file: string, opts: OpenOpts = {}): DB {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_noti_dedupe ON notifications(user_id, dedupe_key) WHERE dedupe_key IS NOT NULL');
   // V2.1 — 새 표만 더한다(기존 데이터는 그대로)
   db.exec(SCHEMA_V3);
+  // Gate B — 대체 상품의 디자인 요소와 사용자 공개(운영자 검수 후에만)
+  add('offers', 'style', 'TEXT');                 // 이 상품의 디자인 요소(통제 어휘 JSON) — 대체 상품 정렬·비슷한 점/다른 점
+  add('offers', 'publish_tier', 'TEXT');          // exact(같은 상품 확인) | possible(같은 상품일 수 있음) | alternative(비슷한 디자인)
+  add('offers', 'published', 'INTEGER NOT NULL DEFAULT 0');
+  add('offers', 'published_at', 'INTEGER');
   if (version < 2) backfillProducts(db);
   if (version < SCHEMA_VERSION) db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
   return db;

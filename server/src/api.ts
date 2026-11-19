@@ -9,6 +9,7 @@ import { HttpError } from './domain.ts';
 import * as F from './find.ts';
 import * as W from './watch.ts';
 import { SOURCES } from './sources.ts';
+import sharp from 'sharp';
 
 type Cfg = { uploads: string; pushConfigured: boolean; policy: W.WatchPolicy; rate?: { writes: number; windowMs: number } };
 
@@ -60,6 +61,16 @@ export function userApi(db: DB, cfg: Cfg) {
   });
 
   r.get('/health', (_q, res) => res.json({ ok: true, service: 'walf', pushConfigured: cfg.pushConfigured }));
+  // 테스트 판매처·대체 상품 그림(직접 그린 SVG → PNG). 테스트 소스가 켜졌을 때만 — 실제 판매처 이미지는 서버가 내려받지 않는다
+  const MOCK_IMG = path.resolve(import.meta.dirname, '..', 'fixtures', 'search-images'), pngCache = new Map<string, Buffer>();
+  r.get('/mock-image/:name', async (req, res, next) => {
+    const name = String(req.params.name);
+    if (!cfg.policy.mockAllowed || !/^[a-z0-9-]+\.svg$/.test(name) || !fs.existsSync(path.join(MOCK_IMG, name))) return res.status(404).end();
+    try {
+      if (!pngCache.has(name)) pngCache.set(name, await sharp(path.join(MOCK_IMG, name)).resize({ width: 600 }).png().toBuffer());
+      res.type('image/png').set('Cache-Control', 'public, max-age=3600').send(pngCache.get(name));
+    } catch (e) { next(e); }
+  });
 
   // 앱이 보낸 실패 한 줄(QA용) — 서버 로그에만 남긴다
   r.post('/client-log', (req, res) => {
@@ -94,17 +105,17 @@ export function userApi(db: DB, cfg: Cfg) {
   r.get('/items', auth, (req, res) => res.json(W.myItems(db, uid(req), baseOf(req), cfg.policy)));
   r.get('/sources', auth, (_q, res) => res.json(SOURCES.filter(s => s.status !== 'TEST_ONLY').map(s => ({ id: s.id, label: s.label, kind: s.kind, status: s.status, reason: s.reason, checked: s.checked }))));
 
-  r.get('/requests/:id/find', auth, (req, res) => res.json(F.findView(db, D.ownRequest(db, uid(req), idp(req.params.id)))));
+  r.get('/requests/:id/find', auth, (req, res) => res.json(F.findView(db, D.ownRequest(db, uid(req), idp(req.params.id)), baseOf(req))));
   r.post('/requests/:id/find/confirm', auth, (req, res) => {
     const id = idp(req.params.id), next = req.body?.next;
     if (!['hunt', 'watch', 'save'].includes(next)) throw new HttpError(400, 'bad_next');
     const out = F.confirmFind(db, uid(req), id, Number(req.body?.identityId), next);
-    res.json({ ...out, find: F.findView(db, D.getRequest(db, id)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
+    res.json({ ...out, find: F.findView(db, D.getRequest(db, id), baseOf(req)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
   });
   r.post('/requests/:id/find/reject', auth, (req, res) => {
     const id = idp(req.params.id);
     F.rejectFind(db, uid(req), id, req.body?.reason);
-    res.json(F.findView(db, D.getRequest(db, id)));
+    res.json(F.findView(db, D.getRequest(db, id), baseOf(req)));
   });
 
   const watchOut = (req: express.Request, id: number) => W.watchView(db, W.ownWatch(db, uid(req), id), baseOf(req), cfg.policy);
