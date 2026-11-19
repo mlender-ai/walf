@@ -277,7 +277,7 @@ test('[스키마] 외부 추천 엔진 값은 cleanOffer 를 거친다: 주소·
   const ok = cleanOffer({ url: 'https://shop.example/p/1', seller: '테스트샵', name: '울 블루종', recommender: 'fashion-brain', recommenderVersion: '0.3.1', verdict: 'same_code',
     price: '159000.4', currency: 'usd', imageUrl: 'javascript:x', options: [{ size: 'm', stock: 'in_stock' }, { size: '95', stock: 'weird' }], similarPoints: ['박시한 실루엣', '울 소재'], score: 0.87654 });
   assert.ok(ok);
-  assert.deepEqual([ok!.relation, ok!.verdict, ok!.price, ok!.currency, ok!.imageUrl, ok!.score], ['similar', 'unverified', 159000, 'KRW', null, 0.877]);
+  assert.deepEqual([ok!.relation, ok!.verdict, ok!.price, ok!.currency, ok!.imageUrl, ok!.score], ['similar', 'unverified', 159000, 'USD', null, 0.877], '외화 가격을 원화로 바꿔 적지 않는다');
   assert.deepEqual(ok!.options.map(o => [o.size, o.stock]), [['M', 'in_stock'], ['M', 'unknown']]);
   assert.equal(cleanOffer({ url: 'https://x.example', seller: 's', name: 'n', recommender: 'r' }), null, '버전이 없으면 버린다');
   assert.equal(cleanOffer({ url: 'ftp://x', seller: 's', name: 'n', recommender: 'r', recommenderVersion: '1' }), null);

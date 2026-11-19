@@ -45,6 +45,25 @@ export function sameColor(want: string | null | undefined, have: string | null |
   return h.length === w.length && h.every((x, i) => x === w[i]);
 }
 
+// ── 상품 상태 ────────────────────────────────────────────────
+// 판매처가 중고 플랫폼이라는 이유만으로 중고로 두지 않는다. 미사용 아카이브·단종 신품 재고는 입지 않은 옷이라 “새 상품만”을 만족하지만 카드에는 구분해 보여 준다.
+export const CONDITIONS = ['new', 'unused', 'deadstock', 'used', 'unknown'] as const;
+export type Condition = typeof CONDITIONS[number];
+export const CONDITION_LABEL: Record<Condition, string> = { new: '새 상품', unused: '미사용(택 있음 등)', deadstock: '단종 신품 재고', used: '중고', unknown: '상태 확인 필요' };
+export const newLike = (c: string | null | undefined) => c === 'new' || c === 'unused' || c === 'deadstock';
+const DEADSTOCK_RE = /dead\s?stock|데드\s?스[탁톡]|デッドストック/i;
+const UNUSED_RE = /미사용|새\s?상품|새\s?제품|택\s?(있|포함|달린|부착)|\bBNWT\b|\bNWT\b|未使用|新品/i;
+const USED_RE = /중고|\bused\b|\bpre-?owned\b|中古|사용감|착용감/i;
+/** 상품명 표기 → 판매처가 준 값 → 판매처 종류 순으로 상태를 정한다. 중고 플랫폼에서 표기가 없으면 미확인 */
+export function conditionOf(title: string | null | undefined, given: string | null | undefined, sourceKind: string | null | undefined): Condition {
+  const t = String(title ?? '');
+  const usedMarket = sourceKind === 'used' || sourceKind === 'resale';
+  if (DEADSTOCK_RE.test(t)) return 'deadstock';
+  if (UNUSED_RE.test(t)) return usedMarket || given === 'used' || given === 'unused' ? 'unused' : 'new';
+  if (USED_RE.test(t)) return 'used';
+  return (CONDITIONS as readonly string[]).includes(String(given)) ? given as Condition : 'unknown';
+}
+
 // ── 상품 ─────────────────────────────────────────────────────
 export type ProductInput = { brand?: string | null; name: string; modelCode?: string | null; season?: string | null; color?: string | null; category?: string | null; url?: string | null; image?: string | null; verified?: boolean; source: string; isMock?: boolean };
 

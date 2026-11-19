@@ -145,6 +145,10 @@ Claude 웹 검색으로 실제 정확도를 먼저 재고, 부족할 때만 가�
 | 사진 비교(같은 옷인지) | 연결 전 — 품번·브랜드·상품명으로만 판단 | 이미지 비교 모델·권리 확인 | Intelligence Lab |
 | 패션 이미지 모델·상품 DNA 추천 | `SimilarProductProvider` 자리만 있음(`fashion-brain`, PENDING_INTEGRATION) | 추천 API 주소·키·응답 계약 | Intelligence Lab |
 | HTTPS·외부 배포 | 막아 둠 | 호스팅·도메인·인증서 | 추후 |
+| 링크 자동 확인 허용 목록 | BADBLOOD 공식몰 1곳(`server/seed/page-hosts.json` 비어 있음) — 목록 밖 링크는 왈프 팀이 직접 확인 | 판매처 약관(자동 접근·영리 이용)·robots.txt를 확인해 목록에 추가 | 운영자 |
+| 환율(엔화 등) | 운영자 기록 함수만(`server/src/fx.ts` `recordFx`) — 환율이 없으면 외화 가격은 비교하지 않음 | 한국수출입은행 환율 API 인증키(하루 1,000회, 무료 여부는 페이지에 명시 없음) | 사용자(키) |
+| Shopify Global Catalog | 연결 전 — 가입만으로 쓸 수 있는 유일한 공식 검색 경로(찾아줘 즉시 검색만) | 요금·한도, 기다려줘 주기 재조회 허용 여부 확인 후 연결 결정 | 사용자(결정) |
+| eBay Partner Network · Yahoo!ショッピング 상업 이용 | 신청·협의 전 | 해외 아카이브·일본 중고 매물 | 사용자(신청) |
 
 ## 키를 넣은 뒤 실 API 테스트 순서(30분)
 

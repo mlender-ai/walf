@@ -6,6 +6,7 @@ import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
 import { brandKey, colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
+import { releasesView, tickReleases } from './release.ts';
 import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type PageHost, type Snapshot } from './sources.ts';
 import { compareProduct, type Verdict } from './sameproduct.ts';
 import { uploadUrl } from './media.ts';
@@ -245,6 +246,7 @@ function withShipping(s: Snapshot, l: Row | undefined): Snapshot {
 /** 스케줄러 한 번: 30일 연장 묻기 · 확인할 때가 된 페이지를 대기열에 · 끊긴 작업 회수 */
 export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
   let renew = 0, queued = 0, recovered = 0, parked = 0;
+  const releases = tickReleases(db, policy, t); // 판매 시작 시각이 된 일정: 시작 알림 + (허용된 페이지면) 그때 한 번 확인
   for (const w of all(db, `SELECT * FROM watches WHERE status='active' AND renew_at<=?`, t)) {
     tx(db, () => {
       run(db, `UPDATE watches SET status='renew_due', updated_at=? WHERE id=?`, t, w.id);
@@ -269,7 +271,7 @@ export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
   // 서버가 꺼져 끊긴 조회(임대 시간 지남) — 페이지 읽기는 비용이 없으니 다시 대기열로, 단 3번까지
   recovered += Number(run(db, `UPDATE price_checks SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'queued' END, error=CASE WHEN attempts>=? THEN '여러 번 끊겨 중단' ELSE error END
     WHERE status='running' AND lease_until<?`, policy.maxAttempts, policy.maxAttempts, t).changes);
-  return { renew, queued, recovered, parked };
+  return { renew, queued: queued + releases.queued, recovered, parked, releasesStarted: releases.started };
 }
 
 /** 허용 목록 밖 링크의 기다려줘 — 페이지를 열지 않고 확인 필요로 돌린다(링크는 남겨 왈프 팀이 보고, 허용된 페이지로 바꿔 줄 수 있게) */
@@ -335,10 +337,10 @@ function saveSnapshot(db: DB, c: Row, s0: Snapshot, t: number, policy: WatchPoli
       l = one(db, 'SELECT * FROM listings WHERE url_key=?', key)!;
     } else run(db, 'UPDATE listings SET title=COALESCE(?, title), last_seen=? WHERE id=?', s.title, t, l.id);
     s = withShipping(s, l);
-    const ins = db.prepare(`INSERT INTO price_observations(listing_id, check_id, target_key, checked_at, ok, option_label, color, size, price, sale_price, shipping, shipping_note, stock, source, basis, is_mock)
-      VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?)`);
+    const ins = db.prepare(`INSERT INTO price_observations(listing_id, check_id, target_key, checked_at, ok, option_label, color, size, price, sale_price, shipping, shipping_note, stock, source, basis, is_mock, currency)
+      VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const rows: OptionRow[] = s.options.length ? s.options : [{ label: '', color: '', size: '', stock: s.pageStock, price: s.price, basis: s.basis.join('+') }];
-    for (const o of rows) ins.run(l.id, c.id, c.target_key, t, o.label, o.color, o.size, o.price ?? s.price, s.salePrice, s.shipping, s.shippingNote, o.stock, s.source, o.basis, s.isMock ? 1 : 0);
+    for (const o of rows) ins.run(l.id, c.id, c.target_key, t, o.label, o.color, o.size, o.price ?? s.price, s.salePrice, s.shipping, s.shippingNote, o.stock, s.source, o.basis, s.isMock ? 1 : 0, s.currency ?? '');
     run(db, `UPDATE price_checks SET status='done', finished_at=?, error=NULL WHERE id=?`, t, c.id);
     // 사용자가 쓴 상품명은 바꾸지 않는다. 링크만 주고 이름을 쓰지 않았으면(page_defined) 페이지에서 읽은 상품명을 이름으로 쓴다
     for (const w of watchers) {
@@ -413,6 +415,8 @@ export function evaluate(w: { size?: string | null; color?: string | null; targe
   if (identity === 'mismatch') return { ...base, state: 'mismatch', price, total: null, stock, option, reasons: ['등록한 옷과 다른 상품 페이지로 보여요'] };
   if (w.condition === 'new' && s.condition === 'used') return { ...base, state: 'condition', price, total: null, stock, option, reasons: ['새 상품만 원하셨어요'] };
   if (price == null) return { ...base, state: 'no_price', price: null, total: null, stock, option, reasons: ['가격을 읽지 못했어요'] };
+  // 원화가 아닌 가격(엔화 등)이나 통화를 모르는 가격은 원하는 가격(원)과 바로 비교하지 않는다 — 환율·해외 배송비·관부가세를 확인하기 전에는 알림 없음
+  if (s.currency !== 'KRW') return { ...base, state: 'no_price', price, total: null, stock, option, reasons: [s.currency ? `${s.currency} 가격이라 환율을 확인하기 전에는 원하는 가격(원)과 비교하지 않아요` : '가격의 통화를 확인하지 못했어요'] };
   const total = price + (s.shipping ?? 0);
   const compare = basis === 'item' ? price : total;
   if (stock === 'sold_out') return { ...base, state: 'sold_out', price, total, stock, option, reasons: [`${option || '원하는 옵션'} 품절`] };
@@ -469,6 +473,7 @@ function reevaluate(db: DB, id: number, _policy: WatchPolicy, nextAt: number | n
   const obs = all(db, 'SELECT * FROM price_observations WHERE check_id=?', last);
   const l = one(db, 'SELECT * FROM listings WHERE id=?', obs[0].listing_id);
   const s0: Snapshot = { url: w.url, source: w.source, seller: l?.seller || '', title: l?.title || null, brand: null, image: null, condition: l?.condition || 'new',
+    currency: obs[0].currency == null ? 'KRW' : obs[0].currency || null, // 열을 넣기 전 기록은 모두 국내 원화 페이지 · 빈 값은 통화 모름
     price: obs[0].price, salePrice: obs[0].sale_price, shipping: obs[0].shipping, shippingNote: obs[0].shipping_note,
     options: obs.filter(o => o.option_label || o.size || o.color).map(o => ({ label: o.option_label, color: o.color, size: o.size, stock: o.stock, price: o.price, basis: o.basis })),
     pageStock: obs.some(o => o.stock === 'in_stock') ? 'in_stock' : 'unknown', basis: [], isMock: !!obs[0].is_mock };
@@ -541,6 +546,7 @@ export function watchView(db: DB, w: Row, base: string, policy: Pick<WatchPolicy
     page: { identity: w.page_identity, ok: PAGE_OK.includes(w.page_identity), note: w.identity_note || null },
     source: src ? { id: src.id, label: src.label, status: src.status, reason: src.reason } : null,
     latest: history.find(h => h.ok) || null, history, events,
+    releases: releasesView(db, w.id), // 판매 예정(공식 발표 기준) — 재고·가격 알림과 따로
     schedule: { lastCheckedLabel: w.last_checked_at ? kWhen(w.last_checked_at, t) : null, nextCheckLabel: w.status === 'active' && w.next_check_at ? (w.next_check_at <= t ? '곧 확인' : kWhen(w.next_check_at, t)) : null,
       renewLabel: w.renew_at ? `${kDate(w.renew_at)}까지` : null, startedLabel: kDate(w.started_at || w.created_at) },
     actions: { pause: ['active', 'needs_info'].includes(w.status), resume: w.status === 'paused', renew: w.status === 'renew_due', end: w.status !== 'ended', edit: w.status !== 'ended' },

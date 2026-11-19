@@ -435,6 +435,19 @@ export function openDb(file: string, opts: OpenOpts = {}): DB {
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, offer_id INTEGER NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
     created_at INTEGER NOT NULL, UNIQUE(user_id, offer_id))`);  // 사용자가 저장한 대체 상품(저장해도 기다려줘는 계속된다)
   db.exec('CREATE INDEX IF NOT EXISTS ix_offer_watch ON offers(watch_id, url_key)');
+  // Discovery Gate 4 — 가격 통화(원화가 아니면 환율 확인 전에는 원하는 가격과 비교하지 않는다) · 환율(출처·기준 시각) · 판매 예정 일정
+  add('price_observations', 'currency', 'TEXT');                  // NULL = 이 열을 넣기 전 기록(모두 국내 원화 페이지)
+  db.exec(`CREATE TABLE IF NOT EXISTS fx_rates(
+    id INTEGER PRIMARY KEY, currency TEXT NOT NULL, krw_per_unit REAL NOT NULL,   -- 외화 1단위가 몇 원인지(엔화 100엔 고시는 1엔으로 나눠 저장)
+    source TEXT NOT NULL, observed_at INTEGER NOT NULL, entered_by TEXT, is_mock INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`);
+  db.exec('CREATE INDEX IF NOT EXISTS ix_fx_cur ON fx_rates(currency, observed_at)');
+  db.exec(`CREATE TABLE IF NOT EXISTS release_schedules(
+    id INTEGER PRIMARY KEY, watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE, product_id INTEGER REFERENCES products(id),
+    seller TEXT NOT NULL, url TEXT, starts_at INTEGER NOT NULL,
+    announced_url TEXT NOT NULL,  -- 판매처·브랜드의 공식 발표(일정 근거). 추측한 일정은 넣지 않는다
+    note TEXT, status TEXT NOT NULL DEFAULT 'scheduled',  -- scheduled | started | cancelled
+    notified_at INTEGER, started_at INTEGER, created_by TEXT NOT NULL, is_mock INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`);
+  db.exec('CREATE INDEX IF NOT EXISTS ix_release_due ON release_schedules(status, starts_at)');
   if (version < 2) backfillProducts(db);
   if (version < SCHEMA_VERSION) db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
   return db;

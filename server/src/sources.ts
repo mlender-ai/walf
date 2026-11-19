@@ -187,6 +187,8 @@ export type Stock = 'in_stock' | 'sold_out' | 'unknown';
 export type OptionRow = { label: string; color: string; size: string; stock: Stock; price: number | null; basis: string };
 export type Snapshot = {
   url: string; source: string; seller: string; title: string | null; brand: string | null; image: string | null; condition: 'new' | 'used';
+  /** 가격 통화(ISO 4217). null = 페이지에서 확인 못 함 → 원하는 가격과 비교하지 않는다 */
+  currency: string | null;
   price: number | null; salePrice: number | null; shipping: number | null; shippingNote: string | null;
   options: OptionRow[]; pageStock: Stock; basis: string[]; isMock: boolean;
 };
@@ -255,6 +257,9 @@ export function parseProductPage(html: string, url: string): Snapshot {
   const sale = num(meta(html, 'product:sale_price:amount')) ?? num(html.match(/var\s+product_sale_price\s*=\s*(\d+)/)?.[1]);
   const ship = o0?.shippingDetails?.shippingRate?.value ?? (Array.isArray(o0?.shippingDetails) ? o0.shippingDetails[0]?.shippingRate?.value : undefined);
   const shipping = ship === 0 || ship === '0' ? 0 : num(ship);
+  // 통화: 구조화 데이터 → 메타 태그 → 국내(.kr) 쇼핑몰이면 원화. 어느 것도 없으면 모름(원화로 가정하지 않는다)
+  const curOf = (v: unknown) => { const c = String(v ?? '').trim().toUpperCase(); return /^[A-Z]{3}$/.test(c) ? c : null; };
+  const currency = curOf(o0?.priceCurrency) ?? curOf(offerOf(group?.hasVariant?.[0])?.priceCurrency) ?? curOf(meta(html, 'product:price:currency')) ?? (/\.kr$/.test(host) ? 'KRW' : null);
   const pageStock: Stock = options.length ? (options.some(o => o.stock === 'in_stock') ? 'in_stock' : options.every(o => o.stock === 'sold_out') ? 'sold_out' : 'unknown') : availOf(o0?.availability);
   const brandOf = (x: any) => (typeof x?.brand === 'string' ? x.brand : x?.brand?.name) || null;
   const brand = brandOf(group) || brandOf(group?.hasVariant?.[0]); // 카페24는 브랜드를 옵션(변형) 쪽에만 넣기도 한다
@@ -263,7 +268,7 @@ export function parseProductPage(html: string, url: string): Snapshot {
   const img = imgOf(group) || imgOf(group?.hasVariant?.[0]) || (options.length ? null : meta(html, 'og:image'));
   const title = group?.name || html.match(/var\s+product_name\s*=\s*'([^']+)'/)?.[1] || meta(html, 'og:title');
   return {
-    url, source: 'page', seller: host, title: title ? decodeHtml(String(title)).slice(0, 160) : null, brand, image: typeof img === 'string' ? img : null, condition: 'new',
+    url, source: 'page', seller: host, title: title ? decodeHtml(String(title)).slice(0, 160) : null, brand, image: typeof img === 'string' ? img : null, condition: 'new', currency,
     price: listPrice ?? null, salePrice: sale && listPrice && sale < listPrice ? sale : null,
     shipping, shippingNote: shipping == null ? '페이지에서 배송비를 확인하지 못했어요' : null,
     options, pageStock, basis, isMock: false,
@@ -297,6 +302,6 @@ export function fixtureSnapshot(url: string, step: number): Snapshot {
   const s = fx.steps[Math.min(step, fx.steps.length - 1)];
   if (s.error) throw new SourceError(s.error, `테스트: ${s.error === 'timeout' ? '응답이 늦어 확인하지 못했어요' : '페이지를 열지 못했어요'}`);
   const options: OptionRow[] = (s.options || []).map(o => ({ label: [o.color, o.size].filter(Boolean).join('-'), color: o.color || '', size: normSize(o.size), stock: o.stock, price: o.price ?? s.price ?? null, basis: 'fixture' }));
-  return { url, source: 'mock', seller: fx.seller, title: fx.title, brand: fx.brand || null, image: null, condition: fx.condition || 'new', price: s.price ?? null, salePrice: s.salePrice ?? null,
+  return { url, source: 'mock', seller: fx.seller, title: fx.title, brand: fx.brand || null, image: null, condition: fx.condition || 'new', currency: 'KRW', price: s.price ?? null, salePrice: s.salePrice ?? null,
     shipping: s.shipping ?? null, shippingNote: s.shipping == null ? '테스트: 배송비 미확인' : null, options, pageStock: options.some(o => o.stock === 'in_stock') ? 'in_stock' : 'unknown', basis: ['fixture'], isMock: true };
 }

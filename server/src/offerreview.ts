@@ -5,11 +5,12 @@ import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { currentSimilar, fitOf, offerOf, watchWantOf, type Fit, type ProductOffer, type StoredOffer } from './offers.ts';
-import { colorsIn, sameColor } from './catalog.ts';
+import { CONDITION_LABEL, colorsIn, newLike, sameColor, type Condition } from './catalog.ts';
 import { logReview } from './reviewlog.ts';
 import { feedbackMap, priorityOptions } from './feedback.ts';
 import { now, kWhen } from './time.ts';
 import type { Coverage } from './findsearch.ts';
+import { latestFx } from './fx.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -80,7 +81,8 @@ function checkAction(o: StoredOffer, action: ReviewAction, reason: string) {
  * 이 후보가 기다려줘 조건(원하는 가격·색상·사이즈 재고·상품 상태)에 맞는지 — 페이지를 읽은 시각 기준.
  * met 은 모든 조건이 “확인됨”일 때만이다. 확인하지 못한 값(배송비·재고·색상·상태·할인 조건)이 하나라도 있으면 unknown 이고 알림을 보내지 않는다.
  */
-export const watchFit = (o: StoredOffer | ProductOffer, w: Row): Fit => fitOf(o, watchWantOf(w));
+/** db 를 주면 원화가 아닌 후보에 최근 환율(출처·기준 시각)을 붙여 판단한다 — 없으면 가격은 확인 못 함 */
+export const watchFit = (o: StoredOffer | ProductOffer, w: Row, db?: DB): Fit => fitOf(o, watchWantOf(w), db && o.currency && o.currency !== 'KRW' ? latestFx(db, o.currency) : null);
 export const meetsWatch = (o: StoredOffer | ProductOffer, w: Row) => watchFit(o, w).state === 'met';
 function watchEvent(db: DB, w: Row, kind: string, title: string, detail: string, t: number) {
   run(db, 'INSERT INTO watch_events(watch_id, actor, kind, title, detail, is_mock, at) VALUES (?,?,?,?,?,?,?)', w.id, 'team', kind, title, detail, w.is_mock, t);
@@ -96,7 +98,7 @@ function reviewWatchOffer(db: DB, o: StoredOffer, action: ReviewAction, reason: 
   if (w.status === 'ended' && action !== 'hide' && action !== 'reject') throw new HttpError(409, 'bad_state', '끝난 기다려줘에는 공개할 수 없어요.');
   const t = now();
   const mock = o.isMock || !!w.is_mock;
-  const fit = watchFit(o, w);
+  const fit = watchFit(o, w, db);
   tx(db, () => {
     if (action === 'reject') run(db, `UPDATE offers SET review_state='rejected', publish_tier=NULL, published=0, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?`, operator, t, reason, o.id);
     else if (action === 'hide') run(db, 'UPDATE offers SET published=0, reviewed_by=?, reviewed_at=? WHERE id=?', operator, t, o.id);
@@ -159,7 +161,7 @@ export const wantOfRequest = (r: Row): CardWant => ({ size: r.size ? String(r.si
 export const wantOfWatch = (w: Row): CardWant => ({ size: w.size ? String(w.size).toUpperCase() : null, color: w.color || null, usedOk: w.condition !== 'new' });
 export type OfferCard = {
   id: number; tier: 'exact' | 'possible' | 'alternative'; seller: string; brand: string | null; name: string | null; imageUrl: string | null; url: string | null; isMock: boolean;
-  price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'used' | 'unknown';
+  price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: Condition;
   sizeLabel: string | null; basisLabel: string; confirmed: string[]; unconfirmed: string[]; similarPoints: string[]; diffPoints: string[]; teamNote: string | null;
   /** 색상·사이즈·상태 — 원하는 조건과 맞는지 함께(확인 못 한 값은 “확인 필요”) */
   facts: OptionFact[];
@@ -189,7 +191,7 @@ function optionFacts(o: StoredOffer, want: CardWant, sizeLabel: string | null): 
     : { kind: 'color', state: 'no', text: `색상 다름(${[...new Set(have.map(colorText))].slice(0, 3).join('·')})` });
   else if (have.length) out.push({ kind: 'color', state: 'info', text: [...new Set(have.map(colorText))].slice(0, 3).join('·') });
   if (sizeLabel) out.push({ kind: 'size', state: !want.size ? 'info' : o.wantSize === 'ok' ? 'ok' : ['sold_out', 'missing'].includes(o.wantSize) ? 'no' : 'unknown', text: sizeLabel });
-  out.push(o.condition === 'new' ? { kind: 'condition', state: want.usedOk ? 'info' : 'ok', text: '새 상품' }
+  out.push(newLike(o.condition) ? { kind: 'condition', state: want.usedOk ? 'info' : 'ok', text: CONDITION_LABEL[o.condition as Condition] }
     : o.condition === 'used' ? { kind: 'condition', state: want.usedOk ? 'ok' : 'no', text: want.usedOk ? '중고(중고 OK)' : '중고(새 상품만 원함)' }
     : { kind: 'condition', state: 'unknown', text: '새 상품·중고 확인 필요' });
   return out;

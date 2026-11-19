@@ -61,7 +61,7 @@ export type OfferPart = { state: 'not_started' | 'searching' | 'reviewing' | 're
 /** 판매처 후보·대체 상품 카드 — 가격·재고는 basisLabel 시각 기준이고 바뀔 수 있다(“구매 가능” 확정 아님) */
 export type OfferCard = {
   id: number; tier: 'exact' | 'possible' | 'alternative'; seller: string; brand: string | null; name: string | null; imageUrl: string | null; url: string | null; isMock: boolean;
-  price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'used' | 'unknown';
+  price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'unused' | 'deadstock' | 'used' | 'unknown';
   sizeLabel: string | null; basisLabel: string; confirmed: string[]; unconfirmed: string[]; similarPoints: string[]; diffPoints: string[]; teamNote: string | null;
   facts?: OptionFact[];
   /** 내 평가(비슷한 디자인만): like | not_quite | not_interested | null */
@@ -80,6 +80,8 @@ export type WatchView = {
   page: { identity: string; ok: boolean; note: string | null };
   source: { id: string; label: string; status: string; reason: string } | null;
   latest: PricePoint | null; history: PricePoint[];
+  /** 판매 예정 일정(판매처·브랜드 공식 발표 기준, 왈프 팀이 등록) — 재고·가격 알림과 따로 */
+  releases?: { id: number; seller: string; url: string | null; startsAt: number; startsAtText: string; status: 'scheduled' | 'started'; announcedUrl: string; note: string | null; label: string }[];
   events: { id: number; at: number; label: string; clock: string; actor: string; kind: string; title: string; detail: string | null; isMock: boolean }[];
   schedule: { lastCheckedLabel: string | null; nextCheckLabel: string | null; renewLabel: string | null; startedLabel: string };
   actions: { pause: boolean; resume: boolean; renew: boolean; end: boolean; edit: boolean };

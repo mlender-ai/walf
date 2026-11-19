@@ -118,7 +118,7 @@ test('표시 할인가만 목표 이하면 구매 가능으로 알리지 않는�
 });
 
 test('같은 상품인지 확인하지 않은 매물은 가격이 맞아도 구매 가능 알림을 보내지 않는다', () => {
-  const s: Snapshot = { url: 'x', source: 'page', seller: 's', title: 't', brand: null, image: null, condition: 'used', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
+  const s: Snapshot = { url: 'x', source: 'page', seller: 's', title: 't', brand: null, image: null, condition: 'used', currency: 'KRW', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
     options: [{ label: 'M', color: '', size: 'M', stock: 'in_stock', price: 100000, basis: 'x' }], pageStock: 'in_stock', basis: [], isMock: true };
   assert.equal(W.evaluate({ size: 'M', target_price: 150000, condition: 'any' }, s, 'unverified').state, 'unverified');
   assert.equal(W.evaluate({ size: 'M', target_price: 150000, condition: 'any' }, s, 'pending').state, 'unverified', '판단 전 페이지도 알림 대상 아님');
@@ -128,7 +128,7 @@ test('같은 상품인지 확인하지 않은 매물은 가격이 맞아도 구�
 });
 
 test('[리뷰 2] 원하는 색을 정했는데 옵션에 색이 없으면 상품명 색으로만 확인하고, 그래도 모르면 color_unknown(알림 없음)', () => {
-  const snap = (title: string, opts: { color: string; size: string }[]): Snapshot => ({ url: 'x', source: 'page', seller: 's', title, brand: null, image: null, condition: 'new', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
+  const snap = (title: string, opts: { color: string; size: string }[]): Snapshot => ({ url: 'x', source: 'page', seller: 's', title, brand: null, image: null, condition: 'new', currency: 'KRW', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
     options: opts.map(o => ({ label: [o.color, o.size].filter(Boolean).join('-'), ...o, stock: 'in_stock' as const, price: 100000, basis: 'x' })), pageStock: 'in_stock', basis: [], isMock: true });
   const want = { size: 'M', color: '네이비', target_price: 150000, condition: 'any' };
   assert.equal(W.evaluate(want, snap('트랙 자켓', [{ color: '', size: 'M' }]), 'page_defined').state, 'color_unknown', '옵션·상품명 어디에도 색이 없음');

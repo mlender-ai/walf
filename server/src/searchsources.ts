@@ -4,12 +4,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { SOURCES, fetchPage, robotsOk, safeFetch, SourceError, type Access, type Fetcher, type Snapshot, type Stock } from './sources.ts';
-import { normSize } from './catalog.ts';
+import { normSize, type Condition } from './catalog.ts';
 import { compact } from './sameproduct.ts';
 
 export type SearchQuery = { text: string; kind: 'code' | 'brand_code' | 'brand_name' | 'name' | 'alias_name' };
 export type RawHit = { source: string; seller: string; url: string; title: string; brand: string | null; price: number | null; imageUrl: string | null;
-  condition: 'new' | 'used' | 'unknown'; query: string; rank: number; isMock: boolean };
+  condition: Condition; query: string; rank: number; isMock: boolean };
 /** access: 왜 열지 않는지(판매처 레지스트리의 이용 권한 판정) — 사용자 문구를 고르는 데 쓴다 */
 export type Availability = { status: 'SUPPORTED' | 'TEST_ONLY' | 'PENDING_EXTERNAL_SETUP' | 'PENDING_INTEGRATION' | 'UNSUPPORTED'; usable: boolean; reason: string; access?: Access };
 export type Mall = { brand: string; aliases?: string[]; domain: string; platform: 'cafe24'; checked: string; basis: string };
@@ -34,7 +34,7 @@ const hostOf = (u: string) => { try { return new URL(u).hostname; } catch { retu
 
 // ── 테스트 판매처(Fixture) ───────────────────────────────────
 // mock://shop/<id> — 가상의 판매처·가격. 이미지는 직접 그린 SVG(fixtures/search-images)라 권리 문제가 없다.
-type FxItem = { id: string; seller: string; keywords: string[]; title: string; listTitle?: string; brand?: string; image?: string; price?: number | null; salePrice?: number | null;
+type FxItem = { id: string; seller: string; keywords: string[]; title: string; listTitle?: string; brand?: string; image?: string; price?: number | null; salePrice?: number | null; currency?: string;
   shipping?: number | null; condition?: 'new' | 'used'; options?: { color?: string; size?: string; stock: Stock; price?: number | null }[]; detailError?: string };
 let fx: FxItem[] | null = null;
 export function loadSearchFixtures(file = path.resolve(import.meta.dirname, '..', 'fixtures', 'search-mock.json')) { fx = JSON.parse(fs.readFileSync(file, 'utf8')).items; return fx!; }
@@ -58,7 +58,7 @@ export const mockSource: SearchSource = {
     if (!it) throw new SourceError('gone', '없는 테스트 상품이에요.');
     if (it.detailError) throw new SourceError(it.detailError, `테스트: ${it.detailError === 'timeout' ? '응답이 늦어 확인하지 못했어요' : '페이지를 열지 못했어요'}`);
     const options = (it.options || []).map(o => ({ label: [o.color, o.size].filter(Boolean).join('-'), color: o.color || '', size: normSize(o.size), stock: o.stock, price: o.price ?? it.price ?? null, basis: 'fixture' }));
-    return { url: hit.url, source: 'mock', seller: it.seller, title: it.title, brand: it.brand || null, image: it.image ? `mock://image/${it.image}` : null, condition: it.condition || 'new',
+    return { url: hit.url, source: 'mock', seller: it.seller, title: it.title, brand: it.brand || null, image: it.image ? `mock://image/${it.image}` : null, condition: it.condition || 'new', currency: it.currency || 'KRW',
       price: it.price ?? null, salePrice: it.salePrice ?? null, shipping: it.shipping ?? null, shippingNote: it.shipping == null ? '테스트: 배송비 미확인' : null, options,
       pageStock: options.some(o => o.stock === 'in_stock') ? 'in_stock' : options.length && options.every(o => o.stock === 'sold_out') ? 'sold_out' : 'unknown', basis: ['fixture'], isMock: true };
   },

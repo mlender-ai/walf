@@ -3,9 +3,10 @@
 // 외부 추천 엔진(패션 브레인 등)이 주는 값도 cleanOffer 를 거쳐야 저장된다. 검수 전에는 사용자에게 보이지 않는다.
 import { type DB, tx } from './db.ts';
 import { urlKey, type Stock } from './sources.ts';
-import { cleanStyle, colorsIn, normSize, sameColor, type Style } from './catalog.ts';
+import { CONDITION_LABEL, CONDITIONS, cleanStyle, colorsIn, newLike, normSize, sameColor, type Condition, type Style } from './catalog.ts';
 import type { Check, Verdict } from './sameproduct.ts';
 import { now } from './time.ts';
+import { fxText, type Fx } from './fx.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -21,7 +22,8 @@ export type ProductOffer = {
   source: string; seller: string; url: string;
   brand: string | null; name: string | null; modelCode: string | null; season: string | null; imageUrl: string | null;
   price: number | null; salePrice: number | null; currency: string; shipping: number | null;
-  condition: 'new' | 'used' | 'unknown';
+  /** new · unused(미사용) · deadstock(단종 신품 재고) · used · unknown — catalog.ts conditionOf */
+  condition: Condition;
   options: OfferOption[]; stock: Stock; wantSize: WantSize; wantColor: WantColor;
   verdict: Verdict; checks: Check[];
   /** 원래 옷과 비슷한 점·다른 점(추천 상품은 필수, 같은 상품 후보는 색·상태 차이 등) */
@@ -65,8 +67,8 @@ export function cleanOffer(raw: any, opts: { mockAllowed?: boolean; relation?: '
     relation, source: str(raw?.source, 40) || recommender, seller, url: url!,
     brand: str(raw?.brand, 60), name, modelCode: str(raw?.modelCode, 40), season: str(raw?.season, 40),
     imageUrl: img && (/^https?:\/\//i.test(img) || (opts.mockAllowed && img.startsWith('mock://'))) ? img : null,
-    price: won(raw?.price), salePrice: won(raw?.salePrice), currency: /^[A-Z]{3}$/.test(String(raw?.currency || '')) ? raw.currency : 'KRW', shipping: won(raw?.shipping),
-    condition: pick(raw?.condition, ['new', 'used', 'unknown'] as const, 'unknown'),
+    price: won(raw?.price), salePrice: won(raw?.salePrice), currency: raw?.currency == null || raw?.currency === '' ? 'KRW' : /^[A-Z]{3}$/.test(String(raw.currency).trim().toUpperCase()) ? String(raw.currency).trim().toUpperCase() : 'XXX', shipping: won(raw?.shipping), // 통화를 알 수 없으면 XXX(비교하지 않음)
+    condition: pick(raw?.condition, CONDITIONS, 'unknown'),
     options, stock: pick(raw?.stock, STOCKS, 'unknown'), wantSize: 'unknown', wantColor: 'unknown',
     verdict: 'unverified', checks: [],
     similarPoints: strs(raw?.similarPoints, 6, 120), diffPoints: strs(raw?.diffPoints, 6, 120), style: raw?.style ? cleanStyle(raw.style) : null,
@@ -88,7 +90,8 @@ export type Fit = { state: 'met' | 'unmet' | 'unknown'; met: string[]; unmet: st
 export const watchWantOf = (w: Row): WatchWant => ({ size: w.size ? normSize(w.size) : null, color: w.color || null, condition: w.condition === 'new' ? 'new' : 'any',
   targetPrice: Number(w.target_price), basis: w.price_basis === 'item' ? 'item' : 'total' });
 const wonText = (n: number) => `${n.toLocaleString('ko-KR')}원`;
-export function fitOf(o: Pick<ProductOffer, 'options' | 'name' | 'condition' | 'stock' | 'price' | 'salePrice' | 'shipping'>, want: WatchWant): Fit {
+/** fx: 원화가 아닌 가격일 때 쓸 환율(출처·기준 시각 포함). 없으면 가격 조건은 “확인 못 함” */
+export function fitOf(o: Pick<ProductOffer, 'options' | 'name' | 'condition' | 'stock' | 'price' | 'salePrice' | 'shipping'> & { currency?: string | null }, want: WatchWant, fx: Fx | null = null): Fit {
   const met: string[] = [], unmet: string[] = [], unknown: string[] = [];
   // 색상: 옵션에 색이 있으면 옵션 색, 없으면 상품명에 적힌 색으로만
   const optColors = [...new Set(o.options.map(x => x.color).filter(Boolean))];
@@ -109,18 +112,24 @@ export function fitOf(o: Pick<ProductOffer, 'options' | 'name' | 'condition' | '
   else unknown.push(want.size && !o.options.length ? `페이지에 사이즈별 재고가 없어 ${want.size} 재고를 확인하지 못했어요` : `${label}재고를 확인하지 못했어요`);
   // 상품 상태
   if (want.condition === 'new') {
-    if (o.condition === 'new') met.push('새 상품');
+    if (newLike(o.condition)) met.push(CONDITION_LABEL[o.condition]);
     else if (o.condition === 'used') unmet.push('중고예요(새 상품만 원하셨어요)');
     else unknown.push('새 상품인지 확인하지 못했어요');
   }
-  // 가격(판매가 기준. 원하는 옵션의 가격이 따로 있으면 그 가격)
-  const price = rows.find(x => x.stock === 'in_stock' && x.price != null)?.price ?? o.price;
-  const ship = want.basis === 'item' ? 0 : o.shipping;
-  const saleOk = o.salePrice != null && o.salePrice + (ship ?? 0) <= want.targetPrice;
+  // 가격(판매가 기준. 원하는 옵션의 가격이 따로 있으면 그 가격). 원화가 아니면 출처·기준 시각이 있는 환율로만 바꿔 비교하고, 해외 배송비·관부가세는 확인 못 함으로 둔다
+  const cur = o.currency || 'KRW';
+  const foreign = cur !== 'KRW';
+  if (foreign && !fx) { unknown.push(cur === 'XXX' ? '가격의 통화를 확인하지 못했어요' : `${cur} 가격이라 환율을 확인한 뒤 비교해요`); return { state: unmet.length ? 'unmet' : 'unknown', met, unmet, unknown }; }
+  const krw = (n: number | null | undefined) => n == null ? null : foreign ? Math.round(n * fx!.krwPerUnit) : n;
+  const price = krw(rows.find(x => x.stock === 'in_stock' && x.price != null)?.price ?? o.price);
+  const ship = want.basis === 'item' ? 0 : krw(o.shipping);
+  const sale = krw(o.salePrice);
+  const saleOk = sale != null && sale + (ship ?? 0) <= want.targetPrice;
+  if (foreign && want.basis === 'total') unknown.push('해외 배송비·관부가세·구매대행 비용을 확인하지 못했어요');
   if (price == null) unknown.push('가격을 읽지 못했어요');
   else if (price + (ship ?? 0) > want.targetPrice) (saleOk ? unknown : unmet).push(saleOk ? `표시된 할인가 ${wonText(o.salePrice!)}은 적용 조건(회원·쿠폰 등)을 확인하지 못했어요` : `원하는 가격보다 ${wonText(price + (ship ?? 0) - want.targetPrice)} 높아요${ship == null ? '(배송비 미확인)' : ''}`);
   else if (ship == null) unknown.push(`상품가 ${wonText(price)}은 원하는 가격 이하지만 배송비를 확인하지 못했어요`);
-  else met.push(want.basis === 'item' ? `상품가 ${wonText(price)}(배송비 제외 기준)` : `배송비 포함 ${wonText(price + ship)}`);
+  else met.push((want.basis === 'item' ? `상품가 ${wonText(price)}(배송비 제외 기준)` : `배송비 포함 ${wonText(price + ship)}`) + (foreign ? ` · ${fxText(fx!)}` : ''));
   return { state: unmet.length ? 'unmet' : unknown.length ? 'unknown' : 'met', met, unmet, unknown };
 }
 
@@ -137,7 +146,7 @@ export function saveOffers(db: DB, searchId: number, owner: { requestId?: number
       let l = one(db, 'SELECT id FROM listings WHERE url_key=?', key);
       if (!l) {
         db.prepare(`INSERT INTO listings(product_id, source, seller, url, url_key, title, condition, identity, is_mock, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-          .run(null, o.source, o.seller, o.url, key, o.name, o.condition === 'used' ? 'used' : 'new', 'unverified', o.isMock ? 1 : 0, t, t);
+          .run(null, o.source, o.seller, o.url, key, o.name, o.condition, 'unverified', o.isMock ? 1 : 0, t, t); // 미확인을 새 상품으로 바꿔 적지 않는다
         l = one(db, 'SELECT id FROM listings WHERE url_key=?', key)!;
       } else db.prepare('UPDATE listings SET last_seen=? WHERE id=?').run(t, l.id);
       ins.run(searchId, requestId, l.id, o.relation, i + 1, o.groupKey, o.source, o.seller, o.url, key, o.brand, o.name, o.modelCode, o.season, o.imageUrl,

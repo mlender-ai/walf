@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import { type DB } from './db.ts';
 import { tierOf } from './find.ts';
-import { brandKey, colorsIn, normSize, requestStyle, sameColor, styleWords, type Style } from './catalog.ts';
+import { brandKey, colorsIn, conditionOf, normSize, requestStyle, sameColor, styleWords, type Style } from './catalog.ts';
 import { urlKey, SourceError, type Snapshot } from './sources.ts';
 import { codesIn, compact, compareProduct, nameTokens, type Check, type Verdict } from './sameproduct.ts';
 import { cleanOffer, itemPrice, offersOf, RULES_RECOMMENDER, saveOffers, totalPrice, type ProductOffer } from './offers.ts';
@@ -152,8 +152,8 @@ export async function normalizeHits(merged: MergedHit[], target: SearchTarget | 
     const brand = snap?.brand || h.brand;
     out.push({
       relation: 'same', source: h.source, seller: snap?.seller || h.seller, url: h.url, brand, name, modelCode: codesIn(name)[0] || null, season: null,
-      imageUrl: snap?.image || h.imageUrl, price: snap ? snap.price : h.price, salePrice: snap?.salePrice ?? null, currency: 'KRW', shipping: snap ? snap.shipping : null,
-      condition: snap?.condition || h.condition, options: (snap?.options || []).map(o => ({ color: o.color, size: o.size, stock: o.stock, price: o.price })),
+      imageUrl: snap?.image || h.imageUrl, price: snap ? snap.price : h.price, salePrice: snap?.salePrice ?? null, currency: snap ? snap.currency || 'XXX' : 'KRW', shipping: snap ? snap.shipping : null,
+      condition: conditionOf(name, snap?.condition || h.condition, src?.kind), options: (snap?.options || []).map(o => ({ color: o.color, size: o.size, stock: o.stock, price: o.price })),
       stock: snap?.pageStock || 'unknown', wantSize: 'unknown', wantColor: 'unknown', verdict: 'unverified', checks: [], similarPoints: [], diffPoints: [], style: null,
       ...RULES_RECOMMENDER, score: null, detail, detailNote: note, queries: h.queries, fetchedAt: snap ? now() : null, groupKey: groupKeyOf(name, brand), isMock: h.isMock,
     });

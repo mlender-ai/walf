@@ -75,7 +75,7 @@ export function watchExtrasView(db: DB, w: Row, base: string, e: S.SearchEnv, us
   // “새로 찾음”: 마지막 탐색에서 이 기다려줘가 처음 본 페이지
   const isNew = (id: number) => !!lastDone && !!one(db, `SELECT 1 FROM offers o WHERE o.id=? AND o.search_id=? AND NOT EXISTS (SELECT 1 FROM offers p WHERE p.watch_id=o.watch_id AND p.url_key=o.url_key AND p.id<o.id)`, id, lastDone.id);
   const items: DiscoveryCard[] = rows.filter(o => o.relation === 'same').map(o => {
-    const f = watchFit(o, w);
+    const f = watchFit(o, w, db);
     return { ...card(o, wantOfWatch(w), base), isNew: isNew(o.id), meetsTarget: f.state === 'met',
       targetNote: f.state === 'unmet' ? `조건과 달라요 · ${f.unmet[0]}` : f.state === 'unknown' ? `확인하지 못한 조건 · ${f.unknown[0]}` : null };
   });

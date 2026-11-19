@@ -109,6 +109,10 @@ export default function WatchScreen() {
           {w.product.pageTitle ? <T size={12} color={C.gray500} style={{ marginTop: 10 }}>페이지에서 읽은 상품명: {w.product.pageTitle}{w.product.seller ? ` · ${w.product.seller}` : ''}</T> : null}
           {w.product.pageTitle && !w.page.ok && d.key !== 'mismatch' ? <View style={st.notice} accessibilityRole="alert"><Icon name="close" size={14} /><T size={12.5} w={600} lh={18} style={{ flex: 1 }}>
             {w.page.note || '등록한 옷과 같은 상품 페이지인지 확인하고 있어요'}. 확인 전에는 가격 알림을 보내지 않아요.</T></View> : null}
+          {(w.releases || []).map(r => (
+            <View key={r.id} style={[st.notice, { backgroundColor: C.surface }]}><Icon name="bell" size={14} />
+              <T size={12.5} w={600} lh={18} style={{ flex: 1 }}>{r.label}{r.note ? ` · ${r.note}` : ''}{r.status === 'scheduled' ? '\n재고·가격은 시작 후 확인해 따로 알려 드려요.' : ''}</T></View>
+          ))}
         </View>
         <Gap h={8} />
         <Section title="가격 기록" sub="확인한 그대로">
