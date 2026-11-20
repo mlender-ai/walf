@@ -41,9 +41,14 @@ export type Me = { user: { id: number; pushToken: boolean; pushPermission: strin
 
 export type Attr = { label: string; text: string };
 export type FindItem = { id: number; tier: 'match' | 'likely' | 'discover'; brand: string | null; name: string; modelCode: string | null; season: string | null; color: string | null; category: string | null;
+  /** 같은 옷으로 확인된 상품 사진(판매처·상품 페이지). 사용자 사진과 따로 */ image?: string | null;
   matched: Attr[]; uncertain: Attr[]; evidence: { url: string; host: string }[]; note: string | null; confirmed: boolean; isMock: boolean };
 export type FindView = { requestId: number; status: string; state: 'pending' | 'ready' | 'confirmed'; publishedLabel: string | null; match: FindItem | null; likely: FindItem[]; discover: FindItem[];
   styleWords: string[]; productId: number | null; canHunt: boolean; isMock: boolean;
+  /** exact: 같은 옷 확인 · likely: 유력 후보만 · not_found: 같은 옷을 못 찾음 */
+  outcome: 'exact' | 'likely' | 'not_found';
+  original: { photoUrl: string | null; name: string | null; brand: string | null; size: string | null; color: string | null };
+  understood: { known: string[]; unknown: string[] };
   /** DISCOVER 는 브랜드 단위 추천. 판매 중인 비슷한 “상품”은 alternatives(실제 추천 엔진은 연결 전 — PENDING_INTEGRATION) */
   discoverKind: 'brand'; similarProducts: { status: string; items: OfferCard[] };
   /** 식별 결과와 따로: 같은 상품을 파는 곳(운영자가 공개한 것만) */
@@ -61,7 +66,7 @@ export type OfferPart = { state: 'not_started' | 'searching' | 'reviewing' | 're
 /** 판매처 후보·대체 상품 카드 — 가격·재고는 basisLabel 시각 기준이고 바뀔 수 있다(“구매 가능” 확정 아님) */
 export type OfferCard = {
   id: number; tier: 'exact' | 'possible' | 'alternative'; seller: string; brand: string | null; name: string | null; imageUrl: string | null; url: string | null; isMock: boolean;
-  price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'used' | 'unknown';
+  price: number | null; salePrice: number | null; shipping: number | null; total: number | null; condition: 'new' | 'unused' | 'deadstock' | 'used' | 'unknown';
   sizeLabel: string | null; basisLabel: string; confirmed: string[]; unconfirmed: string[]; similarPoints: string[]; diffPoints: string[]; teamNote: string | null;
   facts?: OptionFact[];
   /** 내 평가(비슷한 디자인만): like | not_quite | not_interested | null */
@@ -80,6 +85,8 @@ export type WatchView = {
   page: { identity: string; ok: boolean; note: string | null };
   source: { id: string; label: string; status: string; reason: string } | null;
   latest: PricePoint | null; history: PricePoint[];
+  /** 판매 예정 일정(판매처·브랜드 공식 발표 기준, 왈프 팀이 등록) — 재고·가격 알림과 따로 */
+  releases?: { id: number; seller: string; url: string | null; startsAt: number; startsAtText: string; status: 'scheduled' | 'started'; announcedUrl: string; note: string | null; label: string }[];
   events: { id: number; at: number; label: string; clock: string; actor: string; kind: string; title: string; detail: string | null; isMock: boolean }[];
   schedule: { lastCheckedLabel: string | null; nextCheckLabel: string | null; renewLabel: string | null; startedLabel: string };
   actions: { pause: boolean; resume: boolean; renew: boolean; end: boolean; edit: boolean };

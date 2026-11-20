@@ -3,14 +3,15 @@
 // 실제 의뢰에는 테스트 데이터(Fixture)를 쓰지 않고, 모의 의뢰에는 실제 판매처를 열지 않는다.
 import fs from 'node:fs';
 import path from 'node:path';
-import { SOURCES, fetchPage, robotsOk, safeFetch, SourceError, type Fetcher, type Snapshot, type Stock } from './sources.ts';
-import { normSize } from './catalog.ts';
+import { SOURCES, fetchPage, robotsOk, safeFetch, SourceError, type Access, type Fetcher, type Snapshot, type Stock } from './sources.ts';
+import { normSize, type Condition } from './catalog.ts';
 import { compact } from './sameproduct.ts';
 
 export type SearchQuery = { text: string; kind: 'code' | 'brand_code' | 'brand_name' | 'name' | 'alias_name' };
 export type RawHit = { source: string; seller: string; url: string; title: string; brand: string | null; price: number | null; imageUrl: string | null;
-  condition: 'new' | 'used' | 'unknown'; query: string; rank: number; isMock: boolean };
-export type Availability = { status: 'SUPPORTED' | 'TEST_ONLY' | 'PENDING_EXTERNAL_SETUP' | 'PENDING_INTEGRATION' | 'UNSUPPORTED'; usable: boolean; reason: string };
+  condition: Condition; query: string; rank: number; isMock: boolean };
+/** access: 왜 열지 않는지(판매처 레지스트리의 이용 권한 판정) — 사용자 문구를 고르는 데 쓴다 */
+export type Availability = { status: 'SUPPORTED' | 'TEST_ONLY' | 'PENDING_EXTERNAL_SETUP' | 'PENDING_INTEGRATION' | 'UNSUPPORTED'; usable: boolean; reason: string; access?: Access };
 export type Mall = { brand: string; aliases?: string[]; domain: string; platform: 'cafe24'; checked: string; basis: string };
 export type SourceCtx = {
   isMock: boolean; mockAllowed: boolean; env: Record<string, string | undefined>; malls: Mall[];
@@ -33,7 +34,7 @@ const hostOf = (u: string) => { try { return new URL(u).hostname; } catch { retu
 
 // ── 테스트 판매처(Fixture) ───────────────────────────────────
 // mock://shop/<id> — 가상의 판매처·가격. 이미지는 직접 그린 SVG(fixtures/search-images)라 권리 문제가 없다.
-type FxItem = { id: string; seller: string; keywords: string[]; title: string; listTitle?: string; brand?: string; image?: string; price?: number | null; salePrice?: number | null;
+type FxItem = { id: string; seller: string; keywords: string[]; title: string; listTitle?: string; brand?: string; image?: string; price?: number | null; salePrice?: number | null; currency?: string;
   shipping?: number | null; condition?: 'new' | 'used'; options?: { color?: string; size?: string; stock: Stock; price?: number | null }[]; detailError?: string };
 let fx: FxItem[] | null = null;
 export function loadSearchFixtures(file = path.resolve(import.meta.dirname, '..', 'fixtures', 'search-mock.json')) { fx = JSON.parse(fs.readFileSync(file, 'utf8')).items; return fx!; }
@@ -57,7 +58,7 @@ export const mockSource: SearchSource = {
     if (!it) throw new SourceError('gone', '없는 테스트 상품이에요.');
     if (it.detailError) throw new SourceError(it.detailError, `테스트: ${it.detailError === 'timeout' ? '응답이 늦어 확인하지 못했어요' : '페이지를 열지 못했어요'}`);
     const options = (it.options || []).map(o => ({ label: [o.color, o.size].filter(Boolean).join('-'), color: o.color || '', size: normSize(o.size), stock: o.stock, price: o.price ?? it.price ?? null, basis: 'fixture' }));
-    return { url: hit.url, source: 'mock', seller: it.seller, title: it.title, brand: it.brand || null, image: it.image ? `mock://image/${it.image}` : null, condition: it.condition || 'new',
+    return { url: hit.url, source: 'mock', seller: it.seller, title: it.title, brand: it.brand || null, image: it.image ? `mock://image/${it.image}` : null, condition: it.condition || 'new', currency: it.currency || 'KRW',
       price: it.price ?? null, salePrice: it.salePrice ?? null, shipping: it.shipping ?? null, shippingNote: it.shipping == null ? '테스트: 배송비 미확인' : null, options,
       pageStock: options.some(o => o.stock === 'in_stock') ? 'in_stock' : options.length && options.every(o => o.stock === 'sold_out') ? 'sold_out' : 'unknown', basis: ['fixture'], isMock: true };
   },
@@ -112,49 +113,18 @@ export const officialSource: SearchSource = {
   async detail(hit, ctx) { await ctx.pace(hostOf(hit.url)); return { ...(await fetchPage(hit.url, ctx)), source: 'official', seller: hit.seller }; },
 };
 
-// ── 네이버 쇼핑 검색 API(키 필요) ─────────────────────────────
-// 무료 API(하루 호출 한도 있음). 키가 없으면 PENDING_EXTERNAL_SETUP. 결과는 검색 목록 값뿐이라 사이즈·재고는 모른다(listed_only).
-const stripTags = (s: unknown) => String(s ?? '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").trim();
-export function naverItems(j: any, query: string): RawHit[] {
-  return (Array.isArray(j?.items) ? j.items : []).filter((x: any) => /^https?:\/\//.test(String(x?.link || ''))).map((x: any, i: number) => {
-    const type = Number(x.productType);
-    return { source: 'naver_shopping', seller: stripTags(x.mallName) || '네이버 쇼핑', url: String(x.link), title: stripTags(x.title).slice(0, 160), brand: stripTags(x.brand) || null,
-      price: Number(x.lprice) > 0 ? Math.round(Number(x.lprice)) : null, imageUrl: /^https?:\/\//.test(String(x.image || '')) ? String(x.image) : null,
-      condition: type >= 4 && type <= 6 ? 'used' as const : type >= 1 && type <= 3 ? 'new' as const : 'unknown' as const, query, rank: i + 1, isMock: false };
-  });
-}
-export const naverSource: SearchSource = {
-  id: 'naver_shopping', label: '네이버 쇼핑 검색 API', kind: 'retail', cost: 'free',
-  availability(_t, ctx) {
-    if (ctx.isMock) return { status: 'PENDING_EXTERNAL_SETUP', usable: false, reason: '모의 의뢰라 실제 판매처를 열지 않아요' };
-    return ctx.env.WALF_NAVER_CLIENT_ID && ctx.env.WALF_NAVER_CLIENT_SECRET ? { status: 'SUPPORTED', usable: true, reason: '네이버 검색 API(쇼핑) — 검색 목록의 가격·이미지만, 사이즈·재고는 판매처 확인 필요' }
-      : { status: 'PENDING_EXTERNAL_SETUP', usable: false, reason: '네이버 검색 API 키(WALF_NAVER_CLIENT_ID·SECRET) 설정 전 — 주말 설정 체크리스트 참고' };
-  },
-  pick: qs => [...qs.filter(q => q.kind === 'brand_code'), ...qs.filter(q => q.kind === 'brand_name' || q.kind === 'alias_name')].slice(0, 2),
-  async search(q, _t, ctx) {
-    await ctx.pace('openapi.naver.com');
-    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 10_000);
-    try {
-      const f = ctx.fetcher || (fetch as unknown as Fetcher);
-      const res = await (f as any)(`https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(q.text)}&display=20&sort=sim`,
-        { headers: { 'X-Naver-Client-Id': ctx.env.WALF_NAVER_CLIENT_ID!, 'X-Naver-Client-Secret': ctx.env.WALF_NAVER_CLIENT_SECRET! }, signal: ctl.signal, redirect: 'manual' });
-      if (res.status === 401 || res.status === 403) throw new SourceError('auth', '네이버 API 키가 맞지 않아요');
-      if (res.status === 429) throw new SourceError('blocked', '네이버 API 호출 한도에 걸렸어요');
-      if (res.status >= 400) throw new SourceError('http', `네이버 API 오류(HTTP ${res.status})`);
-      return naverItems(await res.json(), q.text);
-    } catch (e: any) { if (e instanceof SourceError) throw e; throw new SourceError(e?.name === 'AbortError' ? 'timeout' : 'network', '네이버 API에 연결하지 못했어요'); }
-    finally { clearTimeout(timer); }
-  },
-};
-
 // ── 열지 않는 곳 ─────────────────────────────────────────────
 const closed = (id: string, label: string, kind: SearchSource['kind'], cost: SearchSource['cost'], a: Availability): SearchSource =>
   ({ id, label, kind, cost, availability: () => a, pick: () => [], async search() { return []; } });
+// 네이버 쇼핑 검색 API는 2026-07-31 서비스가 끝났다(developers.naver.com/notice/article/32564). 옮겨 간 NAVER API HUB 검색 목록에도 쇼핑이 없다.
+// 다른 공식 경로가 생기기 전까지 닫아 두고, “연결 준비 중”으로 보여 주지 않는다(docs/WALF_SOURCE_ACCESS_MATRIX.md).
+export const naverSource = closed('naver_shopping', '네이버 쇼핑 검색 API', 'retail', 'free', { status: 'UNSUPPORTED', usable: false, access: 'discontinued',
+  reason: '공식 API가 2026-07-31 종료됐어요(네이버 개발자센터 공지 32564) · 대신 쓸 공식 경로 없음' });
 export const aiWebSource = closed('ai_web', 'AI 웹 검색(Claude)', 'any', 'paid', { status: 'PENDING_EXTERNAL_SETUP', usable: false,
   reason: '유료 호출 — API 키·월 예산을 정하기 전에는 판매처 탐색에 쓰지 않아요(7일 탐색의 AI 탐색과 같은 비용 상한으로 연결 예정)' });
 /** sources.ts 의 판매처 판단(약관·robots.txt)을 그대로 따른다 */
-const marketplaces = SOURCES.filter(s => !['page', 'mock'].includes(s.id)).map(s => closed(s.id, s.label, s.kind === 'new' ? 'retail' : s.kind === 'used' ? 'used' : 'resale', 'free',
-  { status: s.status as Availability['status'], usable: false, reason: `${s.reason} (${s.checked})` }));
+const marketplaces = SOURCES.filter(s => !['page', 'mock'].includes(s.id) && s.listed !== false).map(s => closed(s.id, s.label, s.kind === 'new' ? 'retail' : s.kind === 'used' ? 'used' : s.kind === 'any' ? 'any' : 'resale', 'free',
+  { status: s.status as Availability['status'], usable: false, access: s.access, reason: `${s.reason} (${s.checked})` }));
 
 export const SEARCH_SOURCES: SearchSource[] = [mockSource, officialSource, naverSource, aiWebSource, ...marketplaces];
 

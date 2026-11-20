@@ -34,6 +34,22 @@ test('카페24 재고와 구조화 데이터가 다르면 “확인 못 함”',
   assert.match(m.basis, /불일치/);
 });
 
+test('카페24가 재고 수량을 공개하지 않으면(stock_number 없음) 품절로 읽지 않고 구조화 데이터로 본다 — 2026-11-19 공식몰 실측 결함', () => {
+  const hidden = HTML.replace(/,\\"stock_number\\":\d+/g, '');
+  assert.ok(!hidden.includes('stock_number'));
+  const s = S.parseProductPage(hidden, 'https://shop.example.com/p/2');
+  assert.deepEqual(s.options.map(o => [o.size, o.stock]), [['S', 'in_stock'], ['M', 'sold_out'], ['L', 'in_stock']], '판매 중 표시 + 구조화 데이터의 옵션별 재고');
+  assert.ok(s.options.every(o => /수량 비공개/.test(o.basis)), '근거에 수량 비공개를 남긴다');
+  // 구조화 데이터도 없으면 확인 못 함(품절로도, 재고 있음으로도 말하지 않는다)
+  const bare = S.parseProductPage(hidden.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, ''), 'https://shop.example.com/p/3');
+  assert.deepEqual(bare.options.map(o => o.stock), ['unknown', 'unknown', 'unknown']);
+  assert.equal(bare.pageStock, 'unknown');
+  // 판매 중이 아니면(is_selling F) 수량과 상관없이 품절(구조화 데이터가 재고 있음이라 하면 불일치 → 확인 못 함)
+  assert.equal(S.parseProductPage(hidden.replace('\\"is_selling\\":\\"T\\"', '\\"is_selling\\":\\"F\\"'), 'https://shop.example.com/p/5').options[0].stock, 'unknown');
+  const off = S.parseProductPage(hidden.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, '').replace('\\"is_selling\\":\\"T\\"', '\\"is_selling\\":\\"F\\"'), 'https://shop.example.com/p/4');
+  assert.equal(off.options[0].stock, 'sold_out');
+});
+
 test('구조화 데이터만 있는 일반 쇼핑몰도 읽는다', () => {
   const html = `<script type="application/ld+json">{"@type":"Product","name":"Knit","offers":{"@type":"Offer","price":"98000","availability":"InStock","shippingDetails":{"shippingRate":{"value":"0"}}}}</script>`;
   const s = S.parseProductPage(html, 'https://www.other.example/item/9');

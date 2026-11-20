@@ -116,7 +116,7 @@ test('[설정] 새 판매처 찾기 끄기 · 찾아볼 곳 고르기(지원하�
   assert.equal(src.find(x => x.id === 'bunjang')!.usable, false); assert.match(src.find(x => x.id === 'bunjang')!.reason, /제39조/);
   assert.equal(src.find(x => x.id === 'bunjang')!.note, '이용약관상 자동으로 찾을 수 없어요 · 필요하면 왈프 팀이 직접 확인해요', '사용자에게는 쉬운 말로');
   assert.equal(src.find(x => x.id === 'ai_web')!.note, '유료 기능이라 아직 쓰지 않아요');
-  assert.equal(src.find(x => x.id === 'naver_shopping')!.status, 'PENDING_EXTERNAL_SETUP');
+  assert.equal(src.find(x => x.id === 'naver_shopping')!.status, 'UNSUPPORTED'); assert.equal(src.find(x => x.id === 'naver_shopping')!.note, '서비스가 종료돼 찾을 수 없어요');
   assert.throws(() => X.updateDiscovery(db, u.id, wid, { discoverySources: ['mock', 'bunjang'] }, env()), /지금 찾아볼 수 없는 곳/);
   X.updateDiscovery(db, u.id, wid, { discoverySources: [] }, env());
   assert.match(S.queueDiscovery(db, env(), wid).skipped!, /쓸 수 있는 판매처 소스가 없어요/);

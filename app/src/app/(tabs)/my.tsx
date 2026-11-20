@@ -1,69 +1,118 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Platform, ScrollView, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, AppState, Linking, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Header } from '@/components/Header';
-import { Btn, Hair, T, TextBtn } from '@/components/ui';
+import { Btn, Icon, T } from '@/components/ui';
 import { TAB_SPACE } from '@/components/TabBar';
 import { call, claimLegacy, getBase, getDevice, legacyLocked, resetDevice, setBase, DEFAULT_BASE } from '@/lib/api';
-import { enablePush, remotePushAvailable } from '@/lib/push';
+import { enablePush } from '@/lib/push';
 import { useStore } from '@/lib/store';
 import { C, FONT, R } from '@/lib/theme';
 
 export default function MyTab() {
-  const { me, reinit, refresh } = useStore();
+  const { reinit, refresh } = useStore();
+  const params = useLocalSearchParams<{ dev?: string }>();
   const [perm, setPerm] = useState<string>('…');
   const [base, setB] = useState(getBase());
   const [code, setCode] = useState('');
   const [legacy, setLegacy] = useState(false);
-  useEffect(() => { Notifications.getPermissionsAsync().then(p => setPerm(p.status)).catch(() => setPerm('unknown')); legacyLocked().then(setLegacy).catch(() => {}); }, []);
+  const [devPick, setDev] = useState<boolean | null>(null);
+  const dev = devPick ?? params.dev === '1'; // 개발자 설정 — 버전 줄을 길게 누르거나 연결 오류 화면에서 들어올 때만 연다
+  const readPerm = useCallback(() => { Notifications.getPermissionsAsync().then(p => setPerm(p.status)).catch(() => setPerm('unknown')); }, []);
+  useEffect(() => { readPerm(); legacyLocked().then(setLegacy).catch(() => {}); }, [readPerm]);
+  useEffect(() => { const sub = AppState.addEventListener('change', s => { if (s === 'active') readPerm(); }); return () => sub.remove(); }, [readPerm]); // 설정 앱에서 돌아오면 다시 읽는다
   const claim = async () => {
     try { await claimLegacy(code); setCode(''); setLegacy(false); await reinit(); Alert.alert('이어받았어요', '이전 기록을 이 기기로 옮겼어요.'); }
     catch (e: any) { Alert.alert('이어받지 못했어요', e.message); }
   };
-  const permLabel = perm === 'granted' ? (me?.user.pushToken ? '켜짐 · 푸시 연결됨' : remotePushAvailable() ? '켜짐 · 기기 등록 중' : '켜짐 · 이 설치본은 원격 푸시 없음(앱 안 알림만)') : perm === 'denied' ? '꺼짐' : '아직 묻지 않음';
+  const turnOn = async () => { try { Alert.alert('알림', await enablePush()); } catch (e: any) { Alert.alert('알림', e.message); } readPerm(); refresh(); };
+  const wipe = () => Alert.alert('데이터를 삭제할까요?', '이 기기의 의뢰, 사진, 활동 기록, 알림을 서버에서 지워요. 외부에 게시된 수배글이 있으면 삭제 처리를 위해 채널 기록만 남겨요. 되돌릴 수 없어요.', [
+    { text: '취소', style: 'cancel' },
+    { text: '삭제', style: 'destructive', onPress: async () => { try { await call('DELETE', '/me'); await resetDevice(); await reinit(); Alert.alert('삭제했어요'); } catch (e: any) { Alert.alert('삭제하지 못했어요', e.message); } } },
+  ]);
+  const version = Constants.expoConfig?.version || '';
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={{ flex: 1, backgroundColor: C.canvas }}>
       <Header title="MY" />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: TAB_SPACE }} keyboardShouldPersistTaps="handled">
-        <Row k="알림" v={permLabel} />
-        <Btn label="알림 켜기" kind="sec" small style={{ alignSelf: 'flex-start', marginBottom: 16 }}
-          onPress={async () => { try { Alert.alert('알림', await enablePush()); } catch (e: any) { Alert.alert('알림', e.message); } Notifications.getPermissionsAsync().then(p => setPerm(p.status)); refresh(); }} />
-        <Hair />
-        <T size={17} w={800} ls={-0.5} style={{ marginTop: 22 }} accessibilityRole="header">이용 안내</T>
-        {['무료 베타 — 결제·구독·크레딧은 없어요.', '한 번에 한 벌, 7일 동안 맡길 수 있어요.', '7일은 왈프 팀이 상품을 확인한 때부터 흘러요.', '국내 판매처를 하루 한 번 살펴요. 해외 탐색은 하지 않아요.',
-          '결과는 왈프 팀이 직접 확인해요. 확인 전 매물은 “유력 후보”로만 보여드려요.', '공개 수배는 동의하신 경우에만, 동의한 정보만 올려요.', '구매는 각 판매처에서 진행돼요. 왈프는 결제·배송에 관여하지 않아요.']
-          .map(x => <T key={x} size={13.5} lh={21} style={{ marginTop: 8 }}>· {x}</T>)}
-        <Hair style={{ marginTop: 22 }} />
-        <T size={17} w={800} ls={-0.5} style={{ marginTop: 22 }} accessibilityRole="header">테스트 빌드 설정</T>
-        <T size={12.5} color={C.gray500} style={{ marginTop: 6 }}>실기기에서 맥의 서버에 붙을 때 같은 Wi-Fi의 주소(예: http://192.168.0.10:4300)를 넣어요.</T>
-        <TextInput value={base} onChangeText={setB} autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel="서버 주소"
-          style={{ marginTop: 10, borderWidth: 1, borderColor: C.gray300, borderRadius: R.card, paddingHorizontal: 14, height: 48, fontFamily: FONT[500], fontSize: 14, color: C.black }} />
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          <Btn label="서버 바꾸기" kind="sec" small style={{ flex: 1 }} onPress={async () => { try { await setBase(base); await reinit(); Alert.alert('서버 주소', `${getBase()}에 연결했어요.`); } catch (e: any) { Alert.alert('서버 주소', e.message); } }} />
-          <Btn label="기본값" kind="sec" small style={{ flex: 1 }} onPress={() => setB(DEFAULT_BASE)} />
-        </View>
-        <Row k="기기 ID" v={(getDevice() || '').slice(0, 8) + '…'} />
-        <Row k="앱 버전" v={`${Constants.expoConfig?.version} · ${Platform.OS}`} />
-        <Hair style={{ marginTop: 10 }} />
-        <T size={17} w={800} ls={-0.5} style={{ marginTop: 22 }} accessibilityRole="header">이전 기록 이어받기</T>
-        <T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 6 }}>{legacy
-          ? '이 기기의 이전 버전 기록은 기기 ID만으로는 열 수 없어 잠가 두었어요. 왈프 팀에 확인을 받은 뒤 받은 코드를 넣으면 이 기기로 옮겨 와요.'
-          : '이전 버전 앱의 기록이 필요하면 왈프 팀에 확인을 받은 뒤 받은 코드(8자리)를 넣어 주세요.'}</T>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          <TextInput value={code} onChangeText={v => setCode(v.toUpperCase())} autoCapitalize="characters" autoCorrect={false} autoComplete="off" keyboardType="ascii-capable" placeholder="ABCD-EFGH" placeholderTextColor={C.gray500} accessibilityLabel="이어받기 코드" maxLength={12}
-            style={{ flex: 1, borderWidth: 1, borderColor: C.gray300, borderRadius: R.card, paddingHorizontal: 14, height: 44, fontFamily: FONT[500], fontSize: 14, color: C.black }} />
-          <Btn label="이어받기" kind="sec" small style={{ flex: 0, paddingHorizontal: 16 }} onPress={claim} />
-        </View>
-        <Hair style={{ marginTop: 18 }} />
-        <TextBtn label="내 의뢰·알림 데이터 삭제" onPress={() => Alert.alert('데이터를 삭제할까요?', '이 기기의 의뢰, 사진, 활동 기록, 알림을 서버에서 지워요. 외부에 게시된 수배글이 있으면 삭제 처리를 위해 채널 기록만 남겨요. 되돌릴 수 없어요.', [
-          { text: '취소', style: 'cancel' },
-          { text: '삭제', style: 'destructive', onPress: async () => { try { await call('DELETE', '/me'); await resetDevice(); await reinit(); Alert.alert('삭제했어요'); } catch (e: any) { Alert.alert('삭제하지 못했어요', e.message); } } },
-        ])} />
+      <ScrollView style={{ backgroundColor: C.canvas }} contentContainerStyle={{ paddingBottom: TAB_SPACE }} keyboardShouldPersistTaps="handled">
+        {legacy ? (
+          <View style={st.notice}>
+            <T size={15} w={700}>이전 버전 기록이 잠겨 있어요</T>
+            <T size={13} lh={19} color={C.gray500} style={{ marginTop: 4 }}>이 기기의 이전 기록은 기기 ID만으로는 열 수 없어 잠가 두었어요. 왈프 팀에게 받은 코드를 넣으면 이 기기로 옮겨 와요.</T>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TextInput value={code} onChangeText={v => setCode(v.toUpperCase())} autoCapitalize="characters" autoCorrect={false} autoComplete="off" keyboardType="ascii-capable" placeholder="ABCD-EFGH" placeholderTextColor={C.gray500} accessibilityLabel="이어받기 코드" maxLength={12} style={[st.input, { flex: 1 }]} />
+              <Btn label="이어받기" kind="sec" small style={{ flex: 0, paddingHorizontal: 16 }} onPress={claim} disabled={code.replace(/[^A-Z0-9]/g, '').length < 8} />
+            </View>
+          </View>
+        ) : null}
+
+        <Group title="알림" foot="찾은 옷이 확인됐을 때, 기다리던 가격이 됐을 때 알려 드려요. 알림을 꺼도 ALERTS 탭에서 볼 수 있어요.">
+          <Row label="푸시 알림" value={perm === 'granted' ? '켜짐' : perm === '…' ? '' : '꺼짐'}
+            right={perm === 'undetermined' ? <Btn label="켜기" kind="sec" small style={st.inline} onPress={turnOn} />
+              : perm === 'denied' ? <Btn label="설정 열기" kind="sec" small style={st.inline} onPress={() => Linking.openSettings()} /> : undefined} />
+        </Group>
+
+        <Group title="이용 안내">
+          <Row label="왈프는 이렇게 찾아요" chev onPress={() => router.push('/guide')} />
+          <Row label="구매·결제와 개인정보" chev onPress={() => router.push({ pathname: '/guide', params: { at: 'privacy' } })} last />
+        </Group>
+
+        <Group title="앱 정보">
+          <Row label="버전" value={version} onLongPress={() => setDev(!dev)} last={!dev} a11y={`버전 ${version}`} />
+          {dev ? (
+            <View style={{ paddingHorizontal: 16, paddingVertical: 14, gap: 10 }}>
+              <T size={13} w={700}>개발자 설정</T>
+              <T size={12.5} lh={18} color={C.gray500}>실기기에서 맥의 서버에 붙을 때 같은 Wi-Fi의 주소(예: http://192.168.0.10:4300)를 넣어요.</T>
+              <TextInput value={base} onChangeText={setB} autoCapitalize="none" autoCorrect={false} keyboardType="url" accessibilityLabel="서버 주소" style={st.input} />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Btn label="서버 바꾸기" kind="sec" small style={{ flex: 1 }} onPress={async () => { try { await setBase(base); await reinit(); Alert.alert('서버 주소', `${getBase()}에 연결했어요.`); } catch (e: any) { Alert.alert('서버 주소', e.message); } }} />
+                <Btn label="기본값" kind="sec" small style={{ flex: 1 }} onPress={() => setB(DEFAULT_BASE)} />
+              </View>
+              <T size={12.5} color={C.gray500}>기기 ID {(getDevice() || '').slice(0, 8)}… · {Platform.OS}</T>
+            </View>
+          ) : null}
+        </Group>
+
+        <Group>
+          <Row label="내 의뢰·알림 데이터 삭제" onPress={wipe} last a11y="내 의뢰·알림 데이터 삭제" />
+        </Group>
+        <T size={12} lh={18} color={C.gray500} style={{ paddingHorizontal: 20, marginTop: 10 }}>무료 베타 · 결제·구독·크레딧은 없어요.</T>
       </ScrollView>
     </View>
   );
 }
-const Row = ({ k, v }: { k: string; v: string }) => (
-  <View style={{ flexDirection: 'row', paddingVertical: 14, gap: 12 }}><T size={14} color={C.gray500} style={{ width: 72 }}>{k}</T><T size={14} w={600} style={{ flex: 1 }}>{v}</T></View>
-);
+
+function Group({ title, foot, children }: { title?: string; foot?: string; children: React.ReactNode }) {
+  return (
+    <View style={{ marginTop: title ? 26 : 22 }}>
+      {title ? <T size={13} w={600} color={C.gray500} style={{ paddingHorizontal: 20, marginBottom: 8 }} accessibilityRole="header">{title}</T> : null}
+      <View style={st.group}>{children}</View>
+      {foot ? <T size={12} lh={18} color={C.gray500} style={{ paddingHorizontal: 20, marginTop: 8 }}>{foot}</T> : null}
+    </View>
+  );
+}
+
+function Row({ label, value, right, chev, onPress, onLongPress, last, a11y }: { label: string; value?: string; right?: React.ReactNode; chev?: boolean; onPress?: () => void; onLongPress?: () => void; last?: boolean; a11y?: string }) {
+  const body = (
+    <View style={[st.row, !last && st.rowLine]}>
+      <T size={15} w={500} style={{ flex: 1 }} numberOfLines={1}>{label}</T>
+      {value ? <T size={15} color={C.gray500}>{value}</T> : null}
+      {right}
+      {chev ? <Icon name="chev" size={18} color={C.gray500} /> : null}
+    </View>
+  );
+  if (!onPress && !onLongPress) return body;
+  return <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={600} accessibilityRole={onPress ? 'button' : 'text'} accessibilityLabel={a11y || label}
+    style={({ pressed }) => pressed && onPress ? { backgroundColor: C.surface } : undefined}>{body}</Pressable>;
+}
+
+const st = {
+  group: { marginHorizontal: 16, backgroundColor: C.white, borderRadius: R.card, overflow: 'hidden' as const },
+  row: { minHeight: 52, paddingHorizontal: 16, flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8 },
+  rowLine: { borderBottomWidth: 1, borderBottomColor: C.surface },
+  inline: { minHeight: 36, paddingHorizontal: 14, marginVertical: -4 },
+  notice: { marginHorizontal: 16, marginTop: 16, padding: 16, borderRadius: R.card, backgroundColor: C.white, borderWidth: 1, borderColor: C.black },
+  input: { borderWidth: 1, borderColor: C.gray300, borderRadius: R.thumb, paddingHorizontal: 12, height: 44, fontFamily: FONT[500], fontSize: 14, color: C.black, backgroundColor: C.white },
+};

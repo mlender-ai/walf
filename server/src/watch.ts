@@ -6,7 +6,8 @@ import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
 import { now, DAY, HOUR, kClock, kDate, kTime, kWhen, kRelDay, won } from './time.ts';
 import { brandKey, colorsIn, normSize, sameColor, sameSize, upsertProduct, variantOf } from './catalog.ts';
-import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type Snapshot } from './sources.ts';
+import { releasesView, tickReleases } from './release.ts';
+import { fetchPage, fixtureSnapshot, sourceFor, sourceInfo, urlKey, SourceError, type OptionRow, type PageHost, type Snapshot } from './sources.ts';
 import { compareProduct, type Verdict } from './sameproduct.ts';
 import { uploadUrl } from './media.ts';
 import { logReview } from './reviewlog.ts';
@@ -18,7 +19,8 @@ const run = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).run(...p);
 const parse = (s: string | null, d: any = null) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 
 // ── 정책(설정 가능) ──────────────────────────────────────────
-export type WatchPolicy = { maxActive: number; checkEveryMs: number; renewAfterMs: number; unreachableAfter: number; maxAttempts: number; leaseMs: number; mockAllowed: boolean };
+/** pageHosts: 링크 자동 확인 허용 목록(없으면 seed/page-hosts.json + 공식몰 목록) */
+export type WatchPolicy = { maxActive: number; checkEveryMs: number; renewAfterMs: number; unreachableAfter: number; maxAttempts: number; leaseMs: number; mockAllowed: boolean; pageHosts?: PageHost[] };
 export function policyFromEnv(env = process.env): WatchPolicy {
   const n = (v: string | undefined, d: number) => (v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
   return {
@@ -66,7 +68,7 @@ export function createWatch(db: DB, userId: number, input: NewWatch, policy: Wat
   // 링크만 주고 상품명을 따로 쓰지 않았으면 그 페이지가 곧 등록한 상품이다. 상품명·찾아줘 상품이 있으면 페이지를 읽은 뒤 같은 상품인지 본다
   const pageIdentity = url && !typedName && !prod ? 'page_defined' : 'pending';
   const size = clean(input.size, 20), color = clean(input.color, 30), brand = clean(input.brand, 60) || prod?.brand || null;
-  const src = url ? sourceFor(url, { mockAllowed: policy.mockAllowed }) : null;
+  const src = url ? sourceFor(url, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts }) : null;
   const isMock = !!opts.isMock || src?.source.id === 'mock' || !!prod?.is_mock || !!req?.is_mock;
   const t = now();
   return tx(db, () => {
@@ -80,7 +82,7 @@ export function createWatch(db: DB, userId: number, input: NewWatch, policy: Wat
     const note = !url ? '상품 링크가 있으면 바로 지켜볼 수 있어요. 왈프 팀이 상품 페이지를 찾고 있어요.' : !src!.ok ? src!.reason! : null;
     const id = Number(run(db, `INSERT INTO watches(user_id, product_id, request_id, status, title, brand, url, photo, size, color, target_price, condition, price_basis, page_identity, source, info_note,
       next_check_at, started_at, renew_at, is_mock, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      userId, pid, req?.id ?? null, status, name || LINK_TITLE, brand, url, input.photo || null, size ? normSize(size) : null, color, target, condition, priceBasis, pageIdentity,
+      userId, pid, req?.id ?? null, status, name || LINK_TITLE, brand, url, input.photo || req?.photo || null, size ? normSize(size) : null, color, target, condition, priceBasis, pageIdentity,
       src?.ok ? src.source.id : null, note, status === 'active' ? t : null, t, t + policy.renewAfterMs, isMock ? 1 : 0, t, t).lastInsertRowid);
     const w = one(db, 'SELECT * FROM watches WHERE id=?', id)!;
     event(db, w, 'user', 'created', '기다려줘 시작', `${won(target)} 이하${priceBasis === 'item' ? '(배송비 제외)' : ''}${size ? ` · ${normSize(size)}` : ''}${color ? ` · ${color}` : ''}${condition === 'new' ? ' · 새 상품만' : ''}`, t);
@@ -160,7 +162,7 @@ export function attachUrl(db: DB, id: number, url: string, operator: string, pol
   if (!['needs_info', 'active', 'paused'].includes(w.status)) throw new HttpError(409, 'bad_state');
   const u = clean(url, 1000);
   if (!u || !(/^https?:\/\//i.test(u) || (policy.mockAllowed && u.startsWith('mock://')))) throw new HttpError(400, 'bad_url', 'http(s) 상품 페이지 주소를 넣어 주세요.');
-  const src = sourceFor(u, { mockAllowed: policy.mockAllowed });
+  const src = sourceFor(u, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts });
   if (!src.ok) throw new HttpError(400, 'unsupported', src.reason!);
   const t = now();
   tx(db, () => {
@@ -243,7 +245,8 @@ function withShipping(s: Snapshot, l: Row | undefined): Snapshot {
 // ── 스케줄 · 조회 작업 ───────────────────────────────────────
 /** 스케줄러 한 번: 30일 연장 묻기 · 확인할 때가 된 페이지를 대기열에 · 끊긴 작업 회수 */
 export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
-  let renew = 0, queued = 0, recovered = 0;
+  let renew = 0, queued = 0, recovered = 0, parked = 0;
+  const releases = tickReleases(db, policy, t); // 판매 시작 시각이 된 일정: 시작 알림 + (허용된 페이지면) 그때 한 번 확인
   for (const w of all(db, `SELECT * FROM watches WHERE status='active' AND renew_at<=?`, t)) {
     tx(db, () => {
       run(db, `UPDATE watches SET status='renew_due', updated_at=? WHERE id=?`, t, w.id);
@@ -254,6 +257,8 @@ export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
   }
   const slot = slotOf(t, policy.checkEveryMs);
   for (const w of all(db, `SELECT * FROM watches WHERE status='active' AND url IS NOT NULL AND source IS NOT NULL AND next_check_at<=?`, t)) {
+    const src = sourceFor(w.url, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts });
+    if (!src.ok) { parkWatch(db, w, src.reason!, t); parked++; continue; }
     const key = targetKeyOf(w.source, w.url);
     const n = Number(run(db, `INSERT OR IGNORE INTO price_checks(target_key, url, source, slot, status, is_mock, created_at) VALUES (?,?,?,?,?,?,?)`, key, w.url, w.source, slot, 'queued', w.is_mock, t).changes);
     queued += n;
@@ -266,7 +271,15 @@ export function tickWatches(db: DB, policy: WatchPolicy, t = now()) {
   // 서버가 꺼져 끊긴 조회(임대 시간 지남) — 페이지 읽기는 비용이 없으니 다시 대기열로, 단 3번까지
   recovered += Number(run(db, `UPDATE price_checks SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'queued' END, error=CASE WHEN attempts>=? THEN '여러 번 끊겨 중단' ELSE error END
     WHERE status='running' AND lease_until<?`, policy.maxAttempts, policy.maxAttempts, t).changes);
-  return { renew, queued, recovered };
+  return { renew, queued: queued + releases.queued, recovered, parked, releasesStarted: releases.started };
+}
+
+/** 허용 목록 밖 링크의 기다려줘 — 페이지를 열지 않고 확인 필요로 돌린다(링크는 남겨 왈프 팀이 보고, 허용된 페이지로 바꿔 줄 수 있게) */
+function parkWatch(db: DB, w: Row, reason: string, t: number) {
+  tx(db, () => {
+    run(db, `UPDATE watches SET status='needs_info', source=NULL, info_note=?, next_check_at=NULL, updated_at=? WHERE id=?`, reason, t, w.id);
+    event(db, w, 'walf', 'needs_info', '확인이 필요해요', reason, t);
+  });
 }
 
 export type Deps = { fetchPage: (url: string) => Promise<Snapshot>; fixture: (url: string, step: number) => Snapshot };
@@ -283,6 +296,13 @@ export function createChecker(db: DB, policy: WatchPolicy, deps: Deps = { fetchP
       if (!c) return null;
       const got = run(db, `UPDATE price_checks SET status='running', attempts=attempts+1, lease_until=?, started_at=? WHERE id=? AND status='queued'`, t + policy.leaseMs, t, c.id).changes;
       if (!got) return null;
+      // 대기열에 들어간 뒤 허용 목록에서 빠진 판매처는 열지 않는다(조회 실패로 세지 않고 왈프 팀 확인으로 돌린다)
+      const allowed = c.source === 'mock' || sourceFor(c.url, { mockAllowed: policy.mockAllowed, hosts: policy.pageHosts });
+      if (allowed !== true && !allowed.ok) {
+        run(db, `UPDATE price_checks SET status='failed', finished_at=?, error=? WHERE id=?`, t, allowed.reason, c.id);
+        for (const w of all(db, `SELECT * FROM watches WHERE status='active' AND url IS NOT NULL AND source=?`, c.source).filter(w => targetKeyOf(w.source, w.url) === c.target_key)) parkWatch(db, w, allowed.reason!, t);
+        return c.id;
+      }
       let snap: Snapshot | null = null, err: SourceError | null = null;
       try {
         if (c.source === 'mock') {
@@ -317,10 +337,10 @@ function saveSnapshot(db: DB, c: Row, s0: Snapshot, t: number, policy: WatchPoli
       l = one(db, 'SELECT * FROM listings WHERE url_key=?', key)!;
     } else run(db, 'UPDATE listings SET title=COALESCE(?, title), last_seen=? WHERE id=?', s.title, t, l.id);
     s = withShipping(s, l);
-    const ins = db.prepare(`INSERT INTO price_observations(listing_id, check_id, target_key, checked_at, ok, option_label, color, size, price, sale_price, shipping, shipping_note, stock, source, basis, is_mock)
-      VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?)`);
+    const ins = db.prepare(`INSERT INTO price_observations(listing_id, check_id, target_key, checked_at, ok, option_label, color, size, price, sale_price, shipping, shipping_note, stock, source, basis, is_mock, currency)
+      VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const rows: OptionRow[] = s.options.length ? s.options : [{ label: '', color: '', size: '', stock: s.pageStock, price: s.price, basis: s.basis.join('+') }];
-    for (const o of rows) ins.run(l.id, c.id, c.target_key, t, o.label, o.color, o.size, o.price ?? s.price, s.salePrice, s.shipping, s.shippingNote, o.stock, s.source, o.basis, s.isMock ? 1 : 0);
+    for (const o of rows) ins.run(l.id, c.id, c.target_key, t, o.label, o.color, o.size, o.price ?? s.price, s.salePrice, s.shipping, s.shippingNote, o.stock, s.source, o.basis, s.isMock ? 1 : 0, s.currency ?? '');
     run(db, `UPDATE price_checks SET status='done', finished_at=?, error=NULL WHERE id=?`, t, c.id);
     // 사용자가 쓴 상품명은 바꾸지 않는다. 링크만 주고 이름을 쓰지 않았으면(page_defined) 페이지에서 읽은 상품명을 이름으로 쓴다
     for (const w of watchers) {
@@ -395,6 +415,8 @@ export function evaluate(w: { size?: string | null; color?: string | null; targe
   if (identity === 'mismatch') return { ...base, state: 'mismatch', price, total: null, stock, option, reasons: ['등록한 옷과 다른 상품 페이지로 보여요'] };
   if (w.condition === 'new' && s.condition === 'used') return { ...base, state: 'condition', price, total: null, stock, option, reasons: ['새 상품만 원하셨어요'] };
   if (price == null) return { ...base, state: 'no_price', price: null, total: null, stock, option, reasons: ['가격을 읽지 못했어요'] };
+  // 원화가 아닌 가격(엔화 등)이나 통화를 모르는 가격은 원하는 가격(원)과 바로 비교하지 않는다 — 환율·해외 배송비·관부가세를 확인하기 전에는 알림 없음
+  if (s.currency !== 'KRW') return { ...base, state: 'no_price', price, total: null, stock, option, reasons: [s.currency ? `${s.currency} 가격이라 환율을 확인하기 전에는 원하는 가격(원)과 비교하지 않아요` : '가격의 통화를 확인하지 못했어요'] };
   const total = price + (s.shipping ?? 0);
   const compare = basis === 'item' ? price : total;
   if (stock === 'sold_out') return { ...base, state: 'sold_out', price, total, stock, option, reasons: [`${option || '원하는 옵션'} 품절`] };
@@ -435,7 +457,7 @@ function applyEval(db: DB, w0: Row, ev: Eval, t: number, nextAt: number | null) 
       alerted = 0; // 조건이 깨지면 다시 맞을 때 한 번 더 알린다(재입고·가격 재하락)
       event(db, w, 'walf', 'unmet', '조건이 다시 맞지 않아요', ev.reasons[0] || null, t);
     }
-    if (ATTENTION.includes(ev.state) && prev.state !== ev.state) event(db, w, 'walf', 'attention', '가격은 내려왔지만 확인할 게 있어요', `${ev.reasons[0]} · 확인 전에는 구매 가능 알림을 보내지 않아요`, t);
+    if (ATTENTION.includes(ev.state) && prev.state !== ev.state) event(db, w, 'walf', 'attention', '가격은 내려왔지만 확인할 게 있어요', `${ev.reasons[0]} · 확인 전에는 가격 알림을 보내지 않아요`, t);
     run(db, `UPDATE watches SET last_checked_at=?, next_check_at=COALESCE(?, next_check_at), last_state=?, last_result=?, fail_streak=0, alerted=?, alert_episode=?, met_at=CASE WHEN ?='met' THEN COALESCE(met_at, ?) ELSE met_at END, updated_at=? WHERE id=?`,
       t, nextAt, ev.state, JSON.stringify(ev), alerted, episode, ev.state, t, now(), w.id);
   });
@@ -451,6 +473,7 @@ function reevaluate(db: DB, id: number, _policy: WatchPolicy, nextAt: number | n
   const obs = all(db, 'SELECT * FROM price_observations WHERE check_id=?', last);
   const l = one(db, 'SELECT * FROM listings WHERE id=?', obs[0].listing_id);
   const s0: Snapshot = { url: w.url, source: w.source, seller: l?.seller || '', title: l?.title || null, brand: null, image: null, condition: l?.condition || 'new',
+    currency: obs[0].currency == null ? 'KRW' : obs[0].currency || null, // 열을 넣기 전 기록은 모두 국내 원화 페이지 · 빈 값은 통화 모름
     price: obs[0].price, salePrice: obs[0].sale_price, shipping: obs[0].shipping, shippingNote: obs[0].shipping_note,
     options: obs.filter(o => o.option_label || o.size || o.color).map(o => ({ label: o.option_label, color: o.color, size: o.size, stock: o.stock, price: o.price, basis: o.basis })),
     pageStock: obs.some(o => o.stock === 'in_stock') ? 'in_stock' : 'unknown', basis: [], isMock: !!obs[0].is_mock };
@@ -486,7 +509,7 @@ export function watchDisplay(w: Row, policy: Pick<WatchPolicy, 'unreachableAfter
   if (ev.state === 'mismatch') return d('mismatch', '등록한 옷과 다른 상품 페이지로 보여요', `${w.identity_note || ev.reasons[0]}. 왈프 팀이 맞는 페이지를 확인할 때까지 가격 알림을 보내지 않아요.`, { eyebrow: when, notice: '왈프 팀이 확인하고 있어요' });
   if (ev.state === 'met') return d('met', '원하는 가격이 됐어요', `${ev.seller}${ev.option ? ` · ${ev.option}` : ''} · ${ship} · 재고 있음. 먼저 팔릴 수 있어요.`, { eyebrow: when });
   if (ATTENTION.includes(ev.state)) return d('attention', ev.state === 'shipping_unknown' ? '상품 가격은 충족, 배송비 미확인' : `${kRelDay(w.last_checked_at, t)} ${ship}`,
-    `${ev.reasons[0]}. 확인되기 전에는 구매 가능 알림을 보내지 않아요.`, { eyebrow: when, notice: '왈프 팀이 확인하고 있어요' });
+    `${ev.reasons[0]}. 확인되기 전에는 가격 알림을 보내지 않아요.`, { eyebrow: when, notice: '왈프 팀이 확인하고 있어요' });
   const desc: Record<string, string> = {
     above: `${ev.reasons[0]}. 하루 한 번 확인해요.`, sold_out: `${ev.reasons[0]}이에요. 다시 들어오고 원하는 가격 이하면 알려 드릴게요.`,
     size_missing: `${ev.reasons[0]}. 다른 사이즈로 바꾸거나 계속 지켜볼 수 있어요.`, color_missing: `${ev.reasons[0]}.`, condition: ev.reasons[0], no_price: `${ev.reasons[0]}. 다음 확인 때 다시 볼게요.`,
@@ -501,18 +524,20 @@ export function watchView(db: DB, w: Row, base: string, policy: Pick<WatchPolicy
   // 확인 한 번마다 이 Watch 조건에 맞는 옵션 한 줄
   const byCheck = new Map<number, Row[]>();
   for (const o of obs) { const k = o.check_id ?? -o.id; byCheck.set(k, [...(byCheck.get(k) || []), o]); }
+  const listing = w.url ? one(db, 'SELECT * FROM listings WHERE url_key=?', urlKey(w.url)) : undefined;
   const history = [...byCheck.values()].slice(0, 60).map(rows => {
     const ok = rows[0].ok === 1;
     const pick = rows.find(o => (!w.size || sameSize(o.size, w.size)) && (!w.color || !o.color || sameColor(w.color, o.color))) || (rows.length === 1 ? rows[0] : null);
-    const total = pick?.price != null ? pick.price + (pick.shipping ?? 0) : null;
+    // 페이지에 배송비가 없으면 왈프 팀이 확인한 배송비로 판정한다(withShipping) — 가격 카드·기록도 같은 값으로 보여 준다
+    const shipping = pick ? pick.shipping ?? listing?.shipping_fee ?? null : null;
+    const total = pick?.price != null ? pick.price + (shipping ?? 0) : null;
     return { at: rows[0].checked_at, label: `${kDate(rows[0].checked_at).replace(/\(.\)$/, '')} ${kClock(rows[0].checked_at)}`, ok, error: ok ? null : rows[0].error?.replace(/^\w+:\s*/, ''),
-      price: pick?.price ?? null, shipping: pick?.shipping ?? null, shippingKnown: pick ? pick.shipping != null : false, total, stock: pick?.stock || (ok ? 'option_missing' : null),
+      price: pick?.price ?? null, shipping, shippingKnown: shipping != null, total, stock: pick?.stock || (ok ? 'option_missing' : null),
       option: pick?.option_label || null, source: rows[0].source, isMock: !!rows[0].is_mock,
       // 이 줄의 가격이 목표 이하인지만 표시한다(조건 충족 여부는 상태 문장이 말한다). 총액 기준인데 배송비를 모르면 표시하지 않는다
-      meets: PAGE_OK.includes(w.page_identity) && pick?.stock === 'in_stock' && (w.price_basis === 'item' ? pick.price != null && pick.price <= w.target_price : total != null && pick.shipping != null && total <= w.target_price) };
+      meets: PAGE_OK.includes(w.page_identity) && pick?.stock === 'in_stock' && (w.price_basis === 'item' ? pick.price != null && pick.price <= w.target_price : total != null && shipping != null && total <= w.target_price) };
   });
   const src = sourceInfo(w.source);
-  const listing = w.url ? one(db, 'SELECT * FROM listings WHERE url_key=?', urlKey(w.url)) : undefined;
   const events = all(db, 'SELECT * FROM watch_events WHERE watch_id=? ORDER BY at DESC, id DESC LIMIT 50', w.id).map(e => ({ id: e.id, at: e.at, label: kWhen(e.at, t), clock: kClock(e.at), actor: D.ACTOR_LABEL[e.actor] || e.actor, kind: e.kind, title: e.title, detail: e.detail, isMock: !!e.is_mock }));
   return {
     id: w.id, status: w.status, isMock: !!w.is_mock, display: watchDisplay(w, policy, t),
@@ -523,6 +548,7 @@ export function watchView(db: DB, w: Row, base: string, policy: Pick<WatchPolicy
     page: { identity: w.page_identity, ok: PAGE_OK.includes(w.page_identity), note: w.identity_note || null },
     source: src ? { id: src.id, label: src.label, status: src.status, reason: src.reason } : null,
     latest: history.find(h => h.ok) || null, history, events,
+    releases: releasesView(db, w.id), // 판매 예정(공식 발표 기준) — 재고·가격 알림과 따로
     schedule: { lastCheckedLabel: w.last_checked_at ? kWhen(w.last_checked_at, t) : null, nextCheckLabel: w.status === 'active' && w.next_check_at ? (w.next_check_at <= t ? '곧 확인' : kWhen(w.next_check_at, t)) : null,
       renewLabel: w.renew_at ? `${kDate(w.renew_at)}까지` : null, startedLabel: kDate(w.started_at || w.created_at) },
     actions: { pause: ['active', 'needs_info'].includes(w.status), resume: w.status === 'paused', renew: w.status === 'renew_due', end: w.status !== 'ended', edit: w.status !== 'ended' },

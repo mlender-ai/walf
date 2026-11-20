@@ -1,44 +1,44 @@
 import React, { useCallback } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Header } from '@/components/Header';
 import { TrackingView } from '@/components/Tracking';
 import { Entries } from '@/components/Home';
-import { Empty, ErrorBox, Icon, Loading, MockPill, ProductImage, T } from '@/components/ui';
+import { Empty, ErrorBox, Icon, IconBtn, Loading, MockPill, ProductImage, T } from '@/components/ui';
 import { TAB_SPACE } from '@/components/TabBar';
 import { useStore } from '@/lib/store';
+import { askNew, usePull } from '@/lib/usePull';
 import { C, R } from '@/lib/theme';
 import type { Item } from '@/lib/types';
 
 /** 추적함 — 진행 중인 찾아줘 의뢰는 지금처럼 바로 보이고, 그 아래에 “내가 찾는 옷”(찾아줘 + 기다려줘) 목록 */
 export default function TrackingTab() {
   const { ready, me, error, loading, refresh, reinit } = useStore();
+  const { pulling, onPull } = usePull(refresh);
   useFocusEffect(useCallback(() => { refresh(); }, [refresh])); // 탭에 들어올 때마다 서버 상태를 다시 읽는다
   if (!ready || (!me && loading)) return <View style={st.page}><Header title="추적함" /><Loading /></View>;
-  if (!me) return <View style={st.page}><Header title="추적함" /><ErrorBox message={error?.message || ''} onRetry={reinit} onServer={() => router.navigate('/my')} /></View>;
+  if (!me) return <View style={st.page}><Header title="추적함" /><ErrorBox message={error?.message || ''} onRetry={reinit} onServer={() => router.navigate({ pathname: '/my', params: { dev: '1' } })} /></View>;
   const items = me.items || [];
   const watches = items.filter(x => x.kind === 'watch');
   const others = items.filter(x => !(x.kind === 'find' && x.id === me.active?.id));
   // 진행 중인 찾아줘가 있으면 기존 추적함 그대로(7일 여정) + 아래에 기다려줘 목록
   if (me.active) return (
     <View style={st.page}>
-      <Header title="추적함" />
-      <TrackingView r={me.active} onChange={refresh} refreshing={loading} onRefresh={refresh}
+      <Header title="추적함" right={<IconBtn name="plus" label="새로 맡기기" onPress={() => askNew({ canFind: false, watchFull: me.watchLimit.used >= me.watchLimit.max })} />} />
+      <TrackingView r={me.active} onChange={refresh} refreshing={pulling} onRefresh={onPull}
         footer={<ItemList title="기다려줘" items={watches} empty="가격을 기다리는 옷이 없어요." limit={me.watchLimit} />} />
     </View>
   );
   return (
     <View style={st.page}>
-      <Header title="내가 찾는 옷" />
-      <ScrollView contentContainerStyle={{ paddingBottom: TAB_SPACE }} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { refresh(); }} tintColor={C.black} />}>
+      <Header title="내가 찾는 옷" right={others.length ? <IconBtn name="plus" label="새로 맡기기" onPress={() => askNew({ canFind: !me.active, watchFull: me.watchLimit.used >= me.watchLimit.max })} /> : undefined} />
+      <ScrollView contentContainerStyle={{ paddingBottom: TAB_SPACE }} refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={C.black} />}>
         {!others.length ? (
           <Empty title="아직 찾는 옷이 없어요" desc="사진으로 찾거나, 아는 옷의 가격을 기다려 보세요.">
             <View style={{ alignSelf: 'stretch', marginTop: 16 }}><Entries canFind watchLimit={me.watchLimit} /></View>
           </Empty>
         ) : <>
-          <ItemList title="진행 중" items={others.filter(x => !x.ended)} empty="진행 중인 옷이 없어요." limit={me.watchLimit} />
-          <View style={{ paddingHorizontal: 20, marginTop: 4 }}><Entries canFind watchLimit={me.watchLimit} /></View>
+          <ItemList title="진행 중" items={others.filter(x => !x.ended)} empty="진행 중인 옷이 없어요. 오른쪽 위 +로 새로 맡길 수 있어요." limit={me.watchLimit} />
           {others.some(x => x.ended) ? <ItemList title="끝난 옷" items={others.filter(x => x.ended)} empty="" /> : null}
         </>}
       </ScrollView>

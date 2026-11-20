@@ -12,6 +12,7 @@ import { createAiWorker, recoverAiJobs, ensureAiJobs } from './aijobs.ts';
 import { loadSeedFile } from './catalog.ts';
 import { limitsFromEnv } from './cost.ts';
 import { createChecker, policyFromEnv, resettleAutoMatched, tickWatches } from './watch.ts';
+import { pageHosts } from './sources.ts';
 import { createOfferSearcher, ensureDiscoveries, recoverOfferSearches, searchEnvFrom } from './findsearch.ts';
 import { setMediaSecret, verifyUpload } from './media.ts';
 
@@ -91,5 +92,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  admin  http://localhost:${PORT}/admin   db ${path.relative(root, dbFile)}   QA도구 ${process.env.WALF_QA_TOOLS === '1' ? '켜짐' : '꺼짐'}`);
   console.log(`  AI     ${ai ? ai.label : '꺼짐 — server/.env 에 ANTHROPIC_API_KEY 가 없어 운영자가 직접 확인해요'} · 월 예산 $${limits.monthlyUsd} · 의뢰별 ${limits.perRequestCalls}회`);
   console.log(`  기다려줘 활성 ${policy.maxActive}개/사용자 · ${policy.checkEveryMs / 3600_000}시간마다 확인 · 테스트 가격 소스 ${policy.mockAllowed ? '켜짐' : '꺼짐'}`);
-  console.log(`  판매처 탐색 공식몰 ${searchEnv.malls.length}곳 · 네이버 쇼핑 API ${searchEnv.env.WALF_NAVER_CLIENT_ID ? '켜짐' : '키 없음(대기)'} · AI 웹 검색 쓰지 않음 · 테스트 판매처 ${searchEnv.mockAllowed ? '켜짐' : '꺼짐'}`);
+  console.log(`  링크 자동 확인 허용 목록 ${pageHosts().length}곳(seed/page-hosts.json + 공식몰) · 목록 밖 링크는 왈프 팀이 직접 확인`);
+  console.log(`  판매처 탐색 공식몰 ${searchEnv.malls.length}곳 · 네이버 쇼핑 API 종료(2026-07-31) · AI 웹 검색 쓰지 않음 · 테스트 판매처 ${searchEnv.mockAllowed ? '켜짐' : '꺼짐'}`);
 });

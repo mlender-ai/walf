@@ -26,6 +26,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -36,7 +38,8 @@
     "typecheck": "tsc --noEmit",
     "ios:sim": "expo run:ios",
     "ios:release": "expo run:ios --configuration Release",
-    "iphone": "./scripts/install-iphone.sh"
+    "iphone": "./scripts/install-iphone.sh",
+    "lint": "expo lint"
   },
   "private": true
 }

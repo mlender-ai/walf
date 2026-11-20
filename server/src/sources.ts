@@ -7,28 +7,59 @@ import path from 'node:path';
 import { normSize, colorsIn } from './catalog.ts';
 
 export type SourceStatus = 'SUPPORTED' | 'PENDING_INTEGRATION' | 'UNSUPPORTED' | 'TEST_ONLY';
-export type SourceInfo = { id: string; label: string; kind: 'new' | 'used' | 'resale' | 'any'; status: SourceStatus; hosts: string[]; reason: string; checked: string };
+/** 이용 권한 판정(docs/WALF_SOURCE_ACCESS_MATRIX.md 5단계 + 허용·테스트). status 는 지금 코드가 여는지, access 는 왜 그런지 */
+export type Access = 'allowed' | 'official_api' | 'partner_required' | 'link_only' | 'prohibited' | 'unverified' | 'discontinued' | 'test';
+/** listed: 사용자 화면의 판매처 목록에 보여 줄지(일본 판매처 등 아직 찾을 경로가 없는 곳은 링크 판단·레지스트리에만 쓴다) */
+export type SourceInfo = { id: string; label: string; kind: 'new' | 'used' | 'resale' | 'any'; status: SourceStatus; access: Access; hosts: string[]; reason: string; checked: string; listed?: boolean };
 
-/** 판매처별 자동 접근 판단(근거: 2026-11-09 실험 브랜치 판매처 접근 검증 · 각 사 이용약관·robots.txt) */
+/** 판매처 레지스트리 — 자동 접근 판단과 근거(2026-11-09 접근 검증 · 2026-11-19~20 한·일 판매처 접근 매트릭스). 허용 목록 밖은 이 표에 없어도 열지 않는다 */
 export const SOURCES: SourceInfo[] = [
-  { id: 'page', label: '상품 페이지(공식몰 등)', kind: 'new', status: 'SUPPORTED', hosts: [], checked: '2026-11-13',
-    reason: '사용자·운영자가 준 상품 페이지 한 곳만 하루 1회 연다. robots.txt 허용·약관 차단 목록 밖일 때만. 카페24 옵션 재고(option_stock_data)·schema.org 구조화 데이터를 읽는다' },
-  { id: 'bunjang', label: '번개장터', kind: 'used', status: 'UNSUPPORTED', hosts: ['bunjang.co.kr'], checked: '2026-11-09', reason: '이용약관 제39조 ⑦ 1호 — 자동화 도구로 데이터 수집 금지. 운영자 수동 확인만' },
-  { id: 'soldout', label: '솔드아웃', kind: 'resale', status: 'UNSUPPORTED', hosts: ['soldout.co.kr'], checked: '2026-11-09', reason: '무신사 이용약관 제11조 ② 9호 — 사전 협의 없는 자동 수집·모니터링 금지' },
-  { id: 'musinsa', label: '무신사', kind: 'new', status: 'UNSUPPORTED', hosts: ['musinsa.com'], checked: '2026-11-09', reason: '무신사 이용약관 제11조 ② 9호 · robots.txt 일반 수집기 금지' },
-  { id: 'wconcept', label: 'W컨셉', kind: 'new', status: 'UNSUPPORTED', hosts: ['wconcept.co.kr'], checked: '2026-11-09', reason: 'robots.txt 일반 수집기 전체 금지' },
-  { id: 'kream', label: 'KREAM', kind: 'resale', status: 'PENDING_INTEGRATION', hosts: ['kream.co.kr'], checked: '2026-11-09', reason: 'robots.txt·약관을 확인하지 못함(접속 오류) — 확인 전까지 열지 않음' },
-  { id: 'joongna', label: '중고나라', kind: 'used', status: 'PENDING_INTEGRATION', hosts: ['joongna.com'], checked: '2026-11-09', reason: '자체 검색 접근은 실험에서 확인. 약관 제20조 2호(얻은 정보의 제3자 제공) 법무 확인 전' },
-  { id: 'fruitsfamily', label: '후루츠패밀리', kind: 'used', status: 'PENDING_INTEGRATION', hosts: ['fruitsfamily.com'], checked: '2026-11-09', reason: '자체 검색을 주소로 열 수 없고 공식 API 미확인' },
-  { id: '29cm', label: '29CM', kind: 'new', status: 'PENDING_INTEGRATION', hosts: ['29cm.co.kr'], checked: '2026-11-09', reason: '약관 확인 전' },
-  { id: 'mock', label: '테스트 가격(Fixture)', kind: 'any', status: 'TEST_ONLY', hosts: [], checked: '2026-11-13', reason: 'QA·자동 테스트 전용. 실제 판매 가격이 아니다' },
+  { id: 'page', label: '상품 페이지(허용 목록)', kind: 'new', status: 'SUPPORTED', access: 'allowed', hosts: [], checked: '2026-11-20',
+    reason: '운영자가 약관·robots.txt를 확인해 허용 목록(seed/page-hosts.json · seed/official-malls.json)에 넣은 판매처의 상품 페이지만 하루 1회 연다. 목록 밖은 열지 않고 왈프 팀이 직접 확인한다. 카페24 옵션 재고(option_stock_data)·schema.org 구조화 데이터를 읽는다' },
+  // 한국
+  { id: 'bunjang', label: '번개장터', kind: 'used', status: 'UNSUPPORTED', access: 'prohibited', hosts: ['bunjang.co.kr'], checked: '2026-11-19', reason: '이용약관 제39조 ⑦ 1호 — 자동화 도구로 수집·저장·분석·색인화 금지. 운영자 수동 확인만' },
+  { id: 'soldout', label: '솔드아웃', kind: 'resale', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['soldout.co.kr'], checked: '2026-11-19', reason: '무신사 통합 이용약관 제11조 ② 9호 — 사전 협의 없는 자동 수집·모니터링 금지(제휴 필요)' },
+  { id: 'musinsa', label: '무신사', kind: 'new', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['musinsa.com'], checked: '2026-11-19', reason: '무신사 통합 이용약관 제11조 ② 9호 · robots.txt 일반 수집기 금지(제휴 필요)' },
+  { id: '29cm', label: '29CM', kind: 'new', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['29cm.co.kr'], checked: '2026-11-19', reason: '무신사 통합 이용약관(29CM 포함) 제11조 ② 9호 — 사전 협의 없는 자동 수집·모니터링 금지(제휴 필요)' },
+  { id: 'wconcept', label: 'W컨셉', kind: 'new', status: 'UNSUPPORTED', access: 'prohibited', hosts: ['wconcept.co.kr'], checked: '2026-11-09', reason: 'robots.txt 일반 수집기 전체 금지' },
+  { id: 'gugus', label: '구구스', kind: 'used', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['gugus.co.kr'], checked: '2026-11-19', reason: '이용약관 제27조 ③(비정상적 시스템 접근 금지)·제22조 ②(정보의 영리 이용은 사전 승낙) — 제휴 창구 있음' },
+  { id: 'fruitsfamily', label: '후루츠패밀리', kind: 'used', status: 'UNSUPPORTED', access: 'link_only', hosts: ['fruitsfamily.com'], checked: '2026-11-19', reason: 'API 없음 · 제26조(안내하지 않은 방법 사용 금지)·제22조 ④(영리 복제는 사전 승낙) — 주기 감시는 허가 필요, 사용자가 준 링크는 왈프 팀이 확인' },
+  { id: 'kream', label: 'KREAM', kind: 'resale', status: 'PENDING_INTEGRATION', access: 'unverified', hosts: ['kream.co.kr'], checked: '2026-11-19', reason: '약관 원문·robots.txt를 열지 못함(HTTP 500) — 확인 전까지 열지 않음' },
+  { id: 'joongna', label: '중고나라', kind: 'used', status: 'PENDING_INTEGRATION', access: 'unverified', hosts: ['joongna.com'], checked: '2026-11-09', reason: '자체 검색 접근은 실험에서 확인. 약관 제20조 2호(얻은 정보의 제3자 제공) 법무 확인 전' },
+  // 일본 · 해외(찾을 경로가 아직 없어 사용자 목록에는 보이지 않는다)
+  { id: 'mercari', label: 'Mercari', kind: 'used', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['mercari.com'], checked: '2026-11-19', listed: false, reason: '회사 제공 인터페이스 외 접근 금지 · 서면 허가 없는 상업 이용 금지 — 공개 API 없음(제휴 필요)' },
+  { id: 'mercari_shops', label: 'Mercari Shops', kind: 'used', status: 'PENDING_INTEGRATION', access: 'unverified', hosts: ['mercari-shops.com'], checked: '2026-11-19', listed: false, reason: '약관 페이지 403으로 확인 못 함' },
+  { id: 'zozoused', label: 'ZOZOUSED', kind: 'used', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['zozo.jp'], checked: '2026-11-19', listed: false, reason: 'zozo.jp 약관·robots.txt 확인 불가(타임아웃·403) — Yahoo!ショッピング 점포는 Yahoo API 상업 이용 협의 필요' },
+  { id: '2ndstreet', label: '2nd STREET', kind: 'used', status: 'PENDING_INTEGRATION', access: 'unverified', hosts: ['2ndstreet.jp'], checked: '2026-11-19', listed: false, reason: '전 페이지 403으로 약관 확인 못 함' },
+  { id: 'ragtag', label: 'RAGTAG', kind: 'used', status: 'PENDING_INTEGRATION', access: 'unverified', hosts: ['ragtag.jp'], checked: '2026-11-19', listed: false, reason: '자사 약관 403·503으로 확인 못 함' },
+  { id: 'trefac', label: 'トレファクファッション', kind: 'used', status: 'UNSUPPORTED', access: 'link_only', hosts: ['trefac.jp'], checked: '2026-11-19', listed: false, reason: 'API 없음 · 제4조(과도한 부하·해석 행위·포괄 금지) — 주기 감시는 허가 필요' },
+  { id: 'kindal', label: 'KINDAL', kind: 'used', status: 'UNSUPPORTED', access: 'link_only', hosts: ['kind.co.jp'], checked: '2026-11-19', listed: false, reason: 'API 없음 · 제4조(과도한 부하·부정 접근·포괄 금지) — 주기 감시는 허가 필요' },
+  { id: 'archivestore', label: 'ARCHIVE STORE', kind: 'used', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['archivestore.jp'], checked: '2026-11-19', listed: false, reason: '제3조(사적 사용 범위 초과 금지)·제4조(영업·영리 목적 이용 금지)' },
+  { id: 'ebay', label: 'eBay', kind: 'any', status: 'UNSUPPORTED', access: 'partner_required', hosts: ['ebay.com', 'ebay.co.uk', 'ebay.de', 'ebay.fr', 'ebay.it', 'ebay.com.au', 'ebay.ca'], checked: '2026-11-19', listed: false,
+    reason: '명시 허가 없는 자동 접근 금지 — Browse API는 eBay Partner Network 승인 후(다른 판매처와 섞어 보여 주기 금지)' },
+  { id: 'mock', label: '테스트 가격(Fixture)', kind: 'any', status: 'TEST_ONLY', access: 'test', hosts: [], checked: '2026-11-13', reason: 'QA·자동 테스트 전용. 실제 판매 가격이 아니다' },
 ];
 export const sourceInfo = (id: string | null | undefined) => SOURCES.find(s => s.id === id);
 const hostOf = (u: string) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ''; } };
 export const onHost = (h: string, d: string) => h === d || h.endsWith('.' + d);
 
-/** 이 주소의 가격을 어디서 읽을지. 막힌 판매처면 그 사유를 돌려준다 */
-export function sourceFor(url: string, opts: { mockAllowed?: boolean } = {}): { source: SourceInfo; ok: boolean; reason?: string } {
+/** 링크 자동 확인 허용 목록 — 운영자가 약관·robots.txt를 확인한 판매처만 연다. 공개 페이지라는 이유만으로 열지 않는다(docs/WALF_SOURCE_ACCESS_MATRIX.md) */
+export type PageHost = { domain: string; label: string; checked: string; basis: string };
+export const NOT_ALLOWED = '이 판매처는 아직 자동으로 확인하지 않아요(이용 조건 확인 전). 왈프 팀이 직접 확인해요.';
+let seedHosts: PageHost[] | null = null;
+/** seed/page-hosts.json(운영자가 확인한 판매처) + seed/official-malls.json(등록한 브랜드 공식몰) */
+export function loadPageHosts(env = process.env): PageHost[] {
+  const read = (f: string) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return {}; } };
+  const seed = path.resolve(import.meta.dirname, '..', 'seed');
+  const hosts = (read(env.WALF_PAGE_HOSTS || path.join(seed, 'page-hosts.json')).hosts || []) as PageHost[];
+  const malls = ((read(env.WALF_OFFICIAL_MALLS || path.join(seed, 'official-malls.json')).malls || []) as { brand: string; domain: string; checked: string; basis: string }[])
+    .map(m => ({ domain: m.domain, label: `${m.brand} 공식몰`, checked: m.checked, basis: m.basis }));
+  return [...hosts, ...malls].filter(h => h && typeof h.domain === 'string' && h.domain.includes('.')).map(h => ({ ...h, domain: h.domain.toLowerCase() }));
+}
+export const pageHosts = () => (seedHosts ??= loadPageHosts());
+
+/** 이 주소의 가격을 어디서 읽을지. 막힌 판매처·허용 목록 밖이면 그 사유를 돌려준다 */
+export function sourceFor(url: string, opts: { mockAllowed?: boolean; hosts?: PageHost[] } = {}): { source: SourceInfo; ok: boolean; reason?: string } {
   if (url.startsWith('mock://')) {
     const s = sourceInfo('mock')!;
     return opts.mockAllowed ? { source: s, ok: true } : { source: s, ok: false, reason: '테스트 전용 주소예요.' };
@@ -36,6 +67,7 @@ export function sourceFor(url: string, opts: { mockAllowed?: boolean } = {}): { 
   const h = hostOf(url);
   const blocked = SOURCES.find(s => s.hosts.some(d => onHost(h, d)));
   if (blocked) return { source: blocked, ok: false, reason: `${blocked.label}은(는) 자동 확인을 지원하지 않아요 — ${blocked.reason}` };
+  if (!(opts.hosts ?? pageHosts()).some(x => onHost(h, x.domain))) return { source: sourceInfo('page')!, ok: false, reason: NOT_ALLOWED };
   return { source: sourceInfo('page')!, ok: true };
 }
 
@@ -155,6 +187,8 @@ export type Stock = 'in_stock' | 'sold_out' | 'unknown';
 export type OptionRow = { label: string; color: string; size: string; stock: Stock; price: number | null; basis: string };
 export type Snapshot = {
   url: string; source: string; seller: string; title: string | null; brand: string | null; image: string | null; condition: 'new' | 'used';
+  /** 가격 통화(ISO 4217). null = 페이지에서 확인 못 함 → 원하는 가격과 비교하지 않는다 */
+  currency: string | null;
   price: number | null; salePrice: number | null; shipping: number | null; shippingNote: string | null;
   options: OptionRow[]; pageStock: Stock; basis: string[]; isMock: boolean;
 };
@@ -186,8 +220,11 @@ export function cafe24Options(html: string) {
     const size = vals.map(normSize).find(v => /^(XXS|XS|S|M|L|XL|XXL|FREE|\d{2,3})$/.test(v)) || '';
     const color = vals.find(v => colorsIn(v).length) || (vals.length > 1 ? vals[0] : '');
     const selling = o.is_selling === 'T' && o.is_display !== 'F';
-    const stock: Stock = !selling ? 'sold_out' : o.use_stock === true || o.use_stock === 'T' ? (Number(o.stock_number) > 0 ? 'in_stock' : 'sold_out') : 'unknown';
-    return { label: String(o.option_value || vals.join('-')), color, size, stock, price: num(o.option_price), basis: 'option_stock_data' } as OptionRow;
+    // 재고 수량을 공개하지 않는 쇼핑몰은 stock_number 가 아예 없다 — 없는 수량을 0(품절)으로 읽지 않고 “확인 못 함”으로 둔다(구조화 데이터로 다시 본다)
+    const tracked = o.use_stock === true || o.use_stock === 'T';
+    const qty = o.stock_number == null || o.stock_number === '' || !Number.isFinite(Number(o.stock_number)) ? null : Number(o.stock_number);
+    const stock: Stock = !selling ? 'sold_out' : tracked && qty != null ? (qty > 0 ? 'in_stock' : 'sold_out') : 'unknown';
+    return { label: String(o.option_value || vals.join('-')), color, size, stock, price: num(o.option_price), basis: tracked && qty == null && selling ? 'option_stock_data(수량 비공개)' : 'option_stock_data' } as OptionRow;
   });
 }
 
@@ -210,7 +247,7 @@ export function parseProductPage(html: string, url: string): Snapshot {
     options = options.map(o => {
       const v = ldVariants.find(x => x.size === o.size && (!o.color || !x.color || colorsIn(x.color).join() === colorsIn(o.color).join()));
       if (!v) return o;
-      if (o.stock === 'unknown') return { ...o, stock: v.stock, price: o.price ?? v.price, basis: 'option_stock_data+json-ld' };
+      if (o.stock === 'unknown') return { ...o, stock: v.stock, price: o.price ?? v.price, basis: `${o.basis}+json-ld` };
       if (v.stock !== 'unknown' && v.stock !== o.stock) return { ...o, stock: 'unknown', price: v.price ?? o.price, basis: '데이터 불일치(option_stock_data≠json-ld)' };
       return { ...o, price: v.price ?? o.price };
     });
@@ -220,6 +257,9 @@ export function parseProductPage(html: string, url: string): Snapshot {
   const sale = num(meta(html, 'product:sale_price:amount')) ?? num(html.match(/var\s+product_sale_price\s*=\s*(\d+)/)?.[1]);
   const ship = o0?.shippingDetails?.shippingRate?.value ?? (Array.isArray(o0?.shippingDetails) ? o0.shippingDetails[0]?.shippingRate?.value : undefined);
   const shipping = ship === 0 || ship === '0' ? 0 : num(ship);
+  // 통화: 구조화 데이터 → 메타 태그 → 국내(.kr) 쇼핑몰이면 원화. 어느 것도 없으면 모름(원화로 가정하지 않는다)
+  const curOf = (v: unknown) => { const c = String(v ?? '').trim().toUpperCase(); return /^[A-Z]{3}$/.test(c) ? c : null; };
+  const currency = curOf(o0?.priceCurrency) ?? curOf(offerOf(group?.hasVariant?.[0])?.priceCurrency) ?? curOf(meta(html, 'product:price:currency')) ?? (/\.kr$/.test(host) ? 'KRW' : null);
   const pageStock: Stock = options.length ? (options.some(o => o.stock === 'in_stock') ? 'in_stock' : options.every(o => o.stock === 'sold_out') ? 'sold_out' : 'unknown') : availOf(o0?.availability);
   const brandOf = (x: any) => (typeof x?.brand === 'string' ? x.brand : x?.brand?.name) || null;
   const brand = brandOf(group) || brandOf(group?.hasVariant?.[0]); // 카페24는 브랜드를 옵션(변형) 쪽에만 넣기도 한다
@@ -228,7 +268,7 @@ export function parseProductPage(html: string, url: string): Snapshot {
   const img = imgOf(group) || imgOf(group?.hasVariant?.[0]) || (options.length ? null : meta(html, 'og:image'));
   const title = group?.name || html.match(/var\s+product_name\s*=\s*'([^']+)'/)?.[1] || meta(html, 'og:title');
   return {
-    url, source: 'page', seller: host, title: title ? decodeHtml(String(title)).slice(0, 160) : null, brand, image: typeof img === 'string' ? img : null, condition: 'new',
+    url, source: 'page', seller: host, title: title ? decodeHtml(String(title)).slice(0, 160) : null, brand, image: typeof img === 'string' ? img : null, condition: 'new', currency,
     price: listPrice ?? null, salePrice: sale && listPrice && sale < listPrice ? sale : null,
     shipping, shippingNote: shipping == null ? '페이지에서 배송비를 확인하지 못했어요' : null,
     options, pageStock, basis, isMock: false,
@@ -262,6 +302,6 @@ export function fixtureSnapshot(url: string, step: number): Snapshot {
   const s = fx.steps[Math.min(step, fx.steps.length - 1)];
   if (s.error) throw new SourceError(s.error, `테스트: ${s.error === 'timeout' ? '응답이 늦어 확인하지 못했어요' : '페이지를 열지 못했어요'}`);
   const options: OptionRow[] = (s.options || []).map(o => ({ label: [o.color, o.size].filter(Boolean).join('-'), color: o.color || '', size: normSize(o.size), stock: o.stock, price: o.price ?? s.price ?? null, basis: 'fixture' }));
-  return { url, source: 'mock', seller: fx.seller, title: fx.title, brand: fx.brand || null, image: null, condition: fx.condition || 'new', price: s.price ?? null, salePrice: s.salePrice ?? null,
+  return { url, source: 'mock', seller: fx.seller, title: fx.title, brand: fx.brand || null, image: null, condition: fx.condition || 'new', currency: 'KRW', price: s.price ?? null, salePrice: s.salePrice ?? null,
     shipping: s.shipping ?? null, shippingNote: s.shipping == null ? '테스트: 배송비 미확인' : null, options, pageStock: options.some(o => o.stock === 'in_stock') ? 'in_stock' : 'unknown', basis: ['fixture'], isMock: true };
 }

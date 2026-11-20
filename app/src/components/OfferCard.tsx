@@ -7,7 +7,7 @@ import type { OfferCard as Offer, TagT } from '@/lib/types';
 
 const won = (n: number | null | undefined) => (n == null ? '—' : `${n.toLocaleString('ko-KR')}원`);
 const TAG = { exact: { kind: 'v', text: '같은 상품 확인' }, possible: { kind: 'o', text: '같은 상품일 수 있어요' }, alternative: { kind: 'x', text: '같은 상품 아님' } } as const;
-const COND = { new: '새 상품', used: '중고', unknown: '' };
+const COND = { new: '새 상품', unused: '미사용', deadstock: '단종 신품 재고', used: '중고', unknown: '' };
 /** 색상·사이즈·상태 한 줄 — 원하는 조건과 다르면 굵게, 확인 못 한 값은 “확인 필요”로(맞는 것처럼 보이지 않게) */
 function Facts({ o }: { o: Offer }) {
   if (!o.facts?.length) return null;
@@ -86,7 +86,7 @@ export function OfferCard({ o, extra = [], note, footer, onFeedback, onOpen }: {
 }
 
 const s = StyleSheet.create({
-  card: { marginHorizontal: 20, marginTop: 12, padding: 14, borderRadius: R.card, borderWidth: 1, borderColor: C.gray300 },
+  card: { marginHorizontal: 20, marginTop: 12, padding: 14, borderRadius: R.card, borderWidth: 1, borderColor: C.gray300, backgroundColor: C.white },
   img: { width: 88, height: 104, borderRadius: R.thumb },
   row: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
   box: { marginTop: 10, padding: 10, gap: 3, borderRadius: R.thumb, borderWidth: 1, borderStyle: 'dashed', borderColor: C.gray500 },

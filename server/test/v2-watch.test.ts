@@ -118,7 +118,7 @@ test('표시 할인가만 목표 이하면 구매 가능으로 알리지 않는�
 });
 
 test('같은 상품인지 확인하지 않은 매물은 가격이 맞아도 구매 가능 알림을 보내지 않는다', () => {
-  const s: Snapshot = { url: 'x', source: 'page', seller: 's', title: 't', brand: null, image: null, condition: 'used', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
+  const s: Snapshot = { url: 'x', source: 'page', seller: 's', title: 't', brand: null, image: null, condition: 'used', currency: 'KRW', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
     options: [{ label: 'M', color: '', size: 'M', stock: 'in_stock', price: 100000, basis: 'x' }], pageStock: 'in_stock', basis: [], isMock: true };
   assert.equal(W.evaluate({ size: 'M', target_price: 150000, condition: 'any' }, s, 'unverified').state, 'unverified');
   assert.equal(W.evaluate({ size: 'M', target_price: 150000, condition: 'any' }, s, 'pending').state, 'unverified', '판단 전 페이지도 알림 대상 아님');
@@ -128,7 +128,7 @@ test('같은 상품인지 확인하지 않은 매물은 가격이 맞아도 구�
 });
 
 test('[리뷰 2] 원하는 색을 정했는데 옵션에 색이 없으면 상품명 색으로만 확인하고, 그래도 모르면 color_unknown(알림 없음)', () => {
-  const snap = (title: string, opts: { color: string; size: string }[]): Snapshot => ({ url: 'x', source: 'page', seller: 's', title, brand: null, image: null, condition: 'new', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
+  const snap = (title: string, opts: { color: string; size: string }[]): Snapshot => ({ url: 'x', source: 'page', seller: 's', title, brand: null, image: null, condition: 'new', currency: 'KRW', price: 100000, salePrice: null, shipping: 0, shippingNote: null,
     options: opts.map(o => ({ label: [o.color, o.size].filter(Boolean).join('-'), ...o, stock: 'in_stock' as const, price: 100000, basis: 'x' })), pageStock: 'in_stock', basis: [], isMock: true });
   const want = { size: 'M', color: '네이비', target_price: 150000, condition: 'any' };
   assert.equal(W.evaluate(want, snap('트랙 자켓', [{ color: '', size: 'M' }]), 'page_defined').state, 'color_unknown', '옵션·상품명 어디에도 색이 없음');
@@ -266,9 +266,10 @@ test('실제 페이지 조회 함수가 실패를 던지면 그 사유를 그대
   const db = openDb(':memory:');
   const u = D.upsertUser(db, 'device-watch-0009');
   let calls = 0;
-  const checker = W.createChecker(db, policy, { fetchPage: async () => { calls++; throw new SourceError('robots', 'robots.txt가 이 페이지 수집을 막고 있어요'); }, fixture: () => { throw new Error('x'); } });
-  const a = W.createWatch(db, u.id, { productUrl: 'https://shop.example.com/product/1', targetPrice: 150000 }, policy);
-  W.tickWatches(db, policy); await checker.step();
+  const checker = W.createChecker(db, { ...policy, pageHosts: [{ domain: 'shop.example.com', label: '테스트 상점', checked: '2026-11-20', basis: 'test' }] }, { fetchPage: async () => { calls++; throw new SourceError('robots', 'robots.txt가 이 페이지 수집을 막고 있어요'); }, fixture: () => { throw new Error('x'); } });
+  const p2 = { ...policy, pageHosts: [{ domain: 'shop.example.com', label: '테스트 상점', checked: '2026-11-20', basis: 'test' }] };
+  const a = W.createWatch(db, u.id, { productUrl: 'https://shop.example.com/product/1', targetPrice: 150000 }, p2);
+  W.tickWatches(db, p2); await checker.step();
   assert.equal(calls, 1);
   assert.match(JSON.parse(watch(db, a).last_result).error, /robots/);
 });

@@ -9,6 +9,7 @@ import type { AiProvider } from './ai.ts';
 import * as A from './aijobs.ts';
 import * as F from './find.ts';
 import * as W from './watch.ts';
+import { addRelease, releasesView } from './release.ts';
 import * as C from './cost.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,6 +28,8 @@ type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean
   search?: { env: S.SearchEnv; step: () => Promise<number | null> } };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const MOCK = '<span class="mk">모의</span>';
+/** 기다려줘에 붙은 판매 예정 일정(공식 발표 근거) — 재고 알림과 따로 */
+const relRows = (db: DB, w: Record<string, any>) => releasesView(db, w.id).map(x => `<div class="sub" style="margin-top:4px">${x.status === 'scheduled' ? '판매 예정' : '판매 시작됨'} · ${esc(x.label)} · <a href="${esc(x.announcedUrl)}" target="_blank" rel="noopener">공식 발표</a></div>`).join('');
 
 const CSS = `
 :root{--b:#111;--cv:#F7F7F7;--sf:#F1F1F1;--g5:#767676;--g3:#D9D9D9}
@@ -627,7 +630,7 @@ export function adminRouter(db: DB, cfg: Cfg) {
       <section class="ob" data-discovery="${esc(s0?.status || 'none')}:${cands.length}"><h2>2 · 새 판매처·새 매물 탐색 <span class="sub">(Listing Discovery · 지켜보는 상품 페이지는 뺌 · 사진 비교 전이라 검수해야 사용자에게 보임)</span></h2>
         <div class="aibar"><b>탐색 대상</b><span>${tg ? esc([tg.brand, tg.name].filter(Boolean).join(' ')) + (tg.modelCode ? ` · 품번 ${esc(tg.modelCode)}` : '') : '상품 이름을 몰라 찾을 수 없어요'}</span><span class="sub">${w.discovery ? '사용자 설정: 켜짐' : '<b>사용자가 껐어요</b>'}${w.discovery_sources ? ` · 고른 곳 ${esc(JSON.parse(w.discovery_sources).join(', ') || '없음')}` : ''} · ${s0 ? `${esc(s0.status)} ${kWhen(s0.finished_at || s0.created_at, t)}` : '아직 안 함'}</span><span class="sp"></span>${btn('discovery', '지금 다시 찾기')}</div>
         ${s0?.summary ? `<p><b>${esc(s0.summary)}</b></p>` : ''}${s0 ? `<details><summary>소스별 처리</summary>${repTable(rep(s0))}</details>` : ''}
-        ${cands.length ? `<h3>알림 후보 ${cands.length} <span class="sub">같은 상품(품번·상품명) · 원하는 사이즈 품절·없음 아님 · 상태 조건 맞음 — 사진·옵션을 열어 확인한 뒤 공개하세요. 가격·색상·사이즈 재고·상태가 모두 확인된 후보만 공개할 때 알림이 가요(같은 상품일 수 있음은 확정 아님 알림)</span></h3>${cands.map(o => { const f = R.watchFit(o, w); return `<div>${f.state === 'met' ? '<span class="tg v">원하는 조건 모두 확인(페이지 기준) · 같은 상품 확인/같은 상품일 수 있음은 알림을 따로 보냄</span>' : f.state === 'unknown' ? `<span class="tg o">확인하지 못한 조건 · 알림 없음</span> <span class="sub">${esc(f.unknown.join(' · '))}</span>` : `<span class="tg x">조건과 다름 · 알림 없음</span> <span class="sub">${esc(f.unmet.join(' · '))}</span>`}${offerCardHtml(o, w.size, true)}</div>`; }).join('')}` : s0 ? '<p class="empty">알림 후보가 없어요.</p>' : ''}
+        ${cands.length ? `<h3>알림 후보 ${cands.length} <span class="sub">같은 상품(품번·상품명) · 원하는 사이즈 품절·없음 아님 · 상태 조건 맞음 — 사진·옵션을 열어 확인한 뒤 공개하세요. 가격·색상·사이즈 재고·상태가 모두 확인된 후보만 공개할 때 알림이 가요(같은 상품일 수 있음은 확정 아님 알림)</span></h3>${cands.map(o => { const f = R.watchFit(o, w, db); return `<div>${f.state === 'met' ? '<span class="tg v">원하는 조건 모두 확인(페이지 기준) · 같은 상품 확인/같은 상품일 수 있음은 알림을 따로 보냄</span>' : f.state === 'unknown' ? `<span class="tg o">확인하지 못한 조건 · 알림 없음</span> <span class="sub">${esc(f.unknown.join(' · '))}</span>` : `<span class="tg x">조건과 다름 · 알림 없음</span> <span class="sub">${esc(f.unmet.join(' · '))}</span>`}${offerCardHtml(o, w.size, true)}</div>`; }).join('')}` : s0 ? '<p class="empty">알림 후보가 없어요.</p>' : ''}
         ${others.length ? `<details><summary>후보에서 뺀 것 ${others.length}(다른 상품·원하는 사이즈 없음·품절·중고 등)</summary>${others.map(o => offerCardHtml(o, w.size, true)).join('')}</details>` : ''}</section>
       <section class="ob" data-watch-similar="${esc(sim?.status || 'none')}"><h2>3 · 기다리는 동안 볼 대체 상품 <span class="sub">(같은 상품 아님 · 저장·열람해도 기다려줘는 계속)</span></h2>
         ${!w.request_id ? '<p class="sub">찾아줘(사진)에서 넘어온 기다려줘만 디자인 정보가 있어 고를 수 있어요.</p>' : `<div class="aibar"><span class="sub">${sim ? `${esc(sim.summary || sim.status)} · ${kWhen(sim.finished_at || sim.created_at, t)}` : '아직 안 함'}</span><span class="sp"></span>${btn('similar', '비슷한 디자인 다시 고르기')}</div>
@@ -755,7 +758,11 @@ export function adminRouter(db: DB, cfg: Cfg) {
             ${!['operator_confirmed', 'page_defined'].includes(w.page_identity) ? `<div class="row" style="margin-top:6px"><form method="post" action="/admin/watches/${w.id}/page"><input type="hidden" name="same" value="1"><button class="btn sm">같은 상품 페이지 맞음</button></form>
               <form method="post" action="/admin/watches/${w.id}/page"><input type="hidden" name="same" value="0"><button class="btn s sm">다른 상품 — 페이지 떼기</button></form></div>` : ''}
             ${ev?.state === 'shipping_unknown' ? `<form method="post" action="/admin/watches/${w.id}/shipping" class="row" style="margin-top:6px"><input type="number" name="fee" min="0" max="200000" placeholder="확인한 배송비(원, 무료면 0)" required><button class="btn sm" style="flex:none">배송비 확인</button></form>` : ''}` : ''}
-          ${['needs_info', 'active', 'paused'].includes(w.status) ? `<form method="post" action="/admin/watches/${w.id}/url" class="row" style="margin-top:6px"><input type="url" name="url" placeholder="공식몰 등 상품 페이지 주소" required><button class="btn sm" style="flex:none">페이지 연결</button></form>` : ''}</td></tr>`;
+          ${['needs_info', 'active', 'paused'].includes(w.status) ? `<form method="post" action="/admin/watches/${w.id}/url" class="row" style="margin-top:6px"><input type="url" name="url" placeholder="공식몰 등 상품 페이지 주소" required><button class="btn sm" style="flex:none">페이지 연결</button></form>` : ''}
+          ${relRows(db, w)}${w.status !== 'ended' ? `<details style="margin-top:6px"><summary class="sub">판매 예정 일정 등록(공식 발표가 있을 때만)</summary><form method="post" action="/admin/watches/${w.id}/release" class="row" style="margin-top:6px;flex-wrap:wrap">
+            <input type="text" name="seller" placeholder="판매처(예: ZOZOUSED)" required><input type="datetime-local" name="startsAt" required title="판매 시작(한국 시간)">
+            <input type="url" name="announcedUrl" placeholder="공식 발표 주소(근거, 필수)" required><input type="url" name="url" placeholder="판매 페이지 주소(있으면)">
+            <input type="text" name="note" placeholder="메모(선착순·추첨 등)"><button class="btn sm" style="flex:none">일정 등록</button></form></details>` : ''}</td></tr>`;
       }).join('') || '<tr><td colspan="5" class="empty">아직 기다려줘가 없어요.</td></tr>'}</tbody></table></section>`;
     send(req, res, page('기다려줘', body, OP(req), 'watch'));
   });
@@ -767,6 +774,13 @@ export function adminRouter(db: DB, cfg: Cfg) {
   r.post('/watches/:id/page', (req, res) => {
     try { W.confirmPage(db, Number(req.params.id), req.body.same === '1', OP(req), cfg.policy!); wback(res, req.body.same === '1' ? `W${req.params.id}: 같은 상품 페이지로 확인했어요. 이제 조건이 맞으면 알림이 가요.` : `W${req.params.id}: 페이지를 떼고 확인 요청으로 돌렸어요.`); }
     catch (e: any) { if (e instanceof HttpError) return wback(res, e.message, true); throw e; }
+  });
+  r.post('/watches/:id/release', (req, res) => {
+    try {
+      const startsAt = Date.parse(String(req.body.startsAt || '') + ':00+09:00'); // datetime-local(KST)
+      addRelease(db, Number(req.params.id), { seller: req.body.seller, url: req.body.url, startsAt, announcedUrl: req.body.announcedUrl, note: req.body.note }, OP(req));
+      wback(res, `W${req.params.id}: 판매 예정 일정을 등록했어요. 사용자에게 “판매 예정”으로 알렸어요(재고 알림과 따로).`);
+    } catch (e: any) { if (e instanceof HttpError) return wback(res, e.message, true); throw e; }
   });
   r.post('/watches/:id/shipping', (req, res) => {
     try { W.confirmShipping(db, Number(req.params.id), req.body.fee, OP(req), cfg.policy!); wback(res, `W${req.params.id}: 배송비를 확인했어요. 총액으로 다시 판정했어요.`); }

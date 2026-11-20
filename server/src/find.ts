@@ -9,6 +9,7 @@ import { FASHION_BRAIN } from './curation.ts';
 import { logPublished, offersView, publishPendingOffers } from './offerreview.ts';
 import { logReview } from './reviewlog.ts';
 import type { Coverage } from './findsearch.ts';
+import { uploadUrl } from './media.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -124,13 +125,17 @@ export function findView(db: DB, r: Row, base = '', coverage: Coverage | null = 
   const offers = offersView(db, r, base, coverage);
   const anyOffer = offers.sale.state === 'ready' || offers.alternatives.state === 'ready';
   const host = (u: string) => { try { return new URL(u).host.replace(/^www\./, ''); } catch { return u; } };
+  // 상품 사진: 같은 상품으로 확인해 공개한 판매처 사진 → 상품 페이지에서 읽은 사진 순(사용자 사진과 따로 보여 준다)
+  const exactImg = [...offers.sale.exact].map(c => c.imageUrl).find(u => u && /^https?:\/\//.test(u)) || null;
+  const imageOf = (x: Row) => { const p = x.product_id ? one(db, 'SELECT image FROM products WHERE id=?', x.product_id) : undefined; return x.tier === 'match' ? exactImg || (p?.image && /^https?:\/\//.test(p.image) ? p.image : null) : null; };
   const item = (x: Row) => ({
-    id: x.id, tier: x.tier, brand: x.brand, name: x.name, modelCode: x.model_code, season: x.season, color: x.color, category: x.category,
+    id: x.id, tier: x.tier, brand: x.brand, name: x.name, modelCode: x.model_code, season: x.season, color: x.color, category: x.category, image: imageOf(x),
     matched: parse(x.matched).map(splitAttr), uncertain: parse(x.uncertain).map(splitAttr), evidence: parse(x.evidence).map((u: string) => ({ url: u, host: host(u) })),
     note: parse(x.reasons)[0] || null, confirmed: x.status === 'confirmed', isMock: !!x.is_mock,
   });
   const confirmed = rows.find(x => x.status === 'confirmed');
   const style = styleWords(requestStyle(db, r.id));
+  const outcome: 'exact' | 'likely' | 'not_found' = confirmed || rows.some(x => x.tier === 'match') ? 'exact' : rows.some(x => x.tier === 'likely') ? 'likely' : 'not_found';
   return {
     requestId: r.id, status: r.status, state: confirmed ? 'confirmed' : rows.length || anyOffer ? 'ready' : 'pending',
     // 식별 결과 없이 판매처·대체 상품만 공개했으면 그 공개 시각
@@ -145,6 +150,12 @@ export function findView(db: DB, r: Row, base = '', coverage: Coverage | null = 
     // 무엇이 중요한지(선택) — 대체 상품 정렬에 반영
     priority: offers.priority, priorities: offers.priorities,
     styleWords: style, productId: r.product_id ?? null, canHunt: r.status === 'submitted',
+    // 결과 세 갈래 — exact: 같은 옷 확인(또는 사용자가 확정) · likely: 유력 후보만 · not_found: 같은 옷을 못 찾음(만들어 낸 브랜드·모델을 보여 주지 않는다)
+    outcome,
+    // 사용자가 맡긴 원본(사진·적은 정보) — 추천·판매처 카드와 섞이지 않게 맨 위에 따로
+    original: { photoUrl: uploadUrl(base, r.photo), name: r.product_name || null, brand: r.brand || null, size: r.size || null, color: r.color || null },
+    // 어디까지 파악했는지(사진에서 읽은 특징) · 아직 모르는 것 — 못 찾았을 때 보여 준다
+    understood: { known: style, unknown: outcome === 'not_found' ? ['브랜드', '모델명·품번', '시즌'] : [] },
     isMock: rows.some(x => x.is_mock) || !!r.is_mock || [...offers.sale.exact, ...offers.sale.possible, ...offers.alternatives.items].some(c => c.isMock),
   };
 }

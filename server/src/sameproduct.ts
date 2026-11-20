@@ -46,6 +46,19 @@ export function codeOnPage(code: unknown, title: unknown): boolean {
   });
 }
 
+/**
+ * 품번이 띄어 쓰인 표기(카페24 검색 목록의 상품명은 주소 조각이라 “w jkt26 073 shield …”)를 붙여 쓴 품번(“w-jkt26-073”)으로 바꾼다.
+ * 연달아 붙은 단어 2~4개를 이은 값이 품번과 “정확히” 같을 때만 — 일부만 같으면(“w jkt26 07”) 바꾸지 않는다.
+ */
+export function joinSpacedCode(code: unknown, title: string): string {
+  const c = compact(code);
+  if (!c) return title;
+  const ws = title.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < ws.length; i++) for (let n = 2; n <= 4 && i + n <= ws.length; n++)
+    if (compact(ws.slice(i, i + n).join('')) === c) return [...ws.slice(0, i), ws.slice(i, i + n).join('-'), ...ws.slice(i + n)].join(' ');
+  return title;
+}
+
 /** 연달아 붙은 단어 1~3개를 이은 값 중 하나가 브랜드 이름과 같은가(“BAD BLOOD” = “BADBLOOD”) */
 const phraseIn = (ws: string[], name: string) => ws.some((_, i) => [1, 2, 3].some(n => i + n <= ws.length && ws.slice(i, i + n).join('') === name));
 /**
@@ -63,7 +76,7 @@ export function brandState(t: Target, p: PageFacts): 'match' | 'mismatch' | 'unk
 }
 
 export function compareProduct(t: Target, p: PageFacts): { verdict: Verdict; note: string; checks: Check[] } {
-  const title = p.title || '';
+  const title = joinSpacedCode(t.modelCode, p.title || '');
   const tw = words(`${title} ${p.brand || ''}`);
   const checks: Check[] = [];
   // 1 브랜드 충돌 — 품번이 같아 보여도 다른 브랜드면 다른 상품이다
