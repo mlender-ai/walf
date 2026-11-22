@@ -439,8 +439,11 @@ export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
     report.push(brainReport(e, pre, photo));
   }
   const result = assemble(t, offers, report, targets);                                     // 7
-  // 확인 못 한 후보·다른 상품은 앞에서 30개까지만 저장한다(넓게 모은 특징 검색 결과로 검수 목록이 넘치지 않게)
-  const ranked = [...result.sale.same, ...result.sale.likely, ...[...result.sale.unverified, ...result.sale.different].slice(0, Number(e.env.WALF_SEARCH_KEEP || 30))];
+  // 확인 못 한 후보·다른 상품은 앞에서 30개까지만 저장한다(넓게 모은 특징 검색 결과로 검수 목록이 넘치지 않게).
+  // 사진이 없는 후보(검색 API의 글 결과 등)는 사진 유사도 순서에서 뒤로 밀려 다 잘리므로 따로 절반만큼 자리를 남긴다
+  const keep = Number(e.env.WALF_SEARCH_KEEP || 30), rest = [...result.sale.unverified, ...result.sale.different];
+  const kept = new Set([...rest.filter(o => o.imageScore != null).slice(0, keep), ...rest.filter(o => o.imageScore == null).slice(0, offers.some(o => o.imageScore != null) ? Math.ceil(keep / 2) : keep)]);
+  const ranked = [...result.sale.same, ...result.sale.likely, ...rest.filter(o => kept.has(o))];
   const st = result.sale;
   const summary = st.state === 'none' ? (report.some(x => x.outcome === 'ok' || x.outcome === 'empty') ? '검색한 곳에서 판매 페이지를 찾지 못했어요' : '검색할 수 있었던 곳이 없거나 모두 실패했어요')
     : `같은 상품(품번) ${st.same.length} · 가능성 높음 ${st.likely.length} · 확인 못 함 ${st.unverified.length} · 다른 상품 ${st.different.length}`
@@ -497,7 +500,7 @@ export function createOfferSearcher(db: DB, e: SearchEnv, more: (() => void)[] =
 export type Coverage = { kind: 'real' | 'test' | 'none'; real: string[]; pending: string[]; searched: boolean; note: string };
 const SOURCE_NAME: Record<string, string> = { naver_shopping: '네이버 쇼핑', joongna: '중고나라' };
 /** 판매처가 아니라 상품 페이지를 "발견"하는 검색 경로·정렬 엔진 — 사용자 화면의 판매처 목록에 넣지 않는다(쓰였으면 '웹 검색'으로만) */
-const DISCOVERY_ONLY = new Set(['tavily', 'brave_api', 'kakao_web', 'naver_web', 'shopify_catalog', 'searxng', 'fashion-brain']);
+const DISCOVERY_ONLY = new Set(['tavily', 'brave_api', 'kakao_web', 'kakao_image', 'naver_web', 'shopify_catalog', 'searxng', 'fashion-brain']);
 /** 이 대상에 소스마다 지금 쓸 수 있는지 */
 export const sourceStates = (e: SearchEnv, t: SearchTarget) => e.sources.map(x => ({ id: x.id, label: x.label, cost: x.cost, ...x.availability(t, ctxOf(e, t.isMock)) }));
 export function coverageOf(db: DB, requestId: number, e?: SearchEnv): Coverage | null {

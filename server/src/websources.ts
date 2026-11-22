@@ -66,7 +66,8 @@ export const joongnaSource: SearchSource = {
 export function looksLikeProduct(u: string) {
   let x: URL; try { x = new URL(u); } catch { return false; }
   const p = x.pathname + x.search;
-  if (/\/(search|category|categories|list|tag|tags|blog|post|board|cs|notice)\b/i.test(x.pathname) && !/product_no=\d+/.test(p)) return false;
+  // 목록·검색·카테고리 화면(list_thumb.html 같은 변형 포함)은 상품 페이지가 아니다
+  if (/\/(search|category|categories|list|tag|tags|blog|post|board|cs|notice)(?=$|[\/._-])/i.test(x.pathname) && !/product_no=\d+/.test(p)) return false;
   return /\/product\/[^/]+\/\d+|product_no=\d+|\/products?\/[\w-]{3,}|\/goods\/(view|detail)?[\w/?=-]*\d+|\/item\/\d+|\/p\/\d+|\/(i|itm)\/\d+/i.test(p);
 }
 /** 약관상 자동 수집이 막힌 곳(sources.ts 판매처 판단)은 발견 결과에서도 링크만 남기고 열지 않는다 */
@@ -101,6 +102,13 @@ const INDEXES: IndexSpec[] = [
     async call(q, ctx) {
       const j = await getJson(`https://dapi.kakao.com/v2/search/web?query=${encodeURIComponent(q.text)}&size=50`, ctx, { headers: { authorization: `KakaoAK ${ctx.env.WALF_KAKAO_REST_KEY}` } });
       return (j.documents || []).map((x: any) => ({ url: String(x.url || ''), title: text(String(x.title || '')), snippet: text(String(x.contents || '')) }));
+    } },
+  // 다음 이미지 검색: 글 결과에는 사진이 없어 사진 비교를 못 한다 — 같은 키로 이미지 검색을 함께 해 상품 페이지(doc_url)와 썸네일을 얻는다.
+  // 같은 상품 페이지가 웹문서 검색에도 나오면 mergeHits 가 제목(웹문서)과 사진(이미지)을 합친다
+  { id: 'kakao_image', label: '다음 이미지 검색(Kakao API)', key: ['WALF_KAKAO_REST_KEY'], note: 'Kakao Developers REST 키 — 상품 사진이 실린 페이지 주소와 썸네일', stages: ALL_STAGES.filter(s => s !== 'feature_en' && s !== 'feature_ja'), max: 3,
+    async call(q, ctx) {
+      const j = await getJson(`https://dapi.kakao.com/v2/search/image?query=${encodeURIComponent(q.text)}&size=50`, ctx, { headers: { authorization: `KakaoAK ${ctx.env.WALF_KAKAO_REST_KEY}` } });
+      return (j.documents || []).map((x: any) => ({ url: String(x.doc_url || ''), title: text(String(x.display_sitename || '')), snippet: '', image: x.thumbnail_url || null }));
     } },
   { id: 'naver_web', label: '네이버 웹문서 검색(API HUB)', key: ['WALF_NAVER_HUB_ID', 'WALF_NAVER_HUB_SECRET'], note: '한시적 무료(유료 전환 예고) — 쇼핑 검색 API는 2026-07-31 종료', stages: ALL_STAGES.filter(s => s !== 'feature_en' && s !== 'feature_ja'), max: 3,
     async call(q, ctx) {

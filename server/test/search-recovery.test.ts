@@ -74,6 +74,7 @@ test('[2] 검색 API는 키가 없으면 열지 않고 이유를 남긴다 · �
   assert.equal(looksLikeProduct('https://shop.example.kr/product/detail.html?product_no=123'), true);
   assert.equal(looksLikeProduct('https://shop.example.kr/product/list.html?cate_no=24'), false);
   assert.equal(looksLikeProduct('https://shop.example.kr/category/pants/24/'), false);
+  assert.equal(looksLikeProduct('https://m.shop.example.kr/product/list_thumb.html?cate_no=48'), false, '목록 화면 변형');
   const tavily = INDEX_SOURCES.find(s => s.id === 'tavily')!;
   const c = ctx({ env: { WALF_TAVILY_KEY: 't' }, fetcher: fakeFetch({ 'https://api.tavily.com/search': { type: 'application/json', body: JSON.stringify({ results: [
     { url: 'https://boseshop.kr/product/curved-bootcut/55/', title: '커브드 부츠컷', content: '' },
@@ -194,4 +195,27 @@ test('[3·5] 사진 분석 브랜드 추정 정규화(다른 문자·철자) · 
   const q = planQueries({ brand: 'New Balance', name: '', modelCode: null, aliases: ['뉴발란스'], terms: ['스웨이드 러닝화', '574'] }, { category: ['footwear'], color: ['gray'], silhouette: ['slim'] });
   assert.ok(q.some(x => x.text === '뉴발란스 574'));
   assert.ok(!q.some(x => /슬림/.test(x.text)), '신발에는 핏 낱말을 붙이지 않는다');
+});
+
+test('[6] 사진이 없는 후보(검색 API 글 결과)도 저장 한도에서 다 잘리지 않는다 · 같은 상품 주소면 글 제목과 이미지 검색 사진을 합친다', async () => {
+  setClock(T0); clearRobotsCache();
+  const db = openDb(':memory:');
+  const u = D.upsertUser(db, 'device-rec-0020', 'ios');
+  const id = D.createRequest(db, u.id, { photo: 'q.jpg' }, { isMock: false });
+  saveRequestStyle(db, id, { category: ['trousers'], material: ['denim'], silhouette: ['bootcut'] }, 'ai');
+  const web = { id: 'kakao_web', label: '웹', kind: 'any' as const, cost: 'free' as const, availability: () => ({ status: 'SUPPORTED' as const, usable: true, reason: '' }), pick: (qs: any[]) => qs.slice(0, 1),
+    async search(q: any) { return [{ source: 'kakao_web', seller: 'boseshop.kr', url: 'https://boseshop.kr/product/curved/55/', title: '커브드 부츠컷 데님 팬츠', brand: null, price: null, imageUrl: null, condition: 'unknown' as const, query: q.text, rank: 1, isMock: false }]; } };
+  const img = { ...web, id: 'kakao_image', async search(q: any) { return [{ ...(await web.search(q))[0], source: 'kakao_image', title: '보세샵', imageUrl: 'https://search1.kakaocdn.net/x.jpg' }]; } };
+  const brain = { url: 'http://127.0.0.1:8790', timeoutMs: 1000, fetcher: (async (_u: string, init: any) => new Response(JSON.stringify({ model: 'moda', revision: 'r', ms: 1, scores: JSON.parse(init.body).candidates.map((c: any) => ({ id: c.id, score: 0.5 })) }))) as any };
+  const run = async (sources: any[], keep: string) => {
+    const e: S.SearchEnv = { sources, mockAllowed: false, env: { WALF_EXPERIMENT_SOURCES: 'joongna', WALF_SEARCH_KEEP: keep }, malls: [], pace: noPace, maxDetails: 0, reuseMs: 3600_000, uploads: '/uploads', brain, enough: 99,
+      resolve: PUBLIC, fetcher: fakeFetch({ 'https://web.joongna.com/robots.txt': { body: 'User-agent: *\nAllow: /', type: 'text/plain' }, 'https://web.joongna.com/search/': { body: JN_HTML } }) };
+    const q = S.queueFindSearch(db, e, id, { force: true });
+    db.prepare(`UPDATE offer_searches SET status='running' WHERE id=?`).run(q.id);
+    await S.runFindSearch(db, e, q.id!);
+    return offersOf(db, q.id!).find(o => o.url.includes('boseshop.kr'));
+  };
+  assert.ok(await run([joongnaSource, web], '1'), '저장 한도 1이어도 사진 없는 다른 경로의 후보가 남는다(사진 있는 후보에 밀려 다 잘리지 않음)');
+  const bose = await run([joongnaSource, web, img], '50');
+  assert.deepEqual([bose!.name, bose!.imageUrl, bose!.imageScore], ['커브드 부츠컷 데님 팬츠', 'https://search1.kakaocdn.net/x.jpg', 0.5], '글 제목 + 이미지 검색 썸네일 → 사진 비교까지');
 });
