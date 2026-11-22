@@ -5,9 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import { cleanStyle, STYLE_KINDS, type Style } from './catalog.ts';
+import { ossFromEnv } from './oss.ts';
 
 export type Seller = { id: number; name: string; domain: string };
-export type IdentifyInput = { productName?: string | null; brand?: string | null; productUrl?: string | null; note?: string | null; size?: string | null; color?: string | null; photoPath?: string | null };
+export type IdentifyInput = { productName?: string | null; brand?: string | null; productUrl?: string | null; note?: string | null; size?: string | null; color?: string | null; photoPath?: string | null; /** 무료 엔진(oss)만 쓴다 — 판매처 검색으로 후보를 모은다 */ sellers?: Seller[] };
 /** matched·uncertain 은 “속성: 근거” 한 줄씩(예: “브랜드: 공식몰 사진과 로고 자수 위치가 같아요”, “시즌: 페이지에 시즌 표기가 없어요”) */
 export type Identity = { brand: string; name: string; color: string; category: string; confidence: 'high' | 'medium' | 'low'; reasons: string[]; refs: string[];
   season: string; code: string; matched: string[]; uncertain: string[] };
@@ -19,7 +20,7 @@ export type SellerNote = { seller: string; searched: boolean; note: string };
 export type SearchResult = { sellers: SellerNote[]; listings: Listing[]; summary: string; dropped: number; blocked: string[] };
 export type Usage = { model: string; inputTokens: number; outputTokens: number; searches: number };
 export interface AiProvider {
-  kind: 'claude' | 'mock';
+  kind: 'claude' | 'mock' | 'oss';
   label: string;
   identify(input: IdentifyInput): Promise<{ data: IdentifyResult; usage: Usage }>;
   search(input: SearchInput): Promise<{ data: SearchResult; usage: Usage }>;
@@ -34,6 +35,8 @@ export class AiError extends Error {
 export function aiFromEnv(env = process.env): AiProvider | null {
   if (env.WALF_AI_PROVIDER === 'off') return null;
   if (env.WALF_AI_PROVIDER === 'mock') return mockProvider();
+  // 무료 오픈소스 엔진(로컬 Ollama·SearXNG·Crawl4AI). 켜야만 쓴다 — 유료 API를 부르지 않는다
+  if (env.WALF_AI_PROVIDER === 'oss') return ossFromEnv(env);
   if (env.WALF_AI_PROVIDER === 'claude' || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return claudeProvider({ model: env.WALF_AI_MODEL, effort: env.WALF_AI_EFFORT });
   return null;
 }
@@ -51,7 +54,9 @@ const onDomain = (u: string, domain: string) => { try { const h = new URL(u).hos
 export function cleanIdentify(raw: any, seen?: Set<string> | null): IdentifyResult {
   const identities = (Array.isArray(raw?.identities) ? raw.identities : []).map((x: any): Identity => {
     const refs = strs(x?.refs, 5, 1000).filter(isHttp);
-    const kept = seen && seen.size ? refs.filter(u => seen.has(urlKey(u))) : refs;
+    // 확인된 주소 집합을 받았으면(비어 있어도) 그 안에 있는 주소만 근거로 남긴다 — 비어 있을 때 검증 안 된 주소를 그대로 두던 경로를 막는다.
+    // 집합을 주지 않는 공급자(null·undefined)는 스스로 검색 결과 주소만 내보낸다는 계약이다(무료 엔진)
+    const kept = seen ? refs.filter(u => seen.has(urlKey(u))) : refs;
     const uncertain = strs(x?.uncertain, 5, 200);
     if (kept.length < refs.length) uncertain.push(`근거 주소: ${refs.length - kept.length}개는 검색 결과에서 확인되지 않아 뺐어요`);
     return {

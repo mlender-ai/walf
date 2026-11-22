@@ -157,3 +157,34 @@ test('사이즈·색상 정규화', () => {
   assert.equal(sameColor('네이비', '블루그레이'), false, '두 색이 붙은 이름은 다른 색');
   assert.equal(sameColor('', '블랙'), true, '색을 정하지 않았으면 상관없음');
 });
+
+test('같은 옷을 확정하지 못한 결과도 끝낼 수 있다: 여기서 마치기 · 계속 찾아 주세요(기다려줘) → 새 찾아줘를 맡길 수 있다', async () => {
+  const W = await import('../src/watch.ts');
+  const policy = { maxActive: 3, checkEveryMs: 86_400_000, renewAfterMs: 30 * 86_400_000, unreachableAfter: 3, maxAttempts: 3, leaseMs: 120_000, mockAllowed: true };
+  // 결과 공개 전에는 마칠 수 없다(그만두기는 추적함의 의뢰 그만두기)
+  const a = await setup('[테스트:유력]');
+  assert.throws(() => F.closeFind(a.db, a.u.id, a.id), (e: any) => e.status === 409);
+  const draft = F.findDraft(a.db, a.id);
+  F.publishFind(a.db, a.id, { items: [{ aiIdentityId: draft.identities[0].id, tier: 'likely' }], discover: [] }, '운영자');
+  assert.ok(D.openRequestOf(a.db, a.u.id), '결과만 공개된 찾아줘는 아직 열려 있다');
+  F.closeFind(a.db, a.u.id, a.id);
+  const r = D.getRequest(a.db, a.id);
+  assert.deepEqual([r.status, r.end_reason], ['completed', 'find_closed']);
+  const d = D.display(a.db, r);
+  assert.equal(d.key, 'find_done');
+  assert.equal(d.title, '찾아줘를 마쳤어요', '같은 옷을 확정하지 않았으면 “찾았어요”라고 하지 않는다');
+  assert.equal(D.openRequestOf(a.db, a.u.id), undefined);
+  assert.ok(D.createRequest(a.db, a.u.id, { photo: 'y.jpg', note: '새 옷' }, { isMock: true }), '마친 뒤 새 찾아줘를 맡길 수 있다');
+  assert.throws(() => F.closeFind(a.db, a.u.id, a.id), (e: any) => e.status === 409, '이미 끝난 찾아줘');
+
+  // “계속 찾아 주세요”: 맡긴 사진으로 기다려줘를 만들면 찾아줘는 끝나고 기다려줘가 이어 간다
+  const b = await setup('[테스트:유력]');
+  const d2 = F.findDraft(b.db, b.id);
+  F.publishFind(b.db, b.id, { items: [{ aiIdentityId: d2.identities[0].id, tier: 'likely' }], discover: [] }, '운영자');
+  const wid = W.createWatch(b.db, b.u.id, { productName: '사진으로 맡긴 옷', requestId: b.id, targetPrice: 50000 }, policy);
+  const rb = D.getRequest(b.db, b.id);
+  assert.deepEqual([rb.status, rb.end_reason], ['completed', 'find_watch']);
+  assert.equal(D.display(b.db, rb).desc, '기다려줘에서 맡긴 사진으로 계속 찾아요.');
+  assert.equal((b.db.prepare('SELECT photo FROM watches WHERE id=?').get(wid) as any).photo, 'x.jpg', '맡긴 사진을 그대로 쓴다');
+  assert.equal(D.openRequestOf(b.db, b.u.id), undefined);
+});

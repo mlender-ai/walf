@@ -87,6 +87,8 @@ export function createWatch(db: DB, userId: number, input: NewWatch, policy: Wat
     const w = one(db, 'SELECT * FROM watches WHERE id=?', id)!;
     event(db, w, 'user', 'created', '기다려줘 시작', `${won(target)} 이하${priceBasis === 'item' ? '(배송비 제외)' : ''}${size ? ` · ${normSize(size)}` : ''}${color ? ` · ${color}` : ''}${condition === 'new' ? ' · 새 상품만' : ''}`, t);
     if (status === 'needs_info') event(db, w, 'walf', 'needs_info', '확인이 필요해요', note, t);
+    // 찾아줘 결과(같은 옷 못 찾음·유력 후보)에서 “계속 찾아 주세요”로 넘어왔으면 찾아줘는 여기서 끝나고 기다려줘가 이어 간다
+    if (req && req.status === 'submitted' && D.findPublished(db, req.id)) D.endFind(db, req, 'find_watch');
     return id;
   });
 }

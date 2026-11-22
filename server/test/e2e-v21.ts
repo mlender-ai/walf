@@ -123,7 +123,8 @@ async function main() {
   // ── Gate B: 대체 상품 · 운영자 검수 · 앱 공개 ──
   html = await waitFor(`/requests/${id}`, /data-similar="done:\d+"/);
   assert.match(html, /대체 상품[\s\S]*?정렬: 제품군·실루엣 > 디테일·소재 > 색·무드\(브랜드는 점수에 넣지 않음\)/);
-  assert.match(html, /테스트 큐레이터\(Fixture\)[\s\S]*?패션 브레인\(별도 연구\)[\s\S]*?PENDING_INTEGRATION/);
+  // Search Recovery: 패션 브레인은 후보 공급원이 아니라 정렬 엔진(로컬 이미지 모델) — 이미지 모델 주소가 없는 테스트 환경에서는 연결 전으로 보인다
+  assert.match(html, /테스트 큐레이터\(Fixture\)[\s\S]*?패션 브레인\(로컬 이미지 모델[\s\S]*?PENDING_INTEGRATION/);
   assert.match(html, /나일론 트랙 자켓 블랙[\s\S]*?비슷한 디자인 · 같은 상품 아님/);
   assert.ok(!/sim-mystic-same/.test(html), '찾는 옷과 같은 상품은 대체 상품에서 뺀다');
   ok('대체 상품: 테스트 큐레이터 후보를 디자인·실루엣 순으로 정렬(브랜드 점수 없음) · 패션 브레인은 연결 전 · 같은 상품은 뺌');

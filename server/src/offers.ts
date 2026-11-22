@@ -36,6 +36,8 @@ export type ProductOffer = {
   groupKey: string | null; isMock: boolean;
   /** 판매처 탐색: 어느 식별 후보 기준으로 검증했는지(여러 후보를 함께 찾을 때) — 예: ai_identity:12 · 1부터 */
   targetRef?: string | null; targetRank?: number | null;
+  /** 맡긴 사진과의 사진 유사도(코사인, 로컬 이미지 모델) — 같은 상품 판정 근거가 아니다. 정렬·비교에만 쓴다 */
+  imageScore?: number | null; imageModel?: string | null;
 };
 export const RULES_RECOMMENDER = { recommender: 'walf-rules', recommenderVersion: 'find-search-1' };
 
@@ -140,7 +142,7 @@ export function saveOffers(db: DB, searchId: number, owner: { requestId?: number
   tx(db, () => {
     const ins = db.prepare(`INSERT INTO offers(search_id, request_id, listing_id, relation, rank, group_key, source, seller, url, url_key, brand, name, model_code, season, image_url,
       price, sale_price, currency, shipping, condition, options, stock, want_size, want_color, verdict, checks, similar_points, diff_points, recommender, recommender_version, score,
-      detail, detail_note, queries, fetched_at, is_mock, created_at, style, watch_id, target_ref, target_rank) VALUES (${Array(41).fill('?').join(',')})`);
+      detail, detail_note, queries, fetched_at, is_mock, created_at, style, watch_id, target_ref, target_rank, image_score, image_model) VALUES (${Array(43).fill('?').join(',')})`);
     offers.forEach((o, i) => {
       const key = urlKey(o.url);
       let l = one(db, 'SELECT id FROM listings WHERE url_key=?', key);
@@ -151,7 +153,7 @@ export function saveOffers(db: DB, searchId: number, owner: { requestId?: number
       } else db.prepare('UPDATE listings SET last_seen=? WHERE id=?').run(t, l.id);
       ins.run(searchId, requestId, l.id, o.relation, i + 1, o.groupKey, o.source, o.seller, o.url, key, o.brand, o.name, o.modelCode, o.season, o.imageUrl,
         o.price, o.salePrice, o.currency, o.shipping, o.condition, json(o.options), o.stock, o.wantSize, o.wantColor, o.verdict, json(o.checks), json(o.similarPoints), json(o.diffPoints),
-        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t, o.style ? json(o.style) : null, watchId, o.targetRef ?? null, o.targetRank ?? null);
+        o.recommender, o.recommenderVersion, o.score, o.detail, o.detailNote, json(o.queries), o.fetchedAt, o.isMock ? 1 : 0, t, o.style ? json(o.style) : null, watchId, o.targetRef ?? null, o.targetRank ?? null, o.imageScore ?? null, o.imageModel ?? null);
       // 같은 의뢰에서 같은 페이지를 다시 찾으면 운영자 검수를 이어받는다(공개 중이면 새 줄로 옮겨 최신 가격으로 보이게)
       const id = Number(one(db, 'SELECT last_insert_rowid() id')!.id);
       if (requestId != null || watchId != null) {
@@ -183,7 +185,7 @@ export function offerOf(r: Row): StoredOffer {
     relation: r.relation, source: r.source, seller: r.seller, url: r.url, brand: r.brand, name: r.name, modelCode: r.model_code, season: r.season, imageUrl: r.image_url,
     price: r.price, salePrice: r.sale_price, currency: r.currency, shipping: r.shipping, condition: r.condition, options: parse(r.options, []), stock: r.stock,
     wantSize: r.want_size, wantColor: r.want_color, verdict: VERDICTS.includes(r.verdict) ? r.verdict : 'unverified', checks: parse(r.checks, []),
-    similarPoints: parse(r.similar_points, []), diffPoints: parse(r.diff_points, []), recommender: r.recommender, recommenderVersion: r.recommender_version, score: r.score,
+    similarPoints: parse(r.similar_points, []), diffPoints: parse(r.diff_points, []), recommender: r.recommender, recommenderVersion: r.recommender_version, score: r.score, imageScore: r.image_score ?? null, imageModel: r.image_model ?? null,
     detail: r.detail, detailNote: r.detail_note, queries: parse(r.queries, []), fetchedAt: r.fetched_at, groupKey: r.group_key, isMock: !!r.is_mock,
     targetRef: r.target_ref ?? null, targetRank: r.target_rank ?? null,
   };

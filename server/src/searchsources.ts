@@ -6,8 +6,11 @@ import path from 'node:path';
 import { SOURCES, fetchPage, robotsOk, safeFetch, SourceError, type Access, type Fetcher, type Snapshot, type Stock } from './sources.ts';
 import { normSize, type Condition } from './catalog.ts';
 import { compact } from './sameproduct.ts';
+import type { Stage } from './queryplan.ts';
+import { WEB_SOURCES } from './websources.ts';
 
-export type SearchQuery = { text: string; kind: 'code' | 'brand_code' | 'brand_name' | 'name' | 'alias_name' };
+/** kind: 검색어 단계(queryplan.ts) — 소스마다 받을 단계를 고른다(공식몰은 품번·모델명만, 중고나라는 한국어만) */
+export type SearchQuery = { text: string; kind: Stage; lang?: 'ko' | 'en' | 'ja' | 'any' };
 export type RawHit = { source: string; seller: string; url: string; title: string; brand: string | null; price: number | null; imageUrl: string | null;
   condition: Condition; query: string; rank: number; isMock: boolean };
 /** access: 왜 열지 않는지(판매처 레지스트리의 이용 권한 판정) — 사용자 문구를 고르는 데 쓴다 */
@@ -126,7 +129,8 @@ export const aiWebSource = closed('ai_web', 'AI 웹 검색(Claude)', 'any', 'pai
 const marketplaces = SOURCES.filter(s => !['page', 'mock'].includes(s.id) && s.listed !== false).map(s => closed(s.id, s.label, s.kind === 'new' ? 'retail' : s.kind === 'used' ? 'used' : s.kind === 'any' ? 'any' : 'resale', 'free',
   { status: s.status as Availability['status'], usable: false, access: s.access, reason: `${s.reason} (${s.checked})` }));
 
-export const SEARCH_SOURCES: SearchSource[] = [mockSource, officialSource, naverSource, aiWebSource, ...marketplaces];
+// 실제 웹 탐색 경로(websources.ts): 중고나라 자체 검색(로컬 실험 전용) · 검색 API(키 있을 때) · 로컬 메타검색(실험). 같은 id 의 닫힌 항목은 뺀다
+export const SEARCH_SOURCES: SearchSource[] = [mockSource, officialSource, naverSource, aiWebSource, ...marketplaces.filter(m => !WEB_SOURCES.some(w => w.id === m.id)), ...WEB_SOURCES];
 
 /** 같은 판매처 요청 사이 간격(기본 1초) */
 export function pacer(ms: number) {

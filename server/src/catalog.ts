@@ -95,22 +95,79 @@ export function variantOf(db: DB, productId: number, color: string | null | unde
 // 초기에는 큰 지식 그래프를 만들지 않는다. 출처가 있는 seed 와 운영자 확인만 쓰고, 나중에 이미지 임베딩·벡터 검색을 붙일 수 있게 열쇠만 맞춰 둔다.
 export const STYLE_KINDS = ['mood', 'silhouette', 'material', 'detail', 'category', 'color'] as const;
 export type StyleKind = typeof STYLE_KINDS[number];
-export type Style = Partial<Record<StyleKind, string[]>>;
+// 성별(men·women)은 디자인 점수에 넣지 않고 대체 추천에서 “반대 성별”을 빼는 데만 쓴다 — AI 식별 스키마(STYLE_KINDS)에는 넣지 않는다
+export const TAG_KINDS = [...STYLE_KINDS, 'gender'] as const;
+export type TagKind = typeof TAG_KINDS[number];
+export type Style = Partial<Record<TagKind, string[]>>;
 export const STYLE_LABEL: Record<string, string> = {
   techwear: '테크웨어', archive: '아카이브', minimal: '미니멀', workwear: '워크웨어', street: '스트리트', outdoor: '아웃도어', tailoring: '테일러링', 'avant-garde': '아방가르드',
   military: '밀리터리', sportswear: '스포츠웨어', heritage: '헤리티지', preppy: '프레피',
-  oversized: '오버사이즈', relaxed: '여유 있는 핏', slim: '슬림', boxy: '박시', cropped: '크롭', layered: '레이어드',
+  oversized: '오버사이즈', relaxed: '여유 있는 핏', bootcut: '부츠컷·플레어', slim: '슬림', boxy: '박시', cropped: '크롭', layered: '레이어드',
   nylon: '나일론', wool: '울', cotton: '코튼', denim: '데님', leather: '가죽', 'technical-fabric': '기능성 원단', knit: '니트', linen: '린넨',
-  'utility-pockets': '유틸리티 포켓', zip: '지퍼', pleats: '플리츠', deconstruction: '해체주의', washed: '워싱', patchwork: '패치워크', reflective: '리플렉티브',
+  'utility-pockets': '유틸리티 포켓', zip: '지퍼', check: '체크', 'curved-seam': '커브드 절개', pleats: '플리츠', deconstruction: '해체주의', washed: '워싱', patchwork: '패치워크', reflective: '리플렉티브',
   outerwear: '아우터', jacket: '자켓', knitwear: '니트웨어', trousers: '바지', shirts: '셔츠', tees: '티셔츠', bags: '가방', footwear: '신발',
+  men: '남성', women: '여성',
   black: '블랙', white: '화이트', navy: '네이비', blue: '블루', gray: '그레이', brown: '브라운', beige: '베이지', green: '그린', red: '레드',
 };
 export const styleLabel = (v: string) => STYLE_LABEL[v] || v;
+
+// ── 글(사진 분석 결과·매물 제목·운영자가 적은 기준 디자인) → 디자인 태그(통제 어휘) ─────────────
+// 대체 추천은 디자인 태그로 고르고 정렬한다. 로컬 모델의 자유 서술을 그대로 믿지 않고, 보이는 낱말만 어휘에 맞춘다.
+const TEXT_TERMS: [TagKind, string, RegExp][] = [
+  // 44·55·66·77 은 국내 여성복 사이즈 표기 · women 안의 men 은 남성 단서가 아니다
+  // “여 24”(여성 허리 인치)처럼 한 글자 표기도 여성으로 본다
+  ['gender', 'women', /여성|여자|우먼|레이디|미시|women|ladies|lady|(?<!\d)(44|55|66|77)(?!\d)|(?<![가-힣])여(?=\s?\d{2}(?!\d))/i],
+  ['gender', 'men', /남성|남자|맨즈|(?<![a-z])men'?s?(?![a-z])|homme|옴므/i],
+  ['category', 'tees', /티셔츠|반팔티|t-?shirt|\btee\b/i],
+  ['category', 'shirts', /(?<!티)셔츠|남방|\bshirts?\b/i],
+  ['category', 'jacket', /자켓|재킷|블루종|jacket|blouson/i],
+  ['category', 'outerwear', /코트|패딩|점퍼|아우터|coat|parka|jumper/i],
+  ['category', 'knitwear', /니트|스웨터|가디건|knit|sweater|cardigan/i],
+  ['category', 'trousers', /바지|팬츠|슬랙스|청바지|부츠컷|pants|trousers|jeans/i],
+  ['category', 'bags', /가방|토트백|크로스백|백팩|\bbag\b/i],
+  ['category', 'footwear', /신발|스니커즈|운동화|부츠(?!컷)|로퍼|sneakers?|\bboots\b|\bboot\b(?![\s-]?cut)/i],
+  ['color', 'red', /빨강|빨간|레드|버건디|와인색|\bred\b/i],
+  ['color', 'white', /흰색|하얀|화이트|\bwhite\b/i],
+  ['color', 'black', /검정|검은|블랙|\bblack\b/i],
+  // 옷에서 “딥블루”는 대개 네이비다(사진 분석 모델이 네이비를 이렇게 적는다)
+  ['color', 'navy', /네이비|남색|곤색|딥\s?블루|\bnavy\b|deep\s?blue/i],
+  ['color', 'blue', /파랑|파란|(?<!딥\s?)블루|(?<!deep\s?)\bblue\b/i],
+  ['color', 'gray', /회색|그레이|차콜|gr[ae]y/i],
+  ['color', 'brown', /갈색|브라운|카멜|brown/i],
+  ['color', 'beige', /베이지|샌드|beige/i],
+  ['color', 'green', /초록|그린|카키|올리브|green|khaki/i],
+  ['material', 'cotton', /코튼|면\s?100|면 소재|cotton/i],
+  ['material', 'wool', /울(?!트라)|wool/i],
+  ['material', 'nylon', /나일론|nylon/i],
+  ['material', 'denim', /데님|denim/i],
+  ['material', 'leather', /가죽|레더|leather/i],
+  ['material', 'linen', /린넨|리넨|linen/i],
+  ['detail', 'check', /체크|깅엄|타탄|격자|플란넬|check|plaid|gingham|tartan|flannel/i],
+  ['detail', 'curved-seam', /커브드|트위스트|곡선\s?절개|curved|twist(ed)?\s?seam/i],
+  ['detail', 'zip', /지퍼|집업|zip/i],
+  ['detail', 'washed', /워싱|washed/i],
+  ['detail', 'patchwork', /패치워크|patchwork/i],
+  ['silhouette', 'bootcut', /부츠컷|플레어|bootcut|boot-cut|flare/i],
+  ['silhouette', 'oversized', /오버핏|오버\s?사이즈|오버 핏|oversized?/i],
+  ['silhouette', 'slim', /슬림|slim/i],
+  ['silhouette', 'cropped', /크롭|cropped?/i],
+  ['silhouette', 'boxy', /박시|boxy/i],
+  ['silhouette', 'relaxed', /루즈핏|여유 있는|와이드|relaxed|loose/i],
+];
+export function styleFromText(text: string | null | undefined): Style {
+  const t = String(text || '');
+  const out: Style = {};
+  for (const [k, v, re] of TEXT_TERMS) if (re.test(t) && !(out[k] ||= []).includes(v)) out[k]!.push(v);
+  if ((out.gender || []).length > 1) delete out.gender; // 둘 다 보이면(남녀공용 등) 성별을 모른다고 본다
+  return out;
+}
 const WEIGHT: Record<StyleKind, number> = { mood: 3, category: 2, material: 2, silhouette: 1, detail: 1, color: 0.5 };
 
 /** 모델이 낸 스타일 값을 통제 어휘로 맞춘다(소문자·하이픈). 모르는 값은 그대로 두되 매핑 점수에는 같은 값끼리만 맞는다 */
 export function cleanStyle(raw: any): Style {
   const out: Style = {};
+  const g = (Array.isArray(raw?.gender) ? raw.gender : []).map((x: unknown) => String(x ?? '').toLowerCase()).filter((x: string) => x === 'men' || x === 'women');
+  if (g.length === 1) out.gender = g;
   for (const k of STYLE_KINDS) {
     const vals = (Array.isArray(raw?.[k]) ? raw[k] : []).map((x: unknown) => String(x ?? '').trim().toLowerCase().replace(/\s+/g, '-')).filter((x: string) => x && x.length <= 30);
     if (k === 'color') { out[k] = [...new Set(vals.flatMap((v: string) => colorsIn(v).length ? colorsIn(v) : [v]))].slice(0, 4) as string[]; continue; }
@@ -181,12 +238,14 @@ export function curate(db: DB, style: Style, opts: { exclude?: string[]; limit?:
     .sort((a, b) => b.score - a.score || a.brand.localeCompare(b.brand)).slice(0, opts.limit ?? 3);
 }
 
-/** 사진에서 본 스타일(AI)을 의뢰에 남긴다 — 큐레이션과 운영자 검수에 쓴다 */
-export function saveRequestStyle(db: DB, requestId: number, style: Style, status: 'ai' | 'fixture') {
+/** 사진에서 본 스타일(AI)·운영자가 고친 기준 디자인(verified)을 의뢰에 남긴다 — 큐레이션과 운영자 검수에 쓴다.
+ * 운영자가 고친 기준이 있으면 AI가 다시 살펴봐도 덮어쓰지 않는다. */
+export function saveRequestStyle(db: DB, requestId: number, style: Style, status: 'ai' | 'fixture' | 'verified', by: string | null = null) {
   tx(db, () => {
+    if (status !== 'verified' && db.prepare(`SELECT 1 FROM style_tags WHERE subject='request' AND subject_key=? AND status='verified'`).get(String(requestId))) return;
     db.prepare(`DELETE FROM style_tags WHERE subject='request' AND subject_key=?`).run(String(requestId));
-    const ins = db.prepare('INSERT OR IGNORE INTO style_tags(subject, subject_key, scope, kind, value, status, created_at) VALUES (?,?,?,?,?,?,?)');
-    for (const k of STYLE_KINDS) for (const v of style[k] || []) ins.run('request', String(requestId), '', k, v, status, now());
+    const ins = db.prepare('INSERT OR IGNORE INTO style_tags(subject, subject_key, scope, kind, value, status, updated_by, created_at) VALUES (?,?,?,?,?,?,?,?)');
+    for (const k of TAG_KINDS) for (const v of style[k] || []) ins.run('request', String(requestId), '', k, v, status, by, now());
   });
 }
 export function requestStyle(db: DB, requestId: number): Style {
@@ -194,4 +253,7 @@ export function requestStyle(db: DB, requestId: number): Style {
   for (const r of all(db, `SELECT kind, value FROM style_tags WHERE subject='request' AND subject_key=? ORDER BY id`, String(requestId))) (out[r.kind as StyleKind] ||= []).push(r.value);
   return out;
 }
-export const styleWords = (s: Style) => STYLE_KINDS.flatMap(k => (s[k] || []).map(styleLabel));
+/** 아동복 표기(유아동·키즈·“(4-5세)”·“4-5T”·“7호(”) — 성인 옷을 찾을 때는 다른 상품으로 본다 */
+export const KIDS_RE = /유아동|유아|아동|키즈|주니어|아기|베이비|(?<![a-z])kids?(?![a-z])|(?<![a-z])junior(?![a-z])|\(\s*\d{1,2}\s*[-~]\s*\d{1,2}\s*(세|T)\s*\)|(?<![\d.])\d{1,2}\s?T(?![a-z])|(?<!\d)\d{1,2}호(?=\s*\()/i;
+export const isKids = (title: string | null | undefined) => KIDS_RE.test(String(title || ''));
+export const styleWords = (s: Style) => TAG_KINDS.flatMap(k => (s[k] || []).map(styleLabel));

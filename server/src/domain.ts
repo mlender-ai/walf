@@ -528,6 +528,21 @@ function closeOut(db: DB, r: Row, status: string, reason: string) {
   withdrawWanted(db, null, r.id, status === 'expired' ? '7일 종료로 수배를 마쳤어요' : '의뢰가 끝나 수배를 마쳤어요');
 }
 
+/** 운영자가 검수해 공개한 찾아줘 결과(같은 옷·유력 후보·비슷한 브랜드·대체 추천 중 하나)가 있는가 */
+export function findPublished(db: DB, requestId: number) {
+  const f = findTiers(db, requestId);
+  return !!(f.match || f.likely || f.discover || f.alternatives);
+}
+/**
+ * 결과를 받은 찾아줘를 끝낸다 — 찾아줘는 한 번에 한 벌이라, 같은 옷을 확정하지 못한 결과(못 찾음·유력 후보)도 끝낼 길이 있어야 새로 맡길 수 있다.
+ * find_watch: 맡긴 사진으로 기다려줘를 이어 감 · find_closed: 결과를 보고 여기서 마침. 호출하는 쪽이 트랜잭션을 연다.
+ */
+export function endFind(db: DB, r: Row, reason: 'find_watch' | 'find_closed') {
+  closeOut(db, r, 'completed', reason);
+  run(db, `UPDATE ai_identities SET status='passed' WHERE request_id=? AND status='proposed'`, r.id);
+  log(db, r.id, 'user', 'find_done', '찾아줘를 마쳤어요', reason === 'find_watch' ? '기다려줘에서 맡긴 사진으로 계속 찾아요' : '결과를 보고 여기서 마쳤어요', { isMock: !!r.is_mock });
+}
+
 export function confirmPurchase(db: DB, userId: number, id: number, candId?: number | null) {
   const r = ownRequest(db, userId, id);
   if (r.status !== 'active') throw new HttpError(409, 'bad_state');
@@ -614,8 +629,11 @@ export function display(db: DB, r: Row, t = now()): Display {
     return d('identification_pending', '의뢰 접수 · 7일 시작 전', '어떤 옷인지 확인하고 있어요', '왈프 팀이 상품을 확인하면 7일 탐색이 시작돼요. 확인 전에는 기간이 흐르지 않아요.');
   }
   if (r.status === 'needs_info') return d('needs_info', '의뢰 접수 · 7일 시작 전', '정보가 조금 더 필요해요', r.info_request || '어떤 옷인지 확인할 정보를 더 보내주세요.', { action: { label: '정보 보내기', target: `info:${r.id}`, primary: true } });
-  if (r.status === 'completed' && String(r.end_reason || '').startsWith('find_')) return d('find_done', `${kDate(r.ended_at)} · 찾아줘 완료`, '어떤 옷인지 찾았어요',
-    r.end_reason === 'find_watch' ? '기다려줘에서 원하는 사이즈·가격을 지켜보고 있어요.' : '내가 찾는 옷에 저장했어요. 매물을 찾거나 가격을 기다리려면 새로 맡겨 주세요.', { muted: true, isMock: !!r.is_mock });
+  // 같은 옷을 확정했으면(상품 연결) “찾았어요”, 확정하지 못하고 마쳤으면 그렇게 말하지 않는다
+  if (r.status === 'completed' && String(r.end_reason || '').startsWith('find_')) return d('find_done', `${kDate(r.ended_at)} · 찾아줘 완료`, r.product_id ? '어떤 옷인지 찾았어요' : '찾아줘를 마쳤어요',
+    r.end_reason === 'find_watch' ? (r.product_id ? '기다려줘에서 원하는 사이즈·가격을 지켜보고 있어요.' : '기다려줘에서 맡긴 사진으로 계속 찾아요.')
+      : r.end_reason === 'find_closed' ? '결과는 추적함에 남아 있어요. 새 옷을 맡길 수 있어요.'
+      : '내가 찾는 옷에 저장했어요. 매물을 찾거나 가격을 기다리려면 새로 맡겨 주세요.', { muted: true, isMock: !!r.is_mock });
   if (r.status === 'completed') return d('completed', `${kDate(r.ended_at)} · 구매 확인`, '찾던 옷을 구했어요', '탐색과 수배를 멈췄어요. 게시된 수배지는 내리도록 요청했어요.', { muted: true });
   if (r.status === 'cancelled') return d('cancelled', `${kDate(r.ended_at)} · 그만둠`, '의뢰를 그만뒀어요', '탐색을 멈췄어요. 기록은 추적함에 남아 있어요.', { muted: true });
   const cands = visibleCands(db, r);

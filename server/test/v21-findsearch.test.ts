@@ -50,7 +50,10 @@ test('[1 식별] AI 제안 → 운영자 공개 → 사용자 확인 순으로 �
   assert.equal(S.targetsOf(db, id, MALLS)[0].basis, 'user_confirmed');
 
   const low = await setup('[테스트:유사]');
-  assert.equal(S.targetsOf(low.db, low.id).length, 0, '신뢰도 낮음(숨김) 후보로는 판매처를 찾지 않는다');
+  // Search Recovery: 숨김(신뢰도 낮음) 후보는 식별 결과로 쓰지 않지만, 탐색 자체는 멈추지 않는다 — 브랜드만 내부 단서(ai_clue)로, 사진 특징으로(style_only) 찾는다
+  const lowTs = S.targetsOf(low.db, low.id);
+  assert.ok(lowTs.length >= 1, '식별 실패가 탐색 중단으로 이어지지 않는다');
+  assert.ok(lowTs.every(t => ['ai_clue', 'style_only'].includes(t.basis) && !t.certain && !t.name), '숨김 후보의 상품명을 검색 대상으로 올리지 않는다');
 });
 
 // ── 2 · 검색 조건 ──
