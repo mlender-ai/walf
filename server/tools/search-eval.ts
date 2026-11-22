@@ -16,7 +16,8 @@ import { ossIdentifyData, ossOptions, runEngine } from '../src/oss.ts';
 import { imageGender, photoAttributes } from '../src/brain.ts';
 import { urlKey } from '../src/sources.ts';
 
-type Case = { id: string; group: string; image: string; license: string; source_url: string; note?: string;
+// note 는 평가 작성자의 메모(정답이 들어 있다) — 검색·사진 분석에 절대 넘기지 않는다. 사용자가 실제로 적은 말은 input_note 에만
+type Case = { id: string; group: string; image: string; license: string; source_url: string; note?: string; input_note?: string;
   truth: { brand: string | null; model: string | null; aliases_ko?: string[]; aliases_en?: string[]; category: string; color?: string; gender?: string; match_regex: string | null; market_presence: string } };
 const [casesFile, outDir, only] = process.argv.slice(2);
 if (!casesFile || !outDir) { console.error('사용: node tools/search-eval.ts <cases.json> <결과 폴더> [id,...]'); process.exit(1); }
@@ -34,12 +35,18 @@ const isHit = (c: Case, title: string | null) => !!c.truth.match_regex && new Re
 const CAT: Record<string, string[]> = { trousers: ['trousers'], jeans: ['trousers'], pants: ['trousers'], shirt: ['shirts'], shirts: ['shirts'], tee: ['tees'], 't-shirt': ['tees'], tees: ['tees'],
   jacket: ['jacket', 'outerwear'], coat: ['outerwear', 'jacket'], outerwear: ['outerwear', 'jacket'], knitwear: ['knitwear'], sweater: ['knitwear'], sweatshirt: ['knitwear', 'tees'], hoodie: ['knitwear', 'tees'],
   footwear: ['footwear'], shoes: ['footwear'], sneakers: ['footwear'], boots: ['footwear'], sandals: ['footwear'], bags: ['bags'], bag: ['bags'], dress: ['dress'], skirt: ['skirt'], polo: ['tees', 'shirts'] };
-const catOf = (c: Case) => CAT[String(c.truth.category || '').toLowerCase()] || [String(c.truth.category || '').toLowerCase()];
+// 정답 제품군: 영어 한 낱말이거나 "신발 > 스니커즈 > …" 같은 한국어 경로
+const KO_CAT: [RegExp, string[]][] = [[/신발/, ['footwear']], [/하의|청바지|데님 >|팬츠/, ['trousers']], [/아우터|재킷|자켓|셋업/, ['outerwear', 'jacket']], [/니트|스웨터/, ['knitwear']],
+  [/폴로|피케/, ['tees', 'shirts']], [/티셔츠/, ['tees']], [/셔츠/, ['shirts']], [/원피스|드레스/, ['dress']], [/한복|전통복|기모노|무대/, ['other']]];
+const catOf = (c: Case) => { const k = String(c.truth.category || ''); return CAT[k.toLowerCase()] || KO_CAT.find(([re]) => re.test(k))?.[1] || [k.toLowerCase()]; };
+const genderOf = (c: Case) => ({ 남: 'men', 여: 'women', 공용: 'unisex' } as Record<string, string>)[String(c.truth.gender || '')] || c.truth.gender || null;
+/** 같은 상품을 시장에서 찾을 수 있는 사례(정답 발견율을 셀 대상) — 동일 상품 없음·무지 기본템·시장에 없는 아카이브는 유사품만 센다 */
+export const exactFindable = (c: Case) => !['no_exact', 'generic'].includes(c.group) && !/없음|none/i.test(String(c.truth.market_presence || ''));
 /** 대체 추천 적합도(자동 근사): 제목의 제품군이 정답 제품군과 맞고(모르면 통과), 성별이 반대가 아니고, 아동복이 아님 */
 const fits = (c: Case, o: ProductOffer) => {
   const st = styleFromText(o.name), want = catOf(c);
   const catOk = !st.category?.length || st.category.some(x => want.includes(x));
-  const g = st.gender?.[0], tg = c.truth.gender;
+  const g = st.gender?.[0], tg = genderOf(c);
   const genderOk = !g || !tg || tg === 'unisex' || g === tg;
   return catOk && genderOk && !isKids(o.name);
 };
@@ -51,23 +58,26 @@ for (const [n, c] of cases.entries()) {
   const photo = `${c.id}${path.extname(src) || '.jpg'}`;
   fs.copyFileSync(src, path.join(outDir, 'uploads', photo));
   const u = D.upsertUser(db, `eval-device-${c.id}`.padEnd(16, '0'), 'ios');
-  const id = D.createRequest(db, u.id, { photo, note: c.note || undefined }, { isMock: false });
+  const id = D.createRequest(db, u.id, { photo, note: c.input_note || undefined }, { isMock: false });
   // 1 사진 분석(제품의 무료 엔진 식별과 같은 단계 — 식별 검색 판매처 없음, 이번 변경 그대로)
   const t1 = Date.now();
-  let features: any = null, style: Style = {}, identities: any[] = [], idErr: string | null = null;
+  let features: any = null, style: Style = {}, identities: any[] = [], idErr: string | null = null, data_terms: string[] = [];
   try {
-    const j = await runEngine(oss, 'identify', { photo: path.join(outDir, 'uploads', photo), sellers: [], note: c.note || '' });
+    const j = await runEngine(oss, 'identify', { photo: path.join(outDir, 'uploads', photo), sellers: [], note: c.input_note || '' });
     features = j.features || null;
     // 제품의 무료 엔진 식별과 같은 변환(낮은 신뢰도 브랜드 추정은 숨김 후보 → 내부 검색 단서)
-    const data = ossIdentifyData(j, c.note);
+    const data = ossIdentifyData(j, c.input_note);
     identities = data.identities;
     style = data.style;
+    data_terms = data.terms || [];
   } catch (err: any) { idErr = String(err?.message || err).slice(0, 200); }
   // 제품과 같게: 이미지 모델 제로샷으로 빈 성별·제품군·바지 실루엣을 채운다
   const extra = await photoAttributes(e.brain ?? null, path.join(outDir, 'uploads', photo), style as any);
   for (const [k, v] of Object.entries(extra.add)) if (!(style as any)[k]?.length) (style as any)[k] = v;
   const identifyMs = Date.now() - t1;
   saveRequestStyle(db, id, style, 'ai');
+  const terms = (data_terms ?? []) as string[];
+  if (terms.length) db.prepare('UPDATE requests SET photo_terms=? WHERE id=?').run(JSON.stringify(terms), id);
   // 식별 결과를 제품처럼 저장한다(숨김 후보도 — targetsOf 가 내부 단서로 쓴다)
   if (identities.length) {
     const jid = Number(db.prepare(`INSERT INTO ai_jobs(request_id, kind, status, provider, is_mock, created_at, finished_at) VALUES (?,?,?,?,?,?,?)`).run(id, 'identify', 'done', 'oss', 0, Date.now(), Date.now()).lastInsertRowid);
@@ -108,8 +118,8 @@ for (const [n, c] of cases.entries()) {
       top: r.offers.slice(0, 5).map(o => ({ name: o.name, url: o.url, img: o.imageUrl, score: o.imageScore ?? null })) };
   }
   const row = {
-    id: c.id, group: c.group, truth: { brand: c.truth.brand, model: c.truth.model, category: c.truth.category, gender: c.truth.gender, market: c.truth.market_presence },
-    identify: { ms: identifyMs, error: idErr, zeroshot: extra.notes, garment: features?.garment ?? null, brandGuess: features?.brand_guess || null, identities: identities.map(x => `${x.brand} ${x.name}`), style },
+    id: c.id, group: c.group, exact: exactFindable(c), truth: { brand: c.truth.brand, model: c.truth.model, category: c.truth.category, gender: c.truth.gender, market: c.truth.market_presence },
+    identify: { ms: identifyMs, error: idErr, zeroshot: extra.notes, terms: data_terms, garment: features?.garment ?? null, brandGuess: features?.brand_guess || null, identities: identities.map(x => `${x.brand} ${x.name}`), style },
     brandHit: !!c.truth.brand && !!features?.brand_guess && [c.truth.brand, ...(c.truth.aliases_ko || []), ...(c.truth.aliases_en || [])].some(a => a && String(features.brand_guess).toLowerCase().includes(String(a).toLowerCase())),
     search: { executed: !!q.id && !q.skipped, skipped: q.skipped || null, ms: findMs, summary, queries: queries.map((x: any) => `${x.kind}:${x.text}`),
       sources: report.map((x: any) => ({ id: x.id, outcome: x.outcome, hits: x.hits, n: x.queries?.length || 0 })), candidates: offers.length },

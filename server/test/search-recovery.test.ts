@@ -94,7 +94,9 @@ test('[2] Shopify Global Catalog: 에이전트 프로필 없으면 닫힘 · 응
 test('[3] 상품을 몰라도 검색어를 만든다: 성별·특징(한국어) → 넓게 → 영어·일본어 · 정답(브랜드·모델)은 들어가지 않는다', () => {
   const style = { gender: ['men'], category: ['trousers'], material: ['denim'], silhouette: ['bootcut'], detail: ['curved-seam'], color: ['navy', 'beige'] };
   const q = planQueries({ brand: null, name: '', modelCode: null, aliases: [] }, style);
-  assert.deepEqual(q.filter(x => x.kind === 'feature').map(x => x.text), ['남자 커브드 부츠컷 청바지', '남자 네이비 부츠컷 청바지', '남자 베이지 부츠컷 청바지', '부츠컷 청바지']);
+  assert.deepEqual(q.filter(x => x.kind === 'feature').map(x => x.text), ['남자 커브드 부츠컷 청바지', '남자 네이비 부츠컷 청바지', '남자 베이지 부츠컷 청바지', '부츠컷 청바지', '커브드 청바지']);
+  // 통제 어휘에 없는 종류는 사진 분석이 읽은 옷 이름으로(제품군만 남는 넓은 검색어는 만들지 않는다)
+  assert.deepEqual(planQueries({ brand: null, name: '', modelCode: null, aliases: [], terms: ['하이탑 스니커즈'] }, { category: ['footwear'], color: ['white'] }).filter(x => x.kind === 'feature').map(x => x.text), ['화이트 하이탑 스니커즈', '하이탑 스니커즈']);
   assert.deepEqual(q.filter(x => x.kind !== 'feature').map(x => x.text), ['mens curved bootcut jeans', 'メンズ ブーツカット ジーンズ']);
   const qb = planQueries({ brand: 'Levi’s', name: '517', modelCode: null, aliases: ['리바이스'] }, style);
   assert.deepEqual(qb.slice(0, 3).map(x => x.kind), ['brand_name', 'alias_name', 'brand_feature']);
@@ -180,4 +182,16 @@ test('[5·6] 제목이 불완전해도 사진 비교가 됐으면 버리지 않�
   const dna = curateOffers(raw, { ...base, mode: 'image_dna', images });
   assert.equal(dna.offers[0].imageScore, 0.9);
   assert.ok(dna.offers.every(o => o.verdict === 'unverified'));
+});
+
+test('[3·5] 사진 분석 브랜드 추정 정규화(다른 문자·철자) · 문장형 답은 검색어가 아니다 · 모델 번호는 브랜드와 붙여 찾는다', async () => {
+  const { normalizeBrand } = await import('../src/catalog.ts');
+  const { photoTerms, ossIdentifyData } = await import('../src/oss.ts');
+  assert.deepEqual(['耐克', 'dr martens', 'PRO-SPECS', '컨버스', 'Fjallraven', '모르는브랜드'].map(g => normalizeBrand(g)?.name ?? null), ['Nike', 'Dr. Martens', 'Pro-Specs', 'Converse', 'Fjällräven', null]);
+  assert.deepEqual(photoTerms({ garment: '사진에 상의(외투)가 보이지 않습니다.', keywords_ko: ['T恤', '회색 V넥 티셔츠', '574'] }), ['회색 V넥 티셔츠', '574']);
+  const d = ossIdentifyData({ identities: [], features: { brand_guess: '耐克', garment: '로우탑 가죽 스니커즈' } });
+  assert.deepEqual([d.identities[0].brand, d.identities[0].confidence], ['Nike', 'low'], '추정 브랜드는 신뢰도 낮음(숨김 → 내부 단서)으로만');
+  const q = planQueries({ brand: 'New Balance', name: '', modelCode: null, aliases: ['뉴발란스'], terms: ['스웨이드 러닝화', '574'] }, { category: ['footwear'], color: ['gray'], silhouette: ['slim'] });
+  assert.ok(q.some(x => x.text === '뉴발란스 574'));
+  assert.ok(!q.some(x => /슬림/.test(x.text)), '신발에는 핏 낱말을 붙이지 않는다');
 });

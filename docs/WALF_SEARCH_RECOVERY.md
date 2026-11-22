@@ -109,15 +109,110 @@ PR #3 코드(`5537c06`)를 그대로 꺼내 같은 입력으로 돌린 결과(�
 
 ## 7. 실제 탐색 성능 평가 (STEP 7)
 
-(평가 결과로 채운다)
+**평가셋**: 권리가 확인된 실제 상품 사진 26건(walf-intelligence `data/search-recovery-eval/`, Wikimedia Commons CC0·CC BY·CC BY-SA·PD, Met Open Access CC0 — `fetch.py --check`로 라이선스 재확인). 흔한 현행 상품 7 · 해외 브랜드 의류 6 · 단종·아카이브 4 · 국내 브랜드 3(신발만 — 얼굴 없는 국내 의류 사진을 못 찾음, 프로스펙스 2건은 Commons 라이선스 검토 대기) · 동일 상품 없음 3 · 무지 기본템 3.
+**입력**: 모든 사례를 **사진만** 맡긴 의뢰로(브랜드·상품명·메모 없음). 정답·평가 메모는 검색어·사진 분석에 넣지 않고 채점에만 쓴다.
+**경로**: 로컬 사진 분석(Qwen3-VL-8B) + MODA 제로샷 → 판매처 탐색(실제 검색 경로는 중고나라 자체 검색 1곳 — 검색 API 키 없음) → MODA 사진 유사도 정렬. 비용 0원.
+**채점**: 매물 제목이 사례의 정답 규칙(브랜드+모델 낱말 정규식)과 맞으면 "정답 후보". 규칙은 브랜드·모델 낱말만 본다 — **같은 계열 다른 모델·다른 색도 정답 후보로 세어진다**(예: 컨버스 런스타 레거시, 에어포스1 다른 색). 같은 상품 확정이 아니다.
+**"사진 비교 없음"**은 같은 후보 묶음을 기존 규칙 정렬(판정·재고·상세·가격)로 다시 줄 세운 것(단서 검색어로만 나온 후보 제외)이다.
 
-## 8. 사례별 기록 (STEP 8)
+### 7-1. 기존 대비 (같은 26건)
 
-(평가 결과로 채운다)
+| 지표 | PR #3 `5537c06` | 1차 | 2차 | 3차(최종) |
+|---|---|---|---|---|
+| 검색 자체가 실행된 비율 | **0/26** | 25/26 | 26/26 | **26/26** |
+| 정답 후보 발견(시장에 있는 18건) | 0/18 | 7/18 | 9/18 | **10/18 (56%)** |
+| 상위 5개 안 정답 — 사진 유사도 정렬 | 0/18 | 5/18 | 7/18 | **6/18 (33%)** |
+| 상위 5개 안 정답 — 같은 후보, 사진 없이 | — | 1/18 | 2/18 | 4/18 (22%) |
+| 유사품 발견(동일 상품 없음·기본템·시장에 없는 아카이브 8건, 규칙 일치) | 0/8 | 3/8 | 4/8 | 4/8 (상위 5개 안 4) |
+| 브랜드 식별(사진 분석의 로고·라벨 추정이 정답 브랜드) | — | 5 | 4 | 6 |
+| 실제 판매 매물 발견(판매 완료 제외 검색 목록 기준) | 0/18 | 7/18 | 9/18 | 10/18 |
+| 다른 상품 오확정(같은 상품·가능성 높음으로) | 0 | 0 | 0 | **0** |
+| 대체 추천 상위 5개 평균 사진 유사도 — 디자인 태그만 / 사진 / 사진+디자인 / 선호(실루엣)+사진 | 추천 엔진 없음 | 0.40 / 0.56 / 0.53 / 0.53 | 0.43 / 0.64 / 0.62 / 0.62 | 0.39 / 0.57 / 0.56 / 0.56 |
+| 한 건 처리 시간(중앙값) | — | 90초 | 51초 | 44초(사진 분석 21초) |
+| 한 건 비용 | — | 0원 | 0원 | 0원 |
+
+- 1차 → 2차: 사진 분석 질문이 "상의(외투)"로 고정돼 신발 사진에 "상의가 보이지 않습니다"라고 답하던 결함을 고침(엔진 `vision.py`), 문장형 답을 검색어에서 거름, 신발에 핏 낱말을 붙이지 않음, 모델 번호를 브랜드와 붙여 검색.
+- 2차 → 3차: 질문 속 예시("하이탑 스니커즈", "라이더 재킷")를 모델이 그대로 베끼던 결함을 고침, 브랜드 추정을 별칭 사전으로 맞춤(耐克 → Nike, 한글 이름으로도 검색).
+- **같은 평가셋으로 세 번 고쳐 돌렸으므로 수치가 이 셋에 유리할 수 있다.** 고친 것은 사례에 맞춘 조정이 아니라 일반 결함이지만, 브랜드 별칭 사전(`seed/brand-aliases.json`, 61개)에는 평가셋 브랜드도 들어 있다. 새 사례로 다시 재야 한다.
+- 로컬 사진 분석은 실행마다 답이 조금씩 다르다(같은 사진: 2차 "하이탑 스니커즈" → 3차 "화이트 라이트 레이스"). 사례별로 오르내림이 있어(에어포스1·리바이스·칼하트·프레드페리) 1회 측정만으로 판단하지 않는다.
+- **이미지 모델 성능과 인터넷 탐색 성공률은 다르다.** 정답이 후보 묶음에 들어오기만 하면 사진 정렬이 순위를 크게 올렸다(뉴발란스 574: 규칙 25위 → 사진 1위, 아디다스 삼바: 81위 → 1위, 리바이스 501: 83위 → 1위). 정답이 아예 검색되지 않은 8건은 사진 모델이 도울 수 없었다 — 병목은 여전히 **검색 경로**(중고나라 하나)다.
+- 대체 추천의 자동 적합도 지표(제목의 제품군·성별·아동복 확인)는 1~3차 모두 88~100%로 포화돼 구분이 안 된다. 사진으로 직접 본 결과가 더 분명하다: 디자인 태그만 쓴 정렬은 1920년대 드레스 사례 상위 5개에 PC 파워 서플라이·청바지가 섞였고, 사진+디자인 정렬은 드레스·니트처럼 같은 종류를 올렸다(1차 검수, 로컬 대조 화면).
+- 사람 평가(대체 추천이 실제로 쓸 만한지)는 아직 하지 않았다.
+
+## 8. 사례별 기록 (STEP 8, 3차 기준)
+
+입력 사진은 저장소에 넣지 않는다(출처·라이선스는 walf-intelligence `data/search-recovery-eval/cases.json`). 모든 사례의 기존(PR #3) 결과는 "탐색 시작 안 함 · 대체 추천 엔진 없음"이다(§1 표). 적용한 수정은 §2~6 전부.
+
+| 사례 | 정답 | 사진 분석(제로샷 보완) | 검색어 | 후보 | 정답 순위(사진/규칙) | 사진 유사도(정답 최고/전체 최고) | 실패 단계 |
+|---|---|---|---|---|---|---|---|
+| c01_converse_chuck_allstar_hi_white | Converse Chuck Taylor All Star Hi (클래식 하 | 흰색 고무창 스니커즈/흰색 스니커즈/고무창 · category:footwear color:red,white material:cotton gender:men (+성별 남성(사진 추정 94%)) · 브랜드 추정 Converse | Converse 신발 / 컨버스 신발 / 남자 레드 흰색 고무창 스니커즈 / 흰색 고무창 스니커즈 | 88 | 2/2 | 0.8368/0.8539 | —(상위 5개 안) |
+| c02_drmartens_1460_8eye_brown | Dr. Martens 1460 8홀 부츠 (스무스 레더) | 딥 레드 브라운 부츠/드라마트너스/딥 레드 부츠 · category:footwear color:red,brown gender:men (+성별 남성(사진 추정 93%)) · 브랜드 추정 DR. MARTENS | Dr. Martens 신발 / 닥터마틴 신발 / 남자 딥 레드 브라운 부츠 / 딥 레드 브라운 부츠 | 56 | 48/23 | 0.8088/0.8088 | 정렬(정답이 5위 밖) |
+| c03_nike_airforce1_low_white | Nike Air Force 1 '07 Low (트리플 화이트) | 화이트 라이트 레이스/화이트 신발/라이트 레이스 · category:footwear color:white gender:men (+성별 남성(사진 추정 93%)) · 브랜드 추정 耐克 | Nike 신발 / 나이키 신발 / 남자 화이트 라이트 레이스 / 화이트 라이트 레이스 | 114 | 1/19 | 0.6923/0.6923 | —(상위 5개 안) |
+| c04_adidas_samba_og_white | adidas Samba OG (클라우드 화이트/코어 블랙/검) | 흰색 스니커즈/아디다스/산바 · category:footwear color:white,black,brown material:leather gender:men (+성별 남성(사진 추정 94%)) · 브랜드 추정 아디다스 | adidas 신발 / 아디다스 신발 / 남자 화이트 흰색 스니커즈 / 흰색 스니커즈 | 189 | 1/96 | 0.8633/0.8633 | —(상위 5개 안) |
+| c05_newbalance_574_grey | New Balance 574 코어 (그레이) | 그레이 뉴발란스 신발/뉴발란스/574 · category:footwear color:white,gray gender:men (+성별 남성(사진 추정 99%)) · 브랜드 추정 뉴발란스 | New Balance 신발 / 뉴발란스 신발 / 뉴발란스 574 / 남자 화이트 그레이 뉴발란스 신발 | 164 | 1/2 | 0.9249/0.9249 | —(상위 5개 안) |
+| c06_birkenstock_arizona_black | Birkenstock Arizona (ESD 버전, 블랙) | 블랙 라이딩 슬라이드/블랙 슬라이드/코르크 밑창 · category:footwear color:black gender:men (+성별 남성(사진 추정 96%)) · 브랜드 추정 Birkenstock | Birkenstock 신발 / 버켄스탁 신발 / 남자 블랙 라이딩 슬라이드 / 블랙 라이딩 슬라이드 | 55 | -/- | -/0.7282 | 발견 실패(검색어·출처) |
+| c07_levis_501_lightwash | Levi's 501 (라이트 워시, 무릎 디스트레스) | - · category:trousers silhouette:slim (+제품군 jeans(사진 추정 97%), 실루엣 skinny pants(사진 추정 57%)) | 슬림 바지 / 워싱 바지 | 99 | 7/- | 0.6627/0.7482 | 정렬(정답이 5위 밖) |
+| o01_fredperry_m12_twin_tipped_black | Fred Perry Twin Tipped Fred Perry Shirt  | 블랙 폴로 셔츠/폴로 셔츠/블랙 폴로 · category:shirts color:red,white,black gender:men (+성별 남성(사진 추정 100%)) · 브랜드 추정 프레드 페르디 | 프레드 페르디 셔츠 / 남자 레드 블랙 폴로 셔츠 / 블랙 폴로 셔츠 / 폴로셔츠 셔츠 | 146 | -/- | -/0.675 | 발견 실패(검색어·출처) |
+| o02_fjallraven_greenland_winter_brown | Fjällräven Greenland Winter Jacket (다크 브 | 후드 자켓/단추 자켓/포켓 자켓 · category:jacket,outerwear color:brown gender:men (+성별 남성(사진 추정 100%)) · 브랜드 추정 Fjällräven | Fjällräven 자켓 / 피엘라벤 자켓 / 남자 브라운 후드 자켓 / 후드 자켓 | 106 | 3/34 | 0.7216/0.7568 | —(상위 5개 안) |
+| o03_schott_613_one_star_perfecto_black | Schott NYC 613 One Star Perfecto (블랙 레더) | 블랙 레더 바이크 재킷/블랙 레더 재킷/바이크 재킷 · category:jacket,outerwear color:black material:leather detail:zip gender:men (+성별 남성(사진 추정 97%)) · 브랜드 추정 Penrero | Penrero 지퍼 자켓 / 남자 블랙 레더 바이크 재킷 / 블랙 레더 바이크 재킷 / 남자 지퍼 자켓 | 56 | -/- | -/0.634 | 발견 실패(검색어·출처) |
+| o04_arcteryx_alpha_sv_orange | Arc'teryx Alpha SV Jacket (남성, 오렌지) | 오렌지색 방수 자켓/아크테릭스/방수 자켓 · category:jacket,outerwear color:black detail:zip gender:men (+성별 남성(사진 추정 98%)) · 브랜드 추정 ARC'TERYX | Arc'teryx 지퍼 자켓 / 아크테릭스 지퍼 자켓 / 남자 블랙 오렌지색 방수 자켓 / 오렌지색 방수 자켓 | 106 | -/- | -/0.7376 | 발견 실패(검색어·출처) |
+| o05_lacoste_l1212_polo_mint | Lacoste L.12.12 클래식 피케 폴로 (민트 블루) | 라이트 그린 폴로 셔츠/라이트그린 폴로/라코스테 폴로 · category:shirts color:green · 브랜드 추정 라코스테 | Lacoste 셔츠 / 라코스테 셔츠 / 라이트 그린 폴로 셔츠 / 반팔 셔츠 | 148 | 1/2 | 0.7716/0.7716 | —(상위 5개 안) |
+| o06_carhartt_duck_hooded_jacket_brown | Carhartt 덕 후드 재킷 (Active/Sierra 계열, 칼하트  | 카라트/헤드/shearling · category:jacket,outerwear color:beige detail:zip gender:men (+성별 남성(사진 추정 99%)) · 브랜드 추정 Carhartt | Carhartt 지퍼 자켓 / 칼하트 지퍼 자켓 / 남자 베이지 카라트 / 카라트 | 152 | -/- | -/0.6943 | 발견 실패(검색어·출처) |
+| a01_worth_afternoon_jacket_1895 | House of Worth Afternoon jacket, 1895 (애 | 볼드 럭셔리 재킷/벨벳 재킷/볼륨 소매 · category:jacket color:gray,brown | 그레이 볼드 럭셔리 재킷 / 볼드 럭셔리 재킷 / jacket / ジャケット | 0 | -/- | -/- | 검색 결과 없음 |
+| a02_lucile_dress_1925_pink | House of Lucile Dress, ca. 1925 (1920년대  | 핑크색 무늬 카미즈/핑크 카미즈/무늬 원피스 · gender:women (+성별 여성(사진 추정 99%)) | 여자 핑크색 무늬 카미즈 / 핑크색 무늬 카미즈 / womens / レディース | 0 | -/- | -/- | 검색 결과 없음 |
+| a03_chanel_suit_early1960s_cream | Chanel 스리피스 수트 (1960년대 초, 코코 샤넬) | 크롭 재킷/크림색 재킷/포켓 장식 · category:jacket,outerwear color:red,black silhouette:cropped gender:women (+성별 여성(사진 추정 96%)) | 여자 레드 크롭 재킷 / 크롭 재킷 / 여자 크롭 자켓 / 여자 레드 크롭 자켓 | 155 | 124/101 | 0.3401/0.6901 | 정렬(정답이 5위 밖) |
+| a04_polo_rl_vintage_cycle_racing_jacket | Polo Ralph Lauren 빈티지 사이클 프린트 레이싱 재킷 (19 | 컬러 블록 자켓/폴로 램스/레이싱 자켓 · category:jacket,outerwear color:red,blue detail:zip gender:men (+성별 남성(사진 추정 99%)) · 브랜드 추정 폴로 램스 | 폴로 램스 지퍼 자켓 / 남자 레드 컬러 블록 자켓 / 컬러 블록 자켓 / 남자 지퍼 자켓 | 106 | -/- | -/0.7386 | 발견 실패(검색어·출처) |
+| k01_prospecs_stacks105_black | Pro-Specs (프로스펙스) 스택스 105 (블랙) | 블랙 러버 소재 트렌디한 디자인 신발/블랙 러버 신발/트렌디 신발 · category:footwear color:white,black gender:men (+성별 남성(사진 추정 97%)) | 남자 화이트 블랙 러버 소재 트렌디한 디자인 신발 / 블랙 러버 소재 트렌디한 디자인 신발 / mens shoes / メンズ シューズ | 0 | -/- | -/- | 검색 결과 없음 |
+| k02_prospecs_white_leather_sneaker | Pro-Specs (프로스펙스) 흰색 가죽 코트 스니커즈 (모델명 미상) | 흰색 브랜드 로고 스니커즈/흰색 스니커즈/PRO-SPECS · category:footwear color:white gender:men (+성별 남성(사진 추정 93%)) · 브랜드 추정 PRO-SPECS | Pro-Specs 신발 / 프로스펙스 신발 / 남자 화이트 흰색 브랜드 로고 스니커즈 / 흰색 브랜드 로고 스니커즈 | 91 | 17/2 | 0.5571/0.6647 | 정렬(정답이 5위 밖) |
+| k03_fila_float_maxxi_lime | FILA (휠라) Float Maxxi (네온 라임) — 뒤쪽은 Axil | 노란색 러닝화/FILA 러닝화/FLOAT MAXX · category:footwear color:red,white,black gender:men (+성별 남성(사진 추정 99%)) · 브랜드 추정 FILA | FILA 신발 / 휠라 신발 / 남자 레드 노란색 러닝화 / 노란색 러닝화 | 87 | -/- | -/0.6866 | 발견 실패(검색어·출처) |
+| n01_noh_costume_karaori_cherry | 노(能) 무대 의상 가라오리 — 벚꽃·격자문 (18세기 전반, 일본) | 꽃무늬 케이프식 코트/꽃무늬 코트/일본 전통옷 · category:outerwear color:white,blue,beige | 화이트 꽃무늬 케이프식 코트 / 꽃무늬 케이프식 코트 / jacket / アウター | 0 | -/- | -/- | 검색 결과 없음 |
+| n02_handknit_pastel_striped_pullover | 손뜨개 파스텔 스트라이프 풀오버 (수제) | 무늬 줄무늬 스웨터/무늬 스웨터/줄무늬 · gender:women category:knitwear color:white,blue silhouette:oversized | 여자 화이트 무늬 줄무늬 스웨터 / 무늬 줄무늬 스웨터 / 여자 오버핏 니트 / 여자 화이트 오버핏 니트 | 104 | 2/4 | 0.6846/0.6996 | —(상위 5개 안) |
+| n03_korean_girls_saekdong_jeogori | 여아 색동저고리 (20세기, 한국) | 무늬 조끼/색상 조합/전통 의상 · color:red category:jacket (+제품군 jacket(사진 추정 62%)) | 레드 무늬 조끼 / 무늬 조끼 / jacket / ジャケット | 25 | -/- | -/0.5446 | 유사품 규칙 불일치 |
+| g01_basic_vneck_tee_charcoal | H&M (Commons 분류 기준, 사진에서는 식별 어려움) 기본 브이넥 | V넥 반팔 티셔츠/V넥 티셔츠/회색 반팔 · category:tees color:gray gender:men (+성별 남성(사진 추정 100%)) | 남자 그레이 V넥 반팔 티셔츠 / V넥 반팔 티셔츠 | 61 | 1/2 | 0.7099/0.7099 | —(상위 5개 안) |
+| g02_basic_blue_jeans_mens | 남성 기본 청바지 (미드 워시, 스트레이트~루즈) | 청바지/스트레이트/블루 · gender:men category:trousers color:blue material:cotton,denim | 남자 블루 청바지 / 청바지 | 63 | 1/5 | 0.7356/0.7356 | —(상위 5개 안) |
+| g03_hooded_windbreaker_lightgrey | Lafuma (Commons 분류 기준, 사진에서는 식별 어려움) 후드  | 울트라 베이지/울트라 방수/Lafuma · category:jacket,outerwear color:black,beige detail:zip gender:men (+성별 남성(사진 추정 100%)) · 브랜드 추정 Lafuma | Lafuma 지퍼 자켓 / 라푸마 지퍼 자켓 / 남자 블랙 울트라 베이지 / 울트라 베이지 | 113 | 3/1 | 0.6949/0.7336 | —(상위 5개 안) |
+
+### 실제 발견한 근거 주소(정답 규칙 일치 — 같은 계열 다른 모델·색 포함)
+
+- c01_converse_chuck_allstar_hi_white: [컨버스 척테일러 런스타 레거시 CX 퓨처 컴포트 에그렛 하이탑 A0086](https://web.joongna.com/product/233982764) · [컨버스 척테일러 올스타 하이 차콜, 반스 올드스쿨 캔버스 신발 230](https://web.joongna.com/product/233607458)
+- c02_drmartens_1460_8eye_brown: (상위 8개 밖)
+- c03_nike_airforce1_low_white: [290 나이키 에어포스1 밍크 운동화 스니커즈 신발 290사이즈 완전좋아](https://web.joongna.com/product/233297741) · [나이키 에어포스 1 07 카카오와우 280사이즈 새상태 Nike 스니커즈](https://web.joongna.com/product/227861472)
+- c04_adidas_samba_og_white: [[240] 아디다스 삼바 OG 화이트클라우드 신발 차정원 운동화 스니커즈](https://web.joongna.com/product/175160729) · [[240] 아디다스 삼바 OG 화이트클라우드 신발 운동화 스니커즈](https://web.joongna.com/product/229730555)
+- c05_newbalance_574_grey: [뉴발란스 New Balance 574 그레이 회색 스니커즈 신발 남성28](https://web.joongna.com/product/233364038) · [뉴발란스 574 U574WR2 265](https://web.joongna.com/product/229605340)
+- c07_levis_501_lightwash: [리바이스 501 청바지 버튼 워싱 데님 사이즈30 R8068](https://web.joongna.com/product/234234863)
+- o02_fjallraven_greenland_winter_brown: [피엘라벤 그린란드 50주년 기념 자켓](https://web.joongna.com/product/233495893)
+- o05_lacoste_l1212_polo_mint: [100 LACOSTE 라코스테 반팔 카라티 피케 셔츠 블루](https://web.joongna.com/product/231562475) · [남성 라코스테 5 사이즈 다크그린 PK 카라 폴로 반팔 셔츠 Lacost](https://web.joongna.com/product/233350696)
+- a03_chanel_suit_early1960s_cream: (상위 8개 밖)
+- k02_prospecs_white_leather_sneaker: (상위 8개 밖)
+- n02_handknit_pastel_striped_pullover: [줄무늬 단가라 니트 스웨터 카키 분홍 아이보리](https://web.joongna.com/product/226055806) · [여성 스컬프터 스트라이프 오버핏 코튼 니트 F](https://web.joongna.com/product/224626301)
+- g01_basic_vneck_tee_charcoal: [망사 V넥 반팔 티셔츠 블랙](https://web.joongna.com/product/214370377) · [에르메네질도 제냐 벨벳 V넥 반팔 티셔츠 네이비](https://web.joongna.com/product/223642285)
+- g02_basic_blue_jeans_mens: [버커루 남성청바지34-36 빈티지 워싱진](https://web.joongna.com/product/232968239) · [남성의류 트루릴리젼 데님 청바지 2장--- 개당가격이에요](https://web.joongna.com/product/234025760)
+- g03_hooded_windbreaker_lightgrey: [(M)컬럼비아남자방수지퍼블랙후드바람막이자켓](https://web.joongna.com/product/224707185)
+
+### 여전히 못 찾은 이유
+
+| 사례 | 못 찾은 이유 | 다음 |
+|---|---|---|
+| 버켄스탁 아리조나 · 쇼트 613 · 아크테릭스 알파 SV · 프로스펙스 스택스 · 휠라 플로트 맥시 | 중고나라 목록 제목에 모델명이 거의 없거나 매물이 적다. 쇼트는 브랜드 추정이 "Penrero"로 틀림 | 검색 API(카카오) 키로 쇼핑몰 상품 페이지까지 넓히기 · 브랜드 추정 별칭 보강 |
+| 칼하트 덕 후드 재킷 | 3차에서 사진 분석이 옷 이름을 "카라트·헤드"로 잘못 읽음(1차에는 상위 5개 안) | 사진 분석 결과가 이상하면 제로샷 제품군으로 검색어를 다시 만들기 |
+| 프레드페리 · 라코스테 | "폴로 셔츠" 검색에 랄프로렌 "폴로" 매물이 섞임. 프레드페리는 브랜드 추정 철자 오류("프레드 페르디") | "피케·카라티"로 바꾸기, 철자 오류 브랜드 맞추기(평가 후 과제 — 측정하지 않음) |
+| 아카이브(Worth 1895 · Lucile 1925 · 샤넬 1960년대 · 폴로 사이클 재킷) | 시장에 같은 상품이 거의 없고, 사진 분석이 "카미즈"처럼 드문 이름을 써 검색 결과 0건(2건) | 결과가 0건이면 제품군만으로 넓혀 다시 찾기 |
+| 색동저고리 · 노(能) 의상 | 한복·전통복 어휘가 없어 "무늬 조끼·꽃무늬 코트"로 찾음 | 전통복 어휘 추가 |
+| 리바이스 501(3차) | 사진 분석이 이름을 비워 "슬림 바지"로만 찾음(정답 7위) | 제로샷 제품군(청바지)·모델 번호 읽기 보강 |
 
 ## 9. 남은 것 · 다음 개선
 
-(평가 결과로 채운다)
+1. **검색 경로가 가장 큰 병목** — 실제로 돈 경로는 중고나라 1곳(그것도 법무 확인 전이라 로컬 실험 전용)이다. 무료 1순위는 **카카오(다음) 검색 API 키**(하루 3만 건). 키를 받으면 같은 26건으로 다시 잰다. 운영에 중고나라를 쓰려면 약관 제20조 2호 법무 확인이 먼저다.
+2. Shopify Global Catalog는 키가 없지만 **에이전트 프로필을 공개 주소에 올려야** 해서(외부 게시) 사용자 결정 대기. 해외 브랜드·아카이브용.
+3. 사진으로 찾기(같은 이미지가 실린 페이지)는 유료 경로(Google Vision Web Detection 월 1,000건 무료 후 .50/1,000건, 결제 계정 필요)만 있다. 사용자 사진을 외부로 보내는 일이라 승인 전에는 하지 않는다.
+4. 사진 분석 품질: 실행마다 다른 답·드문 이름·색 잡음(흰 신발에 "레드")이 검색어를 흔든다. 같은 사진을 두 번 분석해 겹치는 말만 쓰거나, 제로샷 결과로 검색어를 보정한다.
+5. 평가: 새 사례(평가셋 밖)로 다시 재기 · 사람이 대체 추천을 직접 평가 · 정답 규칙을 색·모델까지 보도록 엄격하게.
+6. `query_stats`의 정답 표시(`markCorrect`)를 운영자 검수(공개한 후보)와 연결해 효과 낮은 검색어를 실제로 걸러 내기.
+7. 휴대폰 시험 서버(로컬)는 이 브랜치 코드 + 중고나라 실험 경로 + MODA로 돌고 있다. 의뢰 #2 새 후보(부츠컷 청바지류)는 커브드 절개가 없고 여성 사이즈로 보이는 것이 섞여 공개하지 않았다.
+
+## 부록 · 검색 경로 조사 출처(2026-11-22)
+
+카카오 developers.kakao.com/docs/ko/daum-search/dev-guide · /docs/ko/getting-started/quota · 네이버 guide.ncloud-docs.com/docs/apihub-overview · Brave brave.com/search/api · Tavily tavily.com/pricing, docs.tavily.com · Exa exa.ai/pricing · Shopify shopify.dev/docs/agents/catalog, /global-catalog · Google Vision cloud.google.com/vision/pricing, /docs/detecting-web · eBay developer.ebay.com/api-docs/buy/static/buy-requirements.html · Bing learn.microsoft.com/en-us/lifecycle/announcements/bing-search-api-retirement · 중고나라 web.joongna.com/robots.txt · Grailed grailed.com/about/terms · Awin awin.com/gb/compliance-and-regulations/application-process-and-joining-fee · CJ developers.cj.com/graphql/reference/Product%20Feed
 
 ## 실행 방법
 

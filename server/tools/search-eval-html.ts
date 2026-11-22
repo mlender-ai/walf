@@ -10,7 +10,8 @@ const rows = fs.readFileSync(resultsFile, 'utf8').trim().split('\n').filter(Bool
 const cases = (() => { try { return JSON.parse(fs.readFileSync(path.join(caseDir, 'cases.json'), 'utf8')); } catch { return []; } })();
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const pct = (a: number, b: number) => b ? `${Math.round(a / b * 100)}%` : '-';
-const n = rows.length, withTruth = rows.filter(r => r.truth.market !== 'none' && cases.find((c: any) => c.id === r.id)?.truth?.match_regex);
+const n = rows.length, withTruth = rows.filter(r => r.exact ?? (r.truth.market !== 'none'));
+const simOnly = rows.filter(r => !(r.exact ?? true));
 const sum = {
   executed: rows.filter(r => r.search.executed).length, found: withTruth.filter(r => r.found).length, top5img: withTruth.filter(r => r.top5Image).length, top5txt: withTruth.filter(r => r.top5Text).length,
   brand: rows.filter(r => r.truth.brand).length, brandHit: rows.filter(r => r.brandHit).length, falseConfirm: rows.reduce((a, r) => a + r.falseConfirm, 0),
@@ -37,6 +38,7 @@ figcaption{font-size:11px;line-height:1.3;margin-top:3px}.ok{color:var(--ok);fon
 <tr><td>정답 상품 후보 발견율(시장에 있는 사례)</td><td>${sum.found}/${withTruth.length} (${pct(sum.found, withTruth.length)})</td></tr>
 <tr><td>상위 5개 안 정답 — 사진 유사도 정렬</td><td>${sum.top5img}/${withTruth.length} (${pct(sum.top5img, withTruth.length)})</td></tr>
 <tr><td>상위 5개 안 정답 — 사진 없이(규칙 정렬)</td><td>${sum.top5txt}/${withTruth.length} (${pct(sum.top5txt, withTruth.length)})</td></tr>
+<tr><td>유사품 발견(동일 상품 없음·기본템·시장에 없는 아카이브, 규칙 일치)</td><td>${simOnly.filter(r => r.found).length}/${simOnly.length} · 상위 5개 안 ${simOnly.filter(r => r.top5Image).length}/${simOnly.length}</td></tr>
 <tr><td>브랜드 식별(사진 분석의 로고·라벨 추정)</td><td>${sum.brandHit}/${sum.brand}</td></tr>
 <tr><td>다른 상품 오확정(같은 상품·가능성 높음으로 잘못 판정)</td><td>${sum.falseConfirm}건</td></tr>
 <tr><td>대체 추천 적합(자동 근사: 제품군·성별·아동복) — 디자인만 / 사진만 / 사진+디자인 / 선호+사진</td><td>${modes.map(m => `${Math.round(modeFit[m] * 100)}%`).join(' / ')}</td></tr>

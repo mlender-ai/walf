@@ -14,7 +14,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'walf-e2e-v21-'));
 const PORT = 4500 + Math.floor(Math.random() * 50);
 const B = `http://127.0.0.1:${PORT}`;
 const DB_FILE = path.join(tmp, 'e2e.db');
-const ENV = { ...process.env, WALF_PORT: String(PORT), WALF_DB: DB_FILE, WALF_UPLOADS: path.join(tmp, 'up'), WALF_BACKUPS: path.join(tmp, 'bk'), WALF_ADMIN_PASSWORD: 'e2e-pass-v21',
+// 이 맥의 server/.env(로컬 실험 경로·이미지 모델)가 E2E에 섞이지 않게 비워 둔다
+const ENV = { ...process.env, WALF_EXPERIMENT_SOURCES: '', WALF_BRAIN_URL: '', WALF_PORT: String(PORT), WALF_DB: DB_FILE, WALF_UPLOADS: path.join(tmp, 'up'), WALF_BACKUPS: path.join(tmp, 'bk'), WALF_ADMIN_PASSWORD: 'e2e-pass-v21',
   WALF_QA_TOOLS: '1', WALF_PUSH_DISABLED: '1', WALF_AI_PROVIDER: 'mock', WALF_AI_POLL_MS: '100', ANTHROPIC_API_KEY: '', WALF_SECRET: 'e2e-secret-v21',
   WALF_NAVER_CLIENT_ID: '', WALF_NAVER_CLIENT_SECRET: '', WALF_SEARCH_POLL_MS: '150', WALF_SEARCH_PACE_MS: '0', WALF_WATCH_POLL_MS: '3600000' };
 let srv: ChildProcess, srvLog = '';
@@ -69,7 +70,7 @@ async function submit(note: string, size = 'M', headers = A) {
 
 async function main() {
   start(); await ready();
-  assert.match(srvLog, /판매처 탐색 공식몰 1곳 · 네이버 쇼핑 API 종료\(2026-07-31\) · AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐/);
+  assert.match(srvLog, /판매처 탐색 공식몰 1곳 · 실제 검색 경로 [^\n]+ · 이미지 모델 [^\n]+ · 테스트 판매처 켜짐/);
   ok('서버 시작: 판매처 탐색 = 공식몰 1곳(BADBLOOD) · 네이버 쇼핑 API 종료 · 유료 AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐');
   await api('POST', '/session', { deviceId: A['x-walf-device'], platform: 'ios' }, {});
   await login();

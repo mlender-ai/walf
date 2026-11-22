@@ -161,6 +161,7 @@ function saveIdentify(db: DB, j: Row, r: Row, data: import('./ai.ts').IdentifyRe
       x.season || null, x.code || null, json(x.matched || []), json(x.uncertain || []), mock ? 1 : 0));
     finish(db, j.id, 'done', { summary: data.summary || null, detail: { missing: data.missing, style: data.style || {} }, usage });
     saveRequestStyle(db, r.id, data.style || {}, mock ? 'fixture' : 'ai');
+    if (data.terms?.length) run(db, 'UPDATE requests SET photo_terms=? WHERE id=?', json(data.terms), r.id);
     // 사용자 일지에는 “왈프가 먼저 살펴봤고, 팀이 확인 중”이라는 사실만 남긴다(후보 내용은 검수 전이라 보이지 않는다)
     const parts = [r.photo && '사진', r.product_url && '링크', r.product_name && '상품명'].filter(Boolean) as string[];
     D.log(db, r.id, 'walf', 'ai_identify', '왈프가 먼저 살펴봤어요', data.identities.length

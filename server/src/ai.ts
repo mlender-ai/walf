@@ -13,7 +13,8 @@ export type IdentifyInput = { productName?: string | null; brand?: string | null
 export type Identity = { brand: string; name: string; color: string; category: string; confidence: 'high' | 'medium' | 'low'; reasons: string[]; refs: string[];
   season: string; code: string; matched: string[]; uncertain: string[] };
 /** style: 사진에서 본 소재·실루엣·무드 등(통제 어휘, catalog.ts) — 정확한 상품을 못 찾았을 때 비슷한 옷을 고르는 데 쓴다 */
-export type IdentifyResult = { identities: Identity[]; missing: string[]; summary: string; style: Style };
+/** terms: 사진 분석이 읽은 옷 이름(“하이탑 스니커즈”·“가죽 라이더 재킷”) — 통제 어휘에 없는 종류를 검색어에 쓰려고(무료 엔진만 채운다) */
+export type IdentifyResult = { identities: Identity[]; missing: string[]; summary: string; style: Style; terms?: string[] };
 export type SearchInput = { brand: string; name: string; color?: string | null; size?: string | null; maxPrice?: number | null; usedOk: boolean; day: number; sellers: Seller[]; known: string[] };
 export type Listing = { seller: string; url: string; title: string; price: number | null; size: string; condition: 'new' | 'used' | 'unknown'; match: 'same_likely' | 'similar' | 'unknown'; stock: 'listed' | 'sold_out' | 'unknown'; reason: string; urlSeen: boolean | null };
 export type SellerNote = { seller: string; searched: boolean; note: string };

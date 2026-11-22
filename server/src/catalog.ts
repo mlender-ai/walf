@@ -257,3 +257,35 @@ export function requestStyle(db: DB, requestId: number): Style {
 export const KIDS_RE = /유아동|유아|아동|키즈|주니어|아기|베이비|(?<![a-z])kids?(?![a-z])|(?<![a-z])junior(?![a-z])|\(\s*\d{1,2}\s*[-~]\s*\d{1,2}\s*(세|T)\s*\)|(?<![\d.])\d{1,2}\s?T(?![a-z])|(?<!\d)\d{1,2}호(?=\s*\()/i;
 export const isKids = (title: string | null | undefined) => KIDS_RE.test(String(title || ''));
 export const styleWords = (s: Style) => TAG_KINDS.flatMap(k => (s[k] || []).map(styleLabel));
+
+// ── 브랜드 별칭(사진 분석의 브랜드 추정 정규화) ─────────────────────────
+// 사진 분석이 브랜드를 다른 문자(耐克)·철자 오류(아르테리кс·프레드 페르레이)로 내도 같은 브랜드로 맞춘다. 확정 근거가 아니라 검색 단서용이다.
+type BrandAlias = { name: string; ko: string[]; aliases: string[] };
+let brandAliasSeed: BrandAlias[] | null = null;
+export function brandAliasList(file = process.env.WALF_BRAND_ALIASES || path.resolve(import.meta.dirname, '..', 'seed', 'brand-aliases.json')): BrandAlias[] {
+  if (!brandAliasSeed) { try { brandAliasSeed = JSON.parse(fs.readFileSync(file, 'utf8')).brands || []; } catch { brandAliasSeed = []; } }
+  return brandAliasSeed!;
+}
+const lev = (a: string, b: string) => {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+};
+/** 브랜드 추정 → 사전의 브랜드(정확히 같거나, 4글자 이상이면 글자 차이가 길이의 4분의 1 이하). 없으면 null */
+export function normalizeBrand(guess: string | null | undefined): BrandAlias | null {
+  const k = brandKey(guess);
+  if (!k) return null;
+  const list = brandAliasList();
+  const forms = (b: BrandAlias) => [b.name, ...b.ko, ...b.aliases].map(brandKey).filter(Boolean);
+  const exact = list.find(b => forms(b).includes(k));
+  if (exact) return exact;
+  if (k.length < 4) return null;
+  let best: { b: BrandAlias; d: number } | null = null;
+  for (const b of list) for (const f of forms(b)) {
+    if (f.length < 4) continue;
+    const d = lev(k, f);
+    if (d <= Math.floor(Math.max(k.length, f.length) / 4) && (!best || d < best.d)) best = { b, d };
+  }
+  return best?.b ?? null;
+}

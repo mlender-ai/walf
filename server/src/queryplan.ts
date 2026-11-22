@@ -36,16 +36,18 @@ export function featureWords(style: Style, lang: keyof typeof L) {
   const cat = style.category?.[0], mat = style.material || [];
   const jeans = cat === 'trousers' && mat.includes('denim');
   const noun = jeans ? ({ ko: '청바지', en: 'jeans', ja: 'ジーンズ' } as const)[lang] : word(cat, lang);
+  // 신발·가방에는 핏(슬림·오버핏)이 의미가 없다 — 사진 분석이 습관처럼 붙인 핏은 검색어에 넣지 않는다
+  const fitless = cat === 'footwear' || cat === 'bags';
   return {
     gender: word(style.gender?.[0], lang), noun,
-    sil: (style.silhouette || []).map(v => word(v, lang)).filter(Boolean),
+    sil: fitless ? [] : (style.silhouette || []).map(v => word(v, lang)).filter(Boolean),
     det: (style.detail || []).map(v => word(v, lang)).filter(Boolean),
     mat: jeans ? [] : mat.map(v => word(v, lang)).filter(Boolean),
     colors: (style.color || []).map(v => word(v, lang)).filter(Boolean).slice(0, 2),
   };
 }
 
-export type PlanTarget = { brand: string | null; name: string; modelCode: string | null; aliases: string[] };
+export type PlanTarget = { brand: string | null; name: string; modelCode: string | null; aliases: string[]; terms?: string[] };
 /** 단계별 검색어. 같은 말(띄어쓰기·대소문자 무시)은 한 번만 */
 export function planQueries(t: PlanTarget, style: Style | null | undefined, opts: { maxFeature?: number } = {}): PlannedQuery[] {
   const out: PlannedQuery[] = [];
@@ -60,15 +62,24 @@ export function planQueries(t: PlanTarget, style: Style | null | undefined, opts
   for (const a of t.aliases.slice(0, 2)) if (t.name) add([a, t.name], 'alias_name', 'any');
   const s = style || {};
   const ko = featureWords(s, 'ko'), en = featureWords(s, 'en'), ja = featureWords(s, 'ja');
-  if (!ko.noun && !ko.sil.length) return out;   // 무엇을 찾는지(제품군·실루엣) 모르면 특징 검색을 만들지 않는다
+  const terms = (t.terms || []).filter(Boolean);
+  if (!ko.noun && !ko.sil.length && !terms.length) return out;   // 무엇을 찾는지(제품군·실루엣·옷 이름) 모르면 특징 검색을 만들지 않는다
   // 3 브랜드 + 디자인 특징(브랜드를 알거나 후보만 있을 때)
   for (const b of [t.brand, ...t.aliases.slice(0, 1)].filter(Boolean)) add([b, ko.sil[0] || ko.det[0], ko.noun], 'brand_feature', 'ko');
   // 4 브랜드를 뺀 특징 — 가장 또렷한 것부터, 점점 넓게(넓은 검색어는 사진 유사도가 정밀도를 맡는다)
-  const max = opts.maxFeature ?? 4, start = out.length;
+  const max = opts.maxFeature ?? 5, start = out.length;
+  // 사진 분석이 읽은 옷 이름(통제 어휘에 없는 종류: 하이탑 스니커즈·라이더 재킷)이 가장 구체적이다 — 색을 붙인 것과 이름만
+  for (const term of terms.slice(0, 1)) { add([ko.gender, ko.colors.find(c => !term.includes(c)), term], 'feature', 'ko'); add([term], 'feature', 'ko'); }
+  // 옷 이름 중 모델 번호가 보이는 말(“574”)은 브랜드 단서와 붙여 찾는다(브랜드 단서가 있을 때만)
+  const model = terms.find(x => /\d{2,}/.test(x));
+  if (model && t.brand) out.splice(start, 0, { text: [t.aliases[0] || t.brand, model].join(' '), kind: 'brand_feature', lang: 'ko' });
   const core = ko.sil[0] || ko.det[0] || ko.mat[0] || '';
-  add([ko.gender, ko.det[0] !== core ? ko.det[0] : '', core, ko.noun], 'feature', 'ko');
-  for (const c of ko.colors) add([ko.gender, c, core, ko.noun], 'feature', 'ko');
-  add([core, ko.noun], 'feature', 'ko');
+  // 특징 낱말 없이 제품군만 남는 검색어(“신발”·“화이트 신발”)는 옷 이름이 있으면 만들지 않는다 — 너무 넓다
+  if (core || !terms.length) {
+    add([ko.gender, ko.det[0] !== core ? ko.det[0] : '', core, ko.noun], 'feature', 'ko');
+    for (const c of ko.colors) add([ko.gender, c, core, ko.noun], 'feature', 'ko');
+    add([core, ko.noun], 'feature', 'ko');
+  }
   if (ko.det[0] && ko.det[0] !== core) add([ko.det[0], ko.noun], 'feature', 'ko');
   out.splice(start + max);
   // 5 영어·일본어(해외 판매처·일본 중고 플랫폼)

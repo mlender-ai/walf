@@ -404,6 +404,7 @@ export function openDb(file: string, opts: OpenOpts = {}): DB {
   add('offers', 'target_rank', 'INTEGER');
   // Search Recovery: 사진 유사도(로컬 이미지 모델) — 같은 상품 판정 근거가 아니라 후보 정렬·비교 근거
   add('offers', 'image_score', 'REAL');
+  add('requests', 'photo_terms', 'TEXT');   // 사진 분석이 읽은 옷 이름(JSON 배열) — 특징 검색어
   add('offers', 'image_model', 'TEXT');
   // Gate D — 사용자 선호(무엇이 중요한지)·추천 피드백·운영자 검수 기록(추천 엔진 평가 데이터)
   add('requests', 'priority', 'TEXT');   // silhouette | material_detail | brand_archive | vibe | NULL(고르지 않음)

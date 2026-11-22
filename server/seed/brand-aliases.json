@@ -1,0 +1,531 @@
+{
+ "note": "브랜드 별칭 사전 — 사진 분석의 브랜드 추정이 다른 문자(耐克·アークテリクス)나 철자 오류로 나와도 같은 브랜드로 맞춘다. 검색 단서·별칭 검색어에만 쓰고, 이 사전만으로 브랜드를 확정하지 않는다. 널리 쓰이는 브랜드 위주로 넣었고 2026-11-22 Search Recovery 평가셋의 브랜드도 포함돼 있다(docs/WALF_SEARCH_RECOVERY.md에 밝힘).",
+ "brands": [
+  {
+   "name": "Nike",
+   "ko": [
+    "나이키"
+   ],
+   "aliases": [
+    "耐克",
+    "ナイキ"
+   ]
+  },
+  {
+   "name": "adidas",
+   "ko": [
+    "아디다스"
+   ],
+   "aliases": [
+    "阿迪达斯",
+    "アディダス"
+   ]
+  },
+  {
+   "name": "New Balance",
+   "ko": [
+    "뉴발란스",
+    "뉴발"
+   ],
+   "aliases": [
+    "新百伦",
+    "ニューバランス"
+   ]
+  },
+  {
+   "name": "Converse",
+   "ko": [
+    "컨버스"
+   ],
+   "aliases": [
+    "匡威",
+    "コンバース"
+   ]
+  },
+  {
+   "name": "Vans",
+   "ko": [
+    "반스"
+   ],
+   "aliases": [
+    "ヴァンズ"
+   ]
+  },
+  {
+   "name": "Puma",
+   "ko": [
+    "푸마"
+   ],
+   "aliases": [
+    "彪马",
+    "プーマ"
+   ]
+  },
+  {
+   "name": "Reebok",
+   "ko": [
+    "리복"
+   ],
+   "aliases": [
+    "锐步",
+    "リーボック"
+   ]
+  },
+  {
+   "name": "ASICS",
+   "ko": [
+    "아식스"
+   ],
+   "aliases": [
+    "亚瑟士",
+    "アシックス"
+   ]
+  },
+  {
+   "name": "Salomon",
+   "ko": [
+    "살로몬"
+   ],
+   "aliases": [
+    "サロモン"
+   ]
+  },
+  {
+   "name": "FILA",
+   "ko": [
+    "휠라"
+   ],
+   "aliases": [
+    "斐乐",
+    "フィラ"
+   ]
+  },
+  {
+   "name": "Pro-Specs",
+   "ko": [
+    "프로스펙스"
+   ],
+   "aliases": [
+    "prospecs"
+   ]
+  },
+  {
+   "name": "Dr. Martens",
+   "ko": [
+    "닥터마틴",
+    "닥마"
+   ],
+   "aliases": [
+    "马汀博士",
+    "ドクターマーチン",
+    "dr martens"
+   ]
+  },
+  {
+   "name": "Birkenstock",
+   "ko": [
+    "버켄스탁"
+   ],
+   "aliases": [
+    "勃肯",
+    "ビルケンシュトック"
+   ]
+  },
+  {
+   "name": "Crocs",
+   "ko": [
+    "크록스"
+   ],
+   "aliases": [
+    "卡骆驰",
+    "クロックス"
+   ]
+  },
+  {
+   "name": "Levi's",
+   "ko": [
+    "리바이스"
+   ],
+   "aliases": [
+    "李维斯",
+    "リーバイス",
+    "levis"
+   ]
+  },
+  {
+   "name": "Lee",
+   "ko": [
+    "리"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Wrangler",
+   "ko": [
+    "랭글러"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Gap",
+   "ko": [
+    "갭"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Uniqlo",
+   "ko": [
+    "유니클로"
+   ],
+   "aliases": [
+    "优衣库",
+    "ユニクロ"
+   ]
+  },
+  {
+   "name": "Zara",
+   "ko": [
+    "자라"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "H&M",
+   "ko": [
+    "에이치앤엠"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Fred Perry",
+   "ko": [
+    "프레드페리",
+    "프레드 페리"
+   ],
+   "aliases": [
+    "フレッドペリー"
+   ]
+  },
+  {
+   "name": "Lacoste",
+   "ko": [
+    "라코스테"
+   ],
+   "aliases": [
+    "鳄鱼",
+    "ラコステ"
+   ]
+  },
+  {
+   "name": "Polo Ralph Lauren",
+   "ko": [
+    "폴로 랄프로렌",
+    "랄프로렌",
+    "폴로"
+   ],
+   "aliases": [
+    "拉夫劳伦",
+    "ラルフローレン"
+   ]
+  },
+  {
+   "name": "Tommy Hilfiger",
+   "ko": [
+    "타미힐피거",
+    "타미"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "The North Face",
+   "ko": [
+    "노스페이스"
+   ],
+   "aliases": [
+    "北面",
+    "ザ・ノース・フェイス"
+   ]
+  },
+  {
+   "name": "Patagonia",
+   "ko": [
+    "파타고니아"
+   ],
+   "aliases": [
+    "巴塔哥尼亚",
+    "パタゴニア"
+   ]
+  },
+  {
+   "name": "Arc'teryx",
+   "ko": [
+    "아크테릭스"
+   ],
+   "aliases": [
+    "始祖鸟",
+    "アークテリクス",
+    "arcteryx"
+   ]
+  },
+  {
+   "name": "Fjällräven",
+   "ko": [
+    "피엘라벤"
+   ],
+   "aliases": [
+    "fjallraven",
+    "フェールラーベン"
+   ]
+  },
+  {
+   "name": "Columbia",
+   "ko": [
+    "컬럼비아"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Carhartt",
+   "ko": [
+    "칼하트"
+   ],
+   "aliases": [
+    "卡哈特",
+    "カーハート"
+   ]
+  },
+  {
+   "name": "Dickies",
+   "ko": [
+    "디키즈"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Schott",
+   "ko": [
+    "쇼트"
+   ],
+   "aliases": [
+    "ショット",
+    "schott nyc"
+   ]
+  },
+  {
+   "name": "Barbour",
+   "ko": [
+    "바버"
+   ],
+   "aliases": [
+    "バブアー"
+   ]
+  },
+  {
+   "name": "Burberry",
+   "ko": [
+    "버버리"
+   ],
+   "aliases": [
+    "博柏利",
+    "バーバリー"
+   ]
+  },
+  {
+   "name": "Lafuma",
+   "ko": [
+    "라푸마"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Champion",
+   "ko": [
+    "챔피온"
+   ],
+   "aliases": [
+    "チャンピオン"
+   ]
+  },
+  {
+   "name": "Stussy",
+   "ko": [
+    "스투시"
+   ],
+   "aliases": [
+    "ステューシー"
+   ]
+  },
+  {
+   "name": "Supreme",
+   "ko": [
+    "슈프림"
+   ],
+   "aliases": [
+    "シュプリーム"
+   ]
+  },
+  {
+   "name": "Stone Island",
+   "ko": [
+    "스톤아일랜드"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "C.P. Company",
+   "ko": [
+    "씨피컴퍼니"
+   ],
+   "aliases": [
+    "cp company"
+   ]
+  },
+  {
+   "name": "Ami",
+   "ko": [
+    "아미"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Maison Kitsune",
+   "ko": [
+    "메종키츠네"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Acne Studios",
+   "ko": [
+    "아크네 스튜디오",
+    "아크네"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Our Legacy",
+   "ko": [
+    "아워레가시"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Comme des Garcons",
+   "ko": [
+    "꼼데가르송",
+    "꼼데"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Issey Miyake",
+   "ko": [
+    "이세이미야케"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Chanel",
+   "ko": [
+    "샤넬"
+   ],
+   "aliases": [
+    "香奈儿",
+    "シャネル"
+   ]
+  },
+  {
+   "name": "Gucci",
+   "ko": [
+    "구찌"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Prada",
+   "ko": [
+    "프라다"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Louis Vuitton",
+   "ko": [
+    "루이비통"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Balenciaga",
+   "ko": [
+    "발렌시아가"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Moncler",
+   "ko": [
+    "몽클레르",
+    "몽클레어"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Canada Goose",
+   "ko": [
+    "캐나다구스"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "MLB",
+   "ko": [
+    "엠엘비"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Musinsa Standard",
+   "ko": [
+    "무신사 스탠다드"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Beanpole",
+   "ko": [
+    "빈폴"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Kolon Sport",
+   "ko": [
+    "코오롱스포츠"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "Covernat",
+   "ko": [
+    "커버낫"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "thisisneverthat",
+   "ko": [
+    "디스이즈네버댓"
+   ],
+   "aliases": []
+  },
+  {
+   "name": "BADBLOOD",
+   "ko": [
+    "배드블러드"
+   ],
+   "aliases": []
+  }
+ ]
+}

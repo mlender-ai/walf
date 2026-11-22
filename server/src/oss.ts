@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { type AiProvider, type IdentifyInput, type SearchInput, AiError, cleanIdentify, cleanSearch, urlKey } from './ai.ts';
-import { styleFromText, type Style } from './catalog.ts';
+import { normalizeBrand, styleFromText, type Style } from './catalog.ts';
 import type { SimilarProductProvider } from './curation.ts';
 
 export type OssOptions = { python: string; script: string; logDir: string; timeoutMs: number; vlm: string };
@@ -61,11 +61,22 @@ const featureText = (f: any) => [f?.garment, f?.category, ...(f?.colors || []), 
 export function ossIdentifyData(j: any, note?: string | null) {
   const data = cleanIdentify(j);
   const style = Object.keys(data.style).length ? data.style : styleFromText(`${featureText(j.features)} ${note || ''}`);
-  const guess = String(j?.features?.brand_guess || '').trim();
-  if (!data.identities.length && guess && guess.length <= 40 && !/모름|없음|unknown|none|n\/a/i.test(guess))
+  const raw = String(j?.features?.brand_guess || '').trim();
+  // 다른 문자·철자 오류로 나온 브랜드 추정은 별칭 사전으로 맞춘다(耐克 → Nike). 사전에 없으면 추정 그대로(작은 브랜드일 수 있다)
+  const guess = raw && !/모름|없음|unknown|none|n\/a/i.test(raw) ? (normalizeBrand(raw)?.name || raw) : '';
+  if (!data.identities.length && guess && guess.length <= 40)
     data.identities = [{ brand: guess, name: String(j.features?.garment || '의류').slice(0, 60), color: (j.features?.colors || [])[0] || '', category: '', confidence: 'low', reasons: ['사진에서 읽은 로고·라벨로 짐작한 브랜드(추정)'],
       refs: [], season: '', code: '', matched: [], uncertain: ['사진 분석만으로 짐작했어요 — 검색 단서로만 쓰고 식별 결과로 보여 주지 않아요'] }];
-  return { ...data, style };
+  return { ...data, style, terms: photoTerms(j?.features) };
+}
+/** 사진 분석의 옷 이름·키워드 → 검색에 쓸 짧은 말(사람·위치 말은 뺀다: “왼쪽사람의 빨간 체크 셔츠” → “빨간 체크 셔츠”) */
+export function photoTerms(f: any): string[] {
+  // 문장형 답(“사진에 상의가 보이지 않습니다”)·한글 아닌 낱말(“T恤”)은 검색어가 아니다
+  const sentence = (s: string) => /보이지|않습니다|않음|없습니다|없음|사진|설명|제공/.test(s);
+  const clean = (s: unknown) => String(s || '').replace(/[()[\]{}"'·,]/g, ' ').split(/\s+/)
+    .filter(w => w && /^[\p{Script=Hangul}A-Za-z0-9.-]+$/u.test(w) && !/사람|왼쪽|오른쪽|가운데|앞쪽|뒤쪽|착용|모델|추정|모름|^(의|있는|입은|가|이)$/.test(w)).join(' ').trim();
+  const out = [f?.garment, ...(Array.isArray(f?.keywords_ko) ? f.keywords_ko : [])].filter(s => !sentence(String(s || ''))).map(clean).filter(s => s.length >= 2 && s.length <= 20);
+  return [...new Set(out)].slice(0, 3);
 }
 export function ossProvider(o: OssOptions): AiProvider {
   const usage = (j: any) => ({ model: `oss:${o.vlm}`, inputTokens: 0, outputTokens: 0, searches: Array.isArray(j?.metrics?.queries) ? j.metrics.queries.length : 0 });

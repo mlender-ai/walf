@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { type DB } from './db.ts';
 import { tierOf } from './find.ts';
-import { brandKey, colorsIn, conditionOf, isKids, normSize, requestStyle, sameColor, styleFromText, styleWords, type Style } from './catalog.ts';
+import { brandKey, colorsIn, conditionOf, isKids, normalizeBrand, normSize, requestStyle, sameColor, styleFromText, styleWords, type Style } from './catalog.ts';
 import { urlKey, SourceError, type Snapshot } from './sources.ts';
 import { codesIn, compact, compareProduct, nameTokens, type Check, type Verdict } from './sameproduct.ts';
 import { cleanOffer, itemPrice, offersOf, RULES_RECOMMENDER, saveOffers, totalPrice, type ProductOffer } from './offers.ts';
@@ -29,8 +29,8 @@ export type SearchTarget = { brand: string | null; name: string; modelCode: stri
   basis: Basis; ref: string; aliases: string[]; isMock: boolean;
   /** 확정된 식별(사용자가 “이 옷이 맞아요” · 운영자 MATCH 공개) — 확정이면 이 후보 하나만 찾는다 */
   certain?: boolean;
-  /** 사진에서 읽은 디자인(검색어 특징 단계에 쓴다) */
-  style?: Style | null };
+  /** 사진에서 읽은 디자인(검색어 특징 단계에 쓴다) · 사진 분석이 읽은 옷 이름 */
+  style?: Style | null; terms?: string[] };
 export type Want = { size: string | null; color: string | null; usedOk: boolean; maxPrice: number | null };
 export const BASIS_LABEL: Record<Basis, string> = { ai_draft: 'AI 식별 제안(검수 전)', operator_published: '왈프 팀이 공개한 식별 결과', user_confirmed: '사용자가 “이 옷이 맞아요”로 고른 결과', user_input: '사용자가 적은 브랜드·상품명(확인 전)', ai_clue: 'AI가 낮은 신뢰도로 짐작한 브랜드(내부 검색 단서 — 공개하지 않음)', style_only: '상품은 식별하지 못함 — 사진에서 읽은 디자인만', watch: '기다려줘에 등록한 상품' };
 
@@ -50,7 +50,8 @@ export function targetsOf(db: DB, requestId: number, malls: { brand: string; ali
   const aliasesOf = (brand: string | null) => {
     const b = one(db, 'SELECT aliases FROM brands WHERE key=?', brandKey(brand));
     const m = mallFor(malls as any, brand);
-    return [...new Set([...parse(b?.aliases ?? null, []), ...(m?.aliases || [])].filter((a: string) => a && compact(a) !== compact(brand)))] as string[];
+    const n = normalizeBrand(brand);   // 별칭 사전(한글 이름 먼저 — 국내 매물 제목은 한글 브랜드명이 많다)
+    return [...new Set([...parse(b?.aliases ?? null, []), ...(m?.aliases || []), ...(n ? [...n.ko, n.name] : [])].filter((a: string) => a && compact(a) !== compact(brand)))] as string[];
   };
   const out: SearchTarget[] = [];
   for (const x of all(db, `SELECT * FROM product_identities WHERE request_id=? AND status='confirmed' AND tier<>'discover' ORDER BY id DESC`, requestId))
@@ -77,7 +78,7 @@ export function targetsOf(db: DB, requestId: number, malls: { brand: string; ali
   // 같은 상품을 여러 번 담지 않는다(앞의 근거가 우선)
   const seen = new Set<string>();
   return out.filter(t => { const k = compact(`${t.brand}|${t.name}|${t.modelCode}`) || t.ref; if (seen.has(k)) return false; seen.add(k); return true; })
-    .map(t => ({ ...t, style: hasStyle ? style : null }));
+    .map(t => ({ ...t, style: hasStyle ? style : null, terms: parse(r.photo_terms ?? null, []) }));
 }
 /**
  * 이번 탐색에서 찾아볼 식별 후보 — 확정된 식별이 있으면 그것 하나. 확정 전(AI 제안·운영자 LIKELY)이면 첫 후보가 틀렸을 수 있으니 앞에서부터 많아야 max개를 함께 찾는다.

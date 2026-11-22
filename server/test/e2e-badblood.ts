@@ -10,7 +10,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'walf-e2e-'));
 const PORT = 4390 + Math.floor(Math.random() * 50);
 const B = `http://127.0.0.1:${PORT}`;
-const srv = spawn(process.execPath, ['src/index.ts'], { cwd: root, env: { ...process.env, WALF_PORT: String(PORT), WALF_DB: path.join(tmp, 'e2e.db'), WALF_UPLOADS: path.join(tmp, 'up'), WALF_ADMIN_PASSWORD: 'e2e-pass', WALF_QA_TOOLS: '1', WALF_PUSH_DISABLED: '1', WALF_TICK_MS: '600000', WALF_AI_PROVIDER: 'mock', WALF_AI_POLL_MS: '100' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn(process.execPath, ['src/index.ts'], { cwd: root, env: { ...process.env, WALF_EXPERIMENT_SOURCES: '', WALF_BRAIN_URL: '', WALF_PORT: String(PORT), WALF_DB: path.join(tmp, 'e2e.db'), WALF_UPLOADS: path.join(tmp, 'up'), WALF_ADMIN_PASSWORD: 'e2e-pass', WALF_QA_TOOLS: '1', WALF_PUSH_DISABLED: '1', WALF_TICK_MS: '600000', WALF_AI_PROVIDER: 'mock', WALF_AI_POLL_MS: '100' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvLog = ''; srv.stdout.on('data', d => srvLog += d); srv.stderr.on('data', d => srvLog += d);
 
 const steps: string[] = [];
