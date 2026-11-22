@@ -79,9 +79,10 @@ test('[2] 검색 API는 키가 없으면 열지 않고 이유를 남긴다 · �
   const c = ctx({ env: { WALF_TAVILY_KEY: 't' }, fetcher: fakeFetch({ 'https://api.tavily.com/search': { type: 'application/json', body: JSON.stringify({ results: [
     { url: 'https://boseshop.kr/product/curved-bootcut/55/', title: '커브드 부츠컷', content: '' },
     { url: 'https://www.musinsa.com/products/123', title: '무신사', content: '' },
-    { url: 'https://boseshop.kr/product/list.html?cate_no=1', title: '목록', content: '' }] }) } }) });
+    { url: 'https://boseshop.kr/product/list.html?cate_no=1', title: '목록', content: '' },
+    { url: 'https://jirum-alarm.com/products/30974472', title: '딜 알림', content: '' }] }) } }) });
   const hits = await tavily.search({ text: '커브드 부츠컷', kind: 'feature' }, { brand: null, name: '', modelCode: null }, c);
-  assert.deepEqual(hits.map(h => h.seller), ['boseshop.kr'], '무신사(제휴 필요)·목록 페이지는 후보로 남기지 않는다');
+  assert.deepEqual(hits.map(h => h.seller), ['boseshop.kr'], '무신사(제휴 필요)·목록 페이지·가격비교/딜 알림 사이트는 후보로 남기지 않는다');
 });
 
 test('[2] Shopify Global Catalog: 에이전트 프로필 없으면 닫힘 · 응답에서 판매자 상품 페이지·판매자·이미지·조건', () => {

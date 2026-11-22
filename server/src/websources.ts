@@ -71,8 +71,11 @@ export function looksLikeProduct(u: string) {
   return /\/product\/[^/]+\/\d+|product_no=\d+|\/products?\/[\w-]{3,}|\/goods\/(view|detail)?[\w/?=-]*\d+|\/item\/\d+|\/p\/\d+|\/(i|itm)\/\d+/i.test(p);
 }
 /** 약관상 자동 수집이 막힌 곳(sources.ts 판매처 판단)은 발견 결과에서도 링크만 남기고 열지 않는다 */
+// 판매처가 아니라 다른 쇼핑몰 상품을 모아 보여 주는 가격비교·딜 알림 사이트(2026-11-22 카카오 실측에서 많이 섞임) — 판매 페이지가 아니므로 후보로 남기지 않는다
+export const AGGREGATOR_HOSTS = ['jirum-alarm.com', 'nstoreprice.co.kr', 'shopscanner.ai', 'danawa.com', 'enuri.com', 'shopping.naver.com', 'search.shopping.naver.com'];
 const prohibited = (u: string) => {
   const h = hostOf(u);
+  if (AGGREGATOR_HOSTS.some(x => h === x || h.endsWith(`.${x}`))) return true;
   return SOURCES.some(s => ['prohibited', 'partner_required'].includes(String(s.access)) && (s.hosts || []).some(x => h === x || h.endsWith(`.${x}`)));
 };
 type IndexSpec = { id: string; label: string; key: string[]; note: string; stages: Stage[]; max: number;
