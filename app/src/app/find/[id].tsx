@@ -66,6 +66,14 @@ export default function FindResult() {
       try { await call('POST', `/requests/${id}/find/reject`, { reason: '' }); await refresh(); load(); } catch (e: any) { Alert.alert('처리하지 못했어요', e.message); } finally { setBusy(false); }
     } },
   ]);
+  // 같은 옷을 확정하지 못한 결과도 여기서 마칠 수 있어야 새 찾아줘를 맡길 수 있다(찾아줘는 한 번에 한 벌)
+  const finish = () => Alert.alert('찾아줘를 여기서 마칠까요?', '결과와 기록은 추적함에 남아요. 마치면 새 옷을 맡길 수 있어요.', [
+    { text: '아니요', style: 'cancel' },
+    { text: '마치기', onPress: async () => {
+      setBusy(true);
+      try { await call('POST', `/requests/${id}/find/close`); await refresh(); router.replace('/'); } catch (e: any) { Alert.alert('처리하지 못했어요', e.message); } finally { setBusy(false); }
+    } },
+  ]);
   const confirmedItem = f ? [f.match, ...f.likely].find(x => x?.confirmed) || null : null;
   const hero = !f ? null : f.state === 'confirmed'
     ? { title: '이 옷으로 저장했어요', sub: confirmedItem?.tier === 'match' ? '왈프 팀이 같은 옷으로 확인한 결과예요.' : '직접 이 옷이 맞다고 골랐어요. 왈프 팀이 같은 상품으로 확정한 건 아니에요.' }
@@ -109,6 +117,7 @@ export default function FindResult() {
               <T size={15} w={800}>같은 옷을 계속 찾아 드릴까요?</T>
               <T size={12.5} lh={18} color={C.gray500} style={{ marginTop: 4 }}>원하는 가격과 사이즈를 정해 두면 왈프 팀이 맡긴 사진으로 계속 찾아요. 같은 옷이 나타나면 알려 드려요.</T>
               <Btn label="계속 찾아 주세요" kind={f.outcome === 'not_found' ? 'pri' : 'sec'} small onPress={keepLooking} style={{ marginTop: 12 }} />
+              <TextBtn label="여기서 마치고 새 옷 맡기기" center onPress={finish} />
             </View>
           ) : null}
 

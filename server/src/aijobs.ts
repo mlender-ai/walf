@@ -2,6 +2,7 @@
 // 왈프 팀은 그 제안을 검수(채택·수정·제외)한다. AI 결과는 검수 전까지 사용자에게 보이지 않는다.
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { SOURCES } from './sources.ts';
 import { type DB, tx } from './db.ts';
 import * as D from './domain.ts';
 import { HttpError } from './domain.ts';
@@ -9,6 +10,7 @@ import { now } from './time.ts';
 import { type AiProvider, type Usage, aiErrorText, urlKey } from './ai.ts';
 import { canStart, estimateUsd, limitsFromEnv, type Limits } from './cost.ts';
 import { saveRequestStyle } from './catalog.ts';
+import { brainFromEnv, photoAttributes } from './brain.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -80,6 +82,15 @@ export function searchKey(i: { brand: string; name: string; color?: string | nul
 const REUSE_MS = 20 * 3600_000;
 
 /** 대기열에서 하나를 꺼내 실행한다. 한 번에 하나씩만. 유료 작업은 시작 전에 예산·의뢰별 상한을 확인한다 */
+/**
+ * 식별 검색(site:)에 써도 되는 판매처: 접근이 허용된 곳만. 약관상 금지·제휴 필요·링크만·확인 전인 곳은 뺀다.
+ * 식별은 "어떤 옷인지"(사진 분석)이고, 실제 판매 페이지 발견은 판매처 탐색(findsearch.ts)이 허용된 경로로 따로 한다.
+ */
+export function identifyAllowed(domain: string | null | undefined) {
+  const h = String(domain || '').replace(/^www\./, '');
+  const src = SOURCES.find(x => x.hosts.some(d => h === d || h.endsWith(`.${d}`)));
+  return !!h && (!src || ['allowed', 'official_api'].includes(src.access));
+}
 export function createAiWorker(db: DB, provider: AiProvider, uploads: string, limits: Limits = limitsFromEnv()) {
   let busy = false, timer: NodeJS.Timeout | null = null;
   async function step(): Promise<number | null> {
@@ -105,7 +116,14 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string, li
       run(db, `UPDATE ai_jobs SET status='running', started_at=?, attempts=attempts+1 WHERE id=?`, now(), j.id);
       try {
         if (j.kind === 'identify') {
-          const out = await provider.identify({ productName: r.product_name, brand: r.brand, productUrl: r.product_url, note: r.note, size: r.size, color: r.color, photoPath: r.photo ? path.join(uploads, r.photo) : null });
+          // 식별 검색(site:)은 약관·제휴로 자동 접근이 막힌 판매처를 뺀다 — 그곳 검색 결과 썸네일로 상품을 짐작하면 틀린 식별이 나온다(2026-11-21 의뢰 #2: 무신사 치노 팬츠로 오식별)
+          const sellers = provider.kind === 'oss' ? (all(db, 'SELECT id, name, domain FROM sellers WHERE active=1 ORDER BY sort') as any[]).filter(x => identifyAllowed(x.domain)) : undefined;
+          const out = await provider.identify({ productName: r.product_name, brand: r.brand, productUrl: r.product_url, note: r.note, size: r.size, color: r.color, photoPath: r.photo ? path.join(uploads, r.photo) : null, sellers });
+          // 로컬 이미지 모델이 있으면 VLM이 놓친 성별·제품군·바지 실루엣을 제로샷으로 채운다(높은 확률만 · 빈 종류만)
+          if (r.photo && out.data?.style) {
+            const extra = await photoAttributes(brainFromEnv(process.env), path.join(uploads, r.photo), out.data.style);
+            for (const [k, v] of Object.entries(extra.add)) if (!(out.data.style as any)[k]?.length) (out.data.style as any)[k] = v;
+          }
           saveIdentify(db, j, r, out.data, out.usage);
         } else {
           const sellers = all(db, 'SELECT id, name, domain FROM sellers WHERE active=1 ORDER BY sort') as any[];
@@ -113,7 +131,8 @@ export function createAiWorker(db: DB, provider: AiProvider, uploads: string, li
           const input = { brand: r.identified_brand || r.brand || '', name: r.identified_name || r.product_name || '', color: r.color, size: r.size, maxPrice: r.max_price, usedOk: !!r.used_ok, day: s!.day, sellers, known };
           const key = searchKey(input);
           run(db, 'UPDATE ai_jobs SET dedupe_key=? WHERE id=?', key, j.id);
-          const prev = one(db, `SELECT * FROM ai_jobs WHERE kind='search' AND status='done' AND dedupe_key=? AND id<>? AND is_mock=? AND finished_at>? ORDER BY id DESC LIMIT 1`, key, j.id, j.is_mock, now() - REUSE_MS);
+          // 재사용은 유료 호출을 아끼려는 것 — 무료 엔진(oss)은 매번 새로 찾는다(엔진을 고친 뒤 옛 결과를 쓰지 않게)
+          const prev = provider.kind === 'oss' ? undefined : one(db, `SELECT * FROM ai_jobs WHERE kind='search' AND status='done' AND dedupe_key=? AND id<>? AND is_mock=? AND finished_at>? ORDER BY id DESC LIMIT 1`, key, j.id, j.is_mock, now() - REUSE_MS);
           if (prev) reuseSearch(db, j, r, s!, sellers, known, prev);
           else {
             const out = await provider.search(input);
@@ -142,6 +161,7 @@ function saveIdentify(db: DB, j: Row, r: Row, data: import('./ai.ts').IdentifyRe
       x.season || null, x.code || null, json(x.matched || []), json(x.uncertain || []), mock ? 1 : 0));
     finish(db, j.id, 'done', { summary: data.summary || null, detail: { missing: data.missing, style: data.style || {} }, usage });
     saveRequestStyle(db, r.id, data.style || {}, mock ? 'fixture' : 'ai');
+    if (data.terms?.length) run(db, 'UPDATE requests SET photo_terms=? WHERE id=?', json(data.terms), r.id);
     // 사용자 일지에는 “왈프가 먼저 살펴봤고, 팀이 확인 중”이라는 사실만 남긴다(후보 내용은 검수 전이라 보이지 않는다)
     const parts = [r.photo && '사진', r.product_url && '링크', r.product_name && '상품명'].filter(Boolean) as string[];
     D.log(db, r.id, 'walf', 'ai_identify', '왈프가 먼저 살펴봤어요', data.identities.length

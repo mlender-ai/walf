@@ -48,7 +48,7 @@ export function limitsFromEnv(env = process.env): Limits {
     defaultExpected: { identify: n(env.WALF_AI_EXPECT_IDENTIFY_USD, 0.3), search: n(env.WALF_AI_EXPECT_SEARCH_USD, 0.5) },
   };
 }
-const PAID = `provider<>'mock' AND is_mock=0`;
+const PAID = `provider NOT IN ('mock','oss') AND is_mock=0`;
 export function spent(db: DB, key = monthKey()) {
   const [a, b] = monthRange(key);
   const r = one(db, `SELECT COALESCE(SUM(est_cost_usd),0) usd, COUNT(*) n, SUM(CASE WHEN est_cost_usd IS NULL AND status IN ('done','failed','interrupted') AND attempts>0 THEN 1 ELSE 0 END) unknown
@@ -68,7 +68,7 @@ export function expectedUsd(db: DB, kind: string, limits: Limits) {
 export type Gate = { ok: true } | { ok: false; code: 'budget' | 'request_cap'; reason: string };
 /** 유료 AI 작업 하나를 시작해도 되는지. 모의 제공자는 늘 통과(비용 0) */
 export function canStart(db: DB, job: Row, limits: Limits, t = now()): Gate {
-  if (job.provider === 'mock' || job.is_mock) return { ok: true };
+  if (job.provider === 'mock' || job.provider === 'oss' || job.is_mock) return { ok: true }; // 무료 엔진은 유료 호출로 세지 않는다
   const calls = one(db, `SELECT COUNT(*) n FROM ai_jobs WHERE request_id=? AND ${PAID} AND attempts>0 AND id<>?`, job.request_id, job.id)!.n;
   if (calls >= limits.perRequestCalls) return { ok: false, code: 'request_cap', reason: `의뢰별 AI 호출 상한(${limits.perRequestCalls}회)에 닿았어요. 운영자가 직접 확인하거나 WALF_AI_MAX_CALLS_PER_REQUEST 를 올려야 해요.` };
   const key = monthKey(t);

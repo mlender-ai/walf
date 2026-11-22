@@ -14,6 +14,7 @@ import { limitsFromEnv } from './cost.ts';
 import { createChecker, policyFromEnv, resettleAutoMatched, tickWatches } from './watch.ts';
 import { pageHosts } from './sources.ts';
 import { createOfferSearcher, ensureDiscoveries, recoverOfferSearches, searchEnvFrom } from './findsearch.ts';
+import { WEB_SOURCES } from './websources.ts';
 import { setMediaSecret, verifyUpload } from './media.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -56,10 +57,11 @@ app.get('/uploads/:name', (req, res) => {
   const name = String(req.params.name);
   if (!verifyUpload(name, req.query.exp, req.query.sig)) return res.status(403).json({ error: 'forbidden', message: '사진을 볼 수 있는 주소가 아니거나 주소가 만료됐어요. 화면을 새로 열어 주세요.' });
   res.set('Cache-Control', 'private, max-age=3600');
-  res.sendFile(path.join(uploads, name), err => { if (err && !res.headersSent) res.status(404).end(); });
+  // root 로 넘긴다: 절대 경로를 통째로 넘기면 경로 중간의 점 폴더(예: .claude)를 숨김 파일로 보고 404를 낸다
+  res.sendFile(name, { root: uploads }, err => { if (err && !res.headersSent) res.status(404).end(); });
 });
 // 찾아줘 판매처 탐색(식별과 별도)·기다려줘 새 매물 탐색: 무료 소스만(공식몰 자체 검색 등), AI 호출 없음. 결과는 검수 전까지 사용자에게 보이지 않는다
-const searchEnv = searchEnvFrom({ mockAllowed: policy.mockAllowed });
+const searchEnv = searchEnvFrom({ mockAllowed: policy.mockAllowed, uploads });
 const searcher = createOfferSearcher(db, searchEnv, [() => ensureDiscoveries(db, searchEnv, policy.checkEveryMs)]);
 app.use('/api', userApi(db, { uploads, pushConfigured: process.env.WALF_PUSH_DISABLED !== '1', policy, search: searchEnv }), apiErrors);
 const checker = createChecker(db, policy);
@@ -93,5 +95,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  AI     ${ai ? ai.label : '꺼짐 — server/.env 에 ANTHROPIC_API_KEY 가 없어 운영자가 직접 확인해요'} · 월 예산 $${limits.monthlyUsd} · 의뢰별 ${limits.perRequestCalls}회`);
   console.log(`  기다려줘 활성 ${policy.maxActive}개/사용자 · ${policy.checkEveryMs / 3600_000}시간마다 확인 · 테스트 가격 소스 ${policy.mockAllowed ? '켜짐' : '꺼짐'}`);
   console.log(`  링크 자동 확인 허용 목록 ${pageHosts().length}곳(seed/page-hosts.json + 공식몰) · 목록 밖 링크는 왈프 팀이 직접 확인`);
-  console.log(`  판매처 탐색 공식몰 ${searchEnv.malls.length}곳 · 네이버 쇼핑 API 종료(2026-07-31) · AI 웹 검색 쓰지 않음 · 테스트 판매처 ${searchEnv.mockAllowed ? '켜짐' : '꺼짐'}`);
+  const web = WEB_SOURCES.filter(x => x.availability({ brand: null, name: '', modelCode: null }, { isMock: false, mockAllowed: false, env: searchEnv.env, malls: [], pace: async () => {} }).usable).map(x => x.label);
+  console.log(`  판매처 탐색 공식몰 ${searchEnv.malls.length}곳 · 실제 검색 경로 ${web.length ? web.join('·') : '없음(검색 API 키 없음 · 중고나라는 로컬 실험 전용)'} · 이미지 모델 ${searchEnv.brain ? searchEnv.brain.url : '연결 안 함'} · 테스트 판매처 ${searchEnv.mockAllowed ? '켜짐' : '꺼짐'}`);
 });

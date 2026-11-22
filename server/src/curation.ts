@@ -1,12 +1,13 @@
 // 대체 상품 큐레이션 — 정확한 상품을 못 찾았거나 기다리는 동안 볼 수 있는 “비슷한 디자인의 실제 판매 상품”.
 // 정렬 기준은 브랜드가 아니라 찾는 옷의 디자인이다: 제품군·실루엣 > 디테일·소재 > 색·무드. 브랜드가 비슷하다는 이유만으로 고르지 않는다.
-// 추천 엔진(패션 브레인, 별도 연구)은 SimilarProductProvider 로 붙인다. 연결 전에는 권리가 확인된 테스트 Fixture(가상의 상품·직접 그린 그림)만 쓴다.
+// 후보는 실제 검색 경로(findsearch.webSimilarProvider)나 테스트 Fixture(가상의 상품·직접 그린 그림)가 내고, 패션 브레인(로컬 이미지 모델, brain.ts)은 사진 유사도로 정렬만 돕는다.
 // 결과는 언제나 “같은 상품 아님”이고, 운영자 검수 전에는 사용자에게 보이지 않는다.
 import fs from 'node:fs';
 import path from 'node:path';
-import { styleLabel, type Style, type StyleKind } from './catalog.ts';
+import { isKids, styleLabel, type Style, type StyleKind } from './catalog.ts';
 import { cleanOffer, type ProductOffer, type WantSize } from './offers.ts';
 import { compareProduct } from './sameproduct.ts';
+import { urlKey } from './sources.ts';
 import type { Stock } from './sources.ts';
 
 export type SimilarInput = { style: Style; brand: string | null; name: string | null; modelCode: string | null; size: string | null; limit: number; photoPath?: string | null };
@@ -17,10 +18,15 @@ export interface SimilarProductProvider {
   find(input: SimilarInput): Promise<unknown[]>;
 }
 
-/** 별도로 연구 중인 추천 엔진 자리 — 연결 전에는 쓰지 않는다 */
+/**
+ * 패션 브레인(Intelligence Lab MODA) — 후보를 새로 지어내는 공급원이 아니라, 실제 검색 경로가 모은 후보의 사진을 맡긴 사진과 비교하는 정렬 엔진이다.
+ * 연결은 brain.ts(WALF_BRAIN_URL, 같은 맥의 로컬 서비스)로 하고 runSimilarSearch·runFindSearch 가 부른다. 여기서는 후보를 내지 않는다.
+ */
 export const FASHION_BRAIN: SimilarProductProvider = {
-  id: 'fashion-brain', label: '패션 브레인(별도 연구)', version: '-', status: 'PENDING_INTEGRATION',
-  availability: () => ({ usable: false, reason: '추천 API 연결 전 — Intelligence Lab에서 연구 중이에요' }),
+  id: 'fashion-brain', label: '패션 브레인(로컬 이미지 모델 — 정렬 엔진)', version: 'moda-1',
+  // 이 맥에서 이미지 모델 서비스 주소가 설정돼 있을 때만 연결됨으로 본다(설정이 없으면 연결 전)
+  get status() { return process.env.WALF_BRAIN_URL ? 'SUPPORTED' as const : 'PENDING_INTEGRATION' as const; },
+  availability: () => ({ usable: false, reason: '후보 공급원이 아니라 정렬 엔진이에요 — 실제 검색 후보의 사진을 비교할 때 따로 불러요(WALF_BRAIN_URL)' }),
   async find() { return []; },
 };
 
@@ -44,7 +50,8 @@ export const FIXTURE_CURATOR: SimilarProductProvider = {
     }));
   },
 };
-export const SIMILAR_PROVIDERS: SimilarProductProvider[] = [FIXTURE_CURATOR, FASHION_BRAIN];
+// 패션 브레인은 후보를 내지 않으므로 목록에 넣지 않는다 — 탐색 보고에는 runSimilarSearch 가 사진 비교 결과 한 줄로 남긴다
+export const SIMILAR_PROVIDERS: SimilarProductProvider[] = [FIXTURE_CURATOR];
 
 // ── 디자인 비교 · 정렬 ───────────────────────────────────────
 /** 제품군·실루엣이 가장 무겁다. 브랜드는 점수에 넣지 않는다 */
@@ -61,6 +68,12 @@ const PRIORITY_RULE: Record<Priority, { weights: Record<StyleKind, number>; min:
   vibe: { weights: { category: 2, silhouette: 1, detail: 1, material: 1, color: 2, mood: 3 }, min: 0.25 },                 // 느낌(무드·색) 위주로 넓게
 };
 export const isPriority = (v: unknown): v is Priority => (PRIORITIES as readonly string[]).includes(String(v));
+/**
+ * 정렬 방식(STEP 6 비교): design 디자인 태그만(사진 비교 없음) · image 사진 유사도만 · image_dna 사진 유사도+디자인 태그 · pref 사용자 선호 가중치+사진 유사도.
+ * 사진 유사도는 후보 묶음 안에서 0~1로 다시 맞춰(최저·최고) 디자인 점수와 섞는다.
+ */
+export const RANK_MODES = ['design', 'image', 'image_dna', 'pref'] as const;
+export type RankMode = typeof RANK_MODES[number];
 export const rankerOf = (p: Priority | null | undefined) => `${RANKER}:${p || 'default'}`;
 const KIND_KO: Record<StyleKind, string> = { category: '제품군', silhouette: '실루엣', detail: '디테일', material: '소재', color: '색', mood: '무드' };
 const ORDER: StyleKind[] = ['category', 'silhouette', 'detail', 'material', 'color', 'mood'];
@@ -97,36 +110,60 @@ export const MIN_DESIGN_SCORE = 0.35;
  * 추천 엔진이 준 후보를 정리하고 디자인 점수로 다시 정렬한다.
  * 빠지는 것: 주소·추천 모델·버전이 없는 값 · 디자인 정보가 없는 상품 · 제품군이 다른 상품 · 찾는 옷과 같은 상품(같은 상품은 판매처 탐색 쪽) · 점수가 낮은 상품.
  */
-export function curateOffers(raw: unknown[], input: SimilarInput & { mockAllowed: boolean; priority?: Priority | null }) {
-  const rule = input.priority ? PRIORITY_RULE[input.priority] : { weights: DESIGN_WEIGHT, min: MIN_DESIGN_SCORE };
+export function curateOffers(raw: unknown[], input: SimilarInput & { mockAllowed: boolean; priority?: Priority | null; mode?: RankMode;
+  images?: { scores: Map<string, number>; model: string } | null; photoGender?: Map<string, { gender: 'men' | 'women'; p: number }> }) {
+  const mode: RankMode = input.mode && (input.images || input.mode === 'design') ? input.mode : 'design';
+  const rule = input.priority && (mode === 'design' || mode === 'pref') ? PRIORITY_RULE[input.priority] : { weights: DESIGN_WEIGHT, min: MIN_DESIGN_SCORE };
   const weights = rule.weights;
-  const dropped = { invalid: 0, noStyle: 0, category: 0, same: 0, low: 0 };
-  const kept: ProductOffer[] = [];
+  const dropped = { invalid: 0, noStyle: 0, category: 0, gender: 0, same: 0, low: 0 };
+  const kept: (ProductOffer & { _d: number })[] = [];
+  const img = (o: ProductOffer) => input.images?.scores.get(urlKey(o.url)) ?? null;
+  const vals = [...(input.images?.scores.values() || [])];
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const norm = (v: number | null) => v == null ? 0 : hi > lo ? (v - lo) / (hi - lo) : 0.5;
   for (const r of raw) {
     const o = cleanOffer(r, { mockAllowed: input.mockAllowed, relation: 'similar' });
     if (!o) { dropped.invalid++; continue; }
-    if (!o.style || !Object.keys(o.style).length) { dropped.noStyle++; continue; }
+    if (isKids(o.name)) { dropped.category++; continue; }   // 아동복은 다른 제품군
+    const iv = img(o);
+    // 제목에서 디자인을 못 읽어도 사진 비교가 됐으면 남긴다(목록 제목이 불완전한 매물을 상세 확인 전에 버리지 않는다)
+    if ((!o.style || !Object.keys(o.style).length) && iv == null) { dropped.noStyle++; continue; }
+    o.style ||= {};
     if (input.name) {
       const v = compareProduct({ brand: input.brand, name: input.name, modelCode: input.modelCode }, { title: o.name, brand: o.brand }).verdict;
       if (v === 'same_code' || v === 'likely') { dropped.same++; continue; }
     }
     const m = designMatch(input.style, o.style, weights);
     if (!m.categoryOk) { dropped.category++; continue; }
+    // 찾는 옷의 성별이 정해져 있으면 제목에 반대 성별 단서가 보이는 상품은 뺀다(성별을 모르는 상품은 운영자가 사진으로 본다)
+    const wg = input.style.gender || [], hg = o.style.gender || [];
+    if (wg.length && hg.length && !wg.some(x => hg.includes(x))) { dropped.gender++; continue; }
+    // 사진으로만 본 성별은 추정이라 빼지 않고 다른 점에 적고 점수를 깎는다
+    const pg = !hg.length && wg.length ? input.photoGender?.get(urlKey(o.url)) : undefined;
+    const photoOther = pg && !wg.includes(pg.gender) ? `사진으로는 ${pg.gender === 'women' ? '여성용' : '남성용'}으로 보여요(추정 ${Math.round(pg.p * 100)}%)` : null;
     // “브랜드와 아카이브 가치”: 찾는 옷과 같은 브랜드이거나 아카이브 무드면 가산점(다른 선호에서는 브랜드를 보지 않는다)
     if (input.priority === 'brand_archive' && ((input.brand && o.brand && o.brand.toLowerCase() === input.brand.toLowerCase()) || (o.style.mood || []).includes('archive'))) {
       m.score = Math.min(1, Math.round((m.score + 0.15) * 100) / 100); m.similar.push(o.brand && input.brand && o.brand.toLowerCase() === input.brand.toLowerCase() ? '같은 브랜드' : '아카이브 무드');
     }
-    if (m.score < rule.min) { dropped.low++; continue; }
+    // 사진 유사도를 쓰는 방식에서는 디자인 점수 하한 대신 합친 점수로 정렬한다(제목이 짧아 태그가 적은 매물도 사진이 닮으면 남긴다)
+    if (mode === 'design' && m.score < rule.min) { dropped.low++; continue; }
+    if (mode !== 'design' && iv == null && m.score < rule.min) { dropped.low++; continue; }
+    const d = mode === 'design' ? m.score : mode === 'image' ? norm(iv) : 0.6 * norm(iv) + 0.4 * m.score;
     const ws = sizeFit(o, input.size);
     const diff = [...m.diff, ...o.diffPoints.filter(x => !m.diff.includes(x))];
     if (ws === 'sold_out') diff.push(`${input.size} 사이즈는 품절이에요`);
     if (ws === 'missing') diff.push(`${input.size} 사이즈 옵션이 없어요`);
     if (o.condition === 'used') diff.push('중고 상품이에요');
-    kept.push({ ...o, score: m.score, wantSize: ws, stock: ws === 'ok' ? 'in_stock' : ws === 'sold_out' ? 'sold_out' : 'unknown', verdict: 'unverified',
-      similarPoints: [...m.similar, ...o.similarPoints.filter(x => !m.similar.includes(x))].slice(0, 6), diffPoints: diff.slice(0, 6),
-      checks: [{ field: 'image', result: 'not_checked', text: '사진 비교는 아직 연결 전이라 하지 않았어요' }], detail: 'listed_only', detailNote: '추천 엔진이 준 값이에요(판매처 상품 페이지를 따로 읽지 않음)' });
+    if (photoOther) diff.unshift(photoOther);
+    const similar = [...m.similar, ...o.similarPoints.filter(x => !m.similar.includes(x))];
+    if (iv != null && norm(iv) >= 0.7) similar.unshift('사진이 맡긴 옷과 많이 닮았어요(사진 유사도 — 같은 상품 판정 아님)');
+    kept.push({ ...o, score: m.score, imageScore: iv, imageModel: iv == null ? null : input.images!.model, _d: photoOther ? d - 0.3 : d,
+      wantSize: ws, stock: ws === 'ok' ? 'in_stock' : ws === 'sold_out' ? 'sold_out' : 'unknown', verdict: 'unverified',
+      similarPoints: similar.slice(0, 6), diffPoints: diff.slice(0, 6),
+      checks: [{ field: 'image', result: iv == null ? 'not_checked' : 'unknown', text: iv == null ? '사진 비교를 하지 않았어요' : `사진 유사도 ${iv.toFixed(2)}(${input.images!.model.split('@')[0].toUpperCase()}) — 같은 상품 판정 근거는 아니에요` }],
+      detail: 'listed_only', detailNote: '검색 결과 값이에요(판매처 상품 페이지를 따로 읽지 않음)' });
   }
   const price = (o: ProductOffer) => (o.salePrice ?? o.price ?? 1e9) + (o.shipping ?? 0);
-  kept.sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (a.wantSize === 'ok' ? 0 : 1) - (b.wantSize === 'ok' ? 0 : 1) || price(a) - price(b));
-  return { offers: kept.slice(0, input.limit), dropped };
+  kept.sort((a, b) => b._d - a._d || (b.score ?? 0) - (a.score ?? 0) || (a.wantSize === 'ok' ? 0 : 1) - (b.wantSize === 'ok' ? 0 : 1) || price(a) - price(b));
+  return { offers: kept.slice(0, input.limit).map(({ _d, ...o }) => o as ProductOffer), dropped, mode };
 }

@@ -14,7 +14,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'walf-e2e-v21-'));
 const PORT = 4500 + Math.floor(Math.random() * 50);
 const B = `http://127.0.0.1:${PORT}`;
 const DB_FILE = path.join(tmp, 'e2e.db');
-const ENV = { ...process.env, WALF_PORT: String(PORT), WALF_DB: DB_FILE, WALF_UPLOADS: path.join(tmp, 'up'), WALF_BACKUPS: path.join(tmp, 'bk'), WALF_ADMIN_PASSWORD: 'e2e-pass-v21',
+// 이 맥의 server/.env(로컬 실험 경로·이미지 모델)가 E2E에 섞이지 않게 비워 둔다
+const ENV = { ...process.env, WALF_EXPERIMENT_SOURCES: '', WALF_BRAIN_URL: '', WALF_PORT: String(PORT), WALF_DB: DB_FILE, WALF_UPLOADS: path.join(tmp, 'up'), WALF_BACKUPS: path.join(tmp, 'bk'), WALF_ADMIN_PASSWORD: 'e2e-pass-v21',
   WALF_QA_TOOLS: '1', WALF_PUSH_DISABLED: '1', WALF_AI_PROVIDER: 'mock', WALF_AI_POLL_MS: '100', ANTHROPIC_API_KEY: '', WALF_SECRET: 'e2e-secret-v21',
   WALF_NAVER_CLIENT_ID: '', WALF_NAVER_CLIENT_SECRET: '', WALF_SEARCH_POLL_MS: '150', WALF_SEARCH_PACE_MS: '0', WALF_WATCH_POLL_MS: '3600000' };
 let srv: ChildProcess, srvLog = '';
@@ -69,7 +70,7 @@ async function submit(note: string, size = 'M', headers = A) {
 
 async function main() {
   start(); await ready();
-  assert.match(srvLog, /판매처 탐색 공식몰 1곳 · 네이버 쇼핑 API 종료\(2026-07-31\) · AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐/);
+  assert.match(srvLog, /판매처 탐색 공식몰 1곳 · 실제 검색 경로 [^\n]+ · 이미지 모델 [^\n]+ · 테스트 판매처 켜짐/);
   ok('서버 시작: 판매처 탐색 = 공식몰 1곳(BADBLOOD) · 네이버 쇼핑 API 종료 · 유료 AI 웹 검색 쓰지 않음 · 테스트 판매처 켜짐');
   await api('POST', '/session', { deviceId: A['x-walf-device'], platform: 'ios' }, {});
   await login();
@@ -123,7 +124,8 @@ async function main() {
   // ── Gate B: 대체 상품 · 운영자 검수 · 앱 공개 ──
   html = await waitFor(`/requests/${id}`, /data-similar="done:\d+"/);
   assert.match(html, /대체 상품[\s\S]*?정렬: 제품군·실루엣 > 디테일·소재 > 색·무드\(브랜드는 점수에 넣지 않음\)/);
-  assert.match(html, /테스트 큐레이터\(Fixture\)[\s\S]*?패션 브레인\(별도 연구\)[\s\S]*?PENDING_INTEGRATION/);
+  // Search Recovery: 패션 브레인은 후보 공급원이 아니라 정렬 엔진(로컬 이미지 모델) — 이미지 모델 주소가 없는 테스트 환경에서는 연결 전으로 보인다
+  assert.match(html, /테스트 큐레이터\(Fixture\)[\s\S]*?패션 브레인\(로컬 이미지 모델[\s\S]*?PENDING_INTEGRATION/);
   assert.match(html, /나일론 트랙 자켓 블랙[\s\S]*?비슷한 디자인 · 같은 상품 아님/);
   assert.ok(!/sim-mystic-same/.test(html), '찾는 옷과 같은 상품은 대체 상품에서 뺀다');
   ok('대체 상품: 테스트 큐레이터 후보를 디자인·실루엣 순으로 정렬(브랜드 점수 없음) · 패션 브레인은 연결 전 · 같은 상품은 뺌');

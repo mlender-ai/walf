@@ -200,6 +200,14 @@ export function rejectFind(db: DB, userId: number, requestId: number, reason?: s
   D.log(db, requestId, 'user', 'find_rejected', '찾던 옷이 아니에요', String(reason || '').trim().slice(0, 200) || '왈프 팀이 다시 확인해요', { isMock: !!r.is_mock });
 }
 
+/** 사용자가 결과를 보고 “여기서 마칠게요” — 같은 옷을 확정하지 못한 결과도 끝내야 새 찾아줘를 맡길 수 있다(결과·기록은 남는다) */
+export function closeFind(db: DB, userId: number, requestId: number) {
+  const r = D.ownRequest(db, userId, requestId);
+  if (r.status !== 'submitted') throw new HttpError(409, 'bad_state', '이미 시작했거나 끝난 의뢰예요.');
+  if (!D.findPublished(db, requestId)) throw new HttpError(409, 'bad_state', '아직 결과가 나오지 않았어요. 그만두려면 추적함에서 의뢰 그만두기를 눌러 주세요.');
+  tx(db, () => D.endFind(db, r, 'find_closed'));
+}
+
 /** 어드민 대기열: 사용자가 아니라고 한 의뢰 */
 export function rejectedQueue(db: DB) {
   return all(db, `SELECT r.*, MAX(p.decided_at) rejected_at FROM product_identities p JOIN requests r ON r.id=p.request_id

@@ -127,6 +127,11 @@ export function userApi(db: DB, cfg: Cfg) {
     const out = F.confirmFind(db, uid(req), id, Number(req.body?.identityId), next);
     res.json({ ...out, find: findOut(req, D.getRequest(db, id)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
   });
+  r.post('/requests/:id/find/close', auth, (req, res) => {
+    const id = idp(req.params.id);
+    F.closeFind(db, uid(req), id);
+    res.json({ find: findOut(req, D.getRequest(db, id)), request: D.requestView(db, D.getRequest(db, id), baseOf(req)) });
+  });
   r.post('/requests/:id/find/reject', auth, (req, res) => {
     const id = idp(req.params.id);
     F.rejectFind(db, uid(req), id, req.body?.reason);

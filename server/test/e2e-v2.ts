@@ -13,7 +13,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'walf-e2e-v2-'));
 const PORT = 4440 + Math.floor(Math.random() * 50);
 const B = `http://127.0.0.1:${PORT}`;
 const DB_FILE = path.join(tmp, 'e2e.db');
-const ENV = { ...process.env, WALF_PORT: String(PORT), WALF_DB: DB_FILE, WALF_UPLOADS: path.join(tmp, 'up'), WALF_BACKUPS: path.join(tmp, 'bk'), WALF_ADMIN_PASSWORD: 'e2e-pass-v2',
+// 이 맥의 server/.env(로컬 실험 경로·이미지 모델)가 E2E에 섞이지 않게 비워 둔다
+const ENV = { ...process.env, WALF_EXPERIMENT_SOURCES: '', WALF_BRAIN_URL: '', WALF_PORT: String(PORT), WALF_DB: DB_FILE, WALF_UPLOADS: path.join(tmp, 'up'), WALF_BACKUPS: path.join(tmp, 'bk'), WALF_ADMIN_PASSWORD: 'e2e-pass-v2',
   WALF_QA_TOOLS: '1', WALF_PUSH_DISABLED: '1', WALF_AI_PROVIDER: 'mock', WALF_AI_POLL_MS: '100', ANTHROPIC_API_KEY: '', WALF_SECRET: 'e2e-secret-v2',
   WALF_STYLE_SEED: path.join(root, 'fixtures', 'brand-styles-test.json'),
   WALF_WATCH_CHECK_HOURS: String(1.5 / 3600), WALF_WATCH_POLL_MS: '3600000' }; // 1.5초마다 새 조회 창(테스트 시간 압축) · 자동 조회는 끄고 QA 버튼으로만

@@ -2,15 +2,19 @@
 // 1 식별 결과 → 탐색 대상 · 2 검색 조건 · 3 소스 검색 · 4 같은 페이지·상품 통합 · 5 상품 정보 정리 · 6 동일 상품 검증 · 7 비교 결과
 // 단계마다 따로 부를 수 있고(테스트), runFindSearch 가 순서대로 잇는다. AI를 부르지 않는다(무료 소스만). 결과는 검수 전까지 사용자에게 보이지 않는다.
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { type DB } from './db.ts';
 import { tierOf } from './find.ts';
-import { brandKey, colorsIn, conditionOf, normSize, requestStyle, sameColor, styleWords, type Style } from './catalog.ts';
+import { brandKey, colorsIn, conditionOf, isKids, normalizeBrand, normSize, requestStyle, sameColor, styleFromText, styleWords, type Style } from './catalog.ts';
 import { urlKey, SourceError, type Snapshot } from './sources.ts';
 import { codesIn, compact, compareProduct, nameTokens, type Check, type Verdict } from './sameproduct.ts';
 import { cleanOffer, itemPrice, offersOf, RULES_RECOMMENDER, saveOffers, totalPrice, type ProductOffer } from './offers.ts';
-import { SIMILAR_PROVIDERS, curateOffers, isPriority, rankerOf, type Priority, type SimilarProductProvider } from './curation.ts';
+import { SIMILAR_PROVIDERS, curateOffers, isPriority, rankerOf, type Priority, type RankMode, type SimilarProductProvider } from './curation.ts';
 import { SEARCH_SOURCES, loadMalls, mallFor, pacer, type RawHit, type SearchQuery, type SearchSource, type SourceCtx } from './searchsources.ts';
 import { now } from './time.ts';
+import { planQueries, clueQueries, recordQuery, skipReason, STAGE_GROUPS } from './queryplan.ts';
+import { brainFromEnv, imageGender, imageNote, imageScores, type Brain } from './brain.ts';
+import { WEB_SOURCES } from './websources.ts';
 
 type Row = Record<string, any>;
 const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
@@ -20,13 +24,15 @@ const parse = (s: string | null, d: any) => { try { return s ? JSON.parse(s) : d
 const json = (v: unknown) => JSON.stringify(v);
 
 // ── 1 · 식별 결과 → 탐색 대상 ───────────────────────────────────
-export type Basis = 'ai_draft' | 'operator_published' | 'user_confirmed' | 'style_only' | 'watch';
+export type Basis = 'ai_draft' | 'operator_published' | 'user_confirmed' | 'user_input' | 'ai_clue' | 'style_only' | 'watch';
 export type SearchTarget = { brand: string | null; name: string; modelCode: string | null; season: string | null; color: string | null; category: string | null;
   basis: Basis; ref: string; aliases: string[]; isMock: boolean;
   /** 확정된 식별(사용자가 “이 옷이 맞아요” · 운영자 MATCH 공개) — 확정이면 이 후보 하나만 찾는다 */
-  certain?: boolean };
+  certain?: boolean;
+  /** 사진에서 읽은 디자인(검색어 특징 단계에 쓴다) · 사진 분석이 읽은 옷 이름 */
+  style?: Style | null; terms?: string[] };
 export type Want = { size: string | null; color: string | null; usedOk: boolean; maxPrice: number | null };
-export const BASIS_LABEL: Record<Basis, string> = { ai_draft: 'AI 식별 제안(검수 전)', operator_published: '왈프 팀이 공개한 식별 결과', user_confirmed: '사용자가 “이 옷이 맞아요”로 고른 결과', style_only: '상품은 식별하지 못함 — 사진에서 읽은 디자인만', watch: '기다려줘에 등록한 상품' };
+export const BASIS_LABEL: Record<Basis, string> = { ai_draft: 'AI 식별 제안(검수 전)', operator_published: '왈프 팀이 공개한 식별 결과', user_confirmed: '사용자가 “이 옷이 맞아요”로 고른 결과', user_input: '사용자가 적은 브랜드·상품명(확인 전)', ai_clue: 'AI가 낮은 신뢰도로 짐작한 브랜드(내부 검색 단서 — 공개하지 않음)', style_only: '상품은 식별하지 못함 — 사진에서 읽은 디자인만', watch: '기다려줘에 등록한 상품' };
 
 /** 이름 앞에 붙은 브랜드는 뗀다(“BADBLOOD Mystic …” → “Mystic …”) */
 const stripBrand = (name: string, brand: string | null) => {
@@ -44,21 +50,35 @@ export function targetsOf(db: DB, requestId: number, malls: { brand: string; ali
   const aliasesOf = (brand: string | null) => {
     const b = one(db, 'SELECT aliases FROM brands WHERE key=?', brandKey(brand));
     const m = mallFor(malls as any, brand);
-    return [...new Set([...parse(b?.aliases ?? null, []), ...(m?.aliases || [])].filter((a: string) => a && compact(a) !== compact(brand)))] as string[];
+    const n = normalizeBrand(brand);   // 별칭 사전(한글 이름 먼저 — 국내 매물 제목은 한글 브랜드명이 많다)
+    return [...new Set([...parse(b?.aliases ?? null, []), ...(m?.aliases || []), ...(n ? [...n.ko, n.name] : [])].filter((a: string) => a && compact(a) !== compact(brand)))] as string[];
   };
   const out: SearchTarget[] = [];
   for (const x of all(db, `SELECT * FROM product_identities WHERE request_id=? AND status='confirmed' AND tier<>'discover' ORDER BY id DESC`, requestId))
     out.push(targetFrom(x, 'user_confirmed', `product_identity:${x.id}`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock, true));
   for (const x of all(db, `SELECT * FROM product_identities WHERE request_id=? AND status='published' AND tier<>'discover' ORDER BY tier='match' DESC, rank`, requestId))
     out.push(targetFrom(x, 'operator_published', `product_identity:${x.id}`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock, x.tier === 'match'));
+  // B · 사용자가 적은 브랜드·상품명 — AI 식별을 기다리지 않고 바로 찾는다(검증된 상품 정보로 올리지 않는다: certain=false)
+  if (r.brand || r.product_name) out.push(targetFrom({ brand: r.brand, name: r.product_name || '' }, 'user_input', `request:${requestId}:input`, aliasesOf(r.brand), !!r.is_mock));
   const job = one(db, `SELECT id FROM ai_jobs WHERE request_id=? AND kind='identify' AND status='done' ORDER BY id DESC LIMIT 1`, requestId);
+  const hidden: Row[] = [];
   if (job) for (const x of all(db, 'SELECT * FROM ai_identities WHERE job_id=? ORDER BY rank', job.id)) {
-    if (tierOf({ ...x, refs: parse(x.refs, []), uncertain: parse(x.uncertain, []) }) === 'hidden') continue;
+    if (tierOf({ ...x, refs: parse(x.refs, []), uncertain: parse(x.uncertain, []) }) === 'hidden') { hidden.push(x); continue; }
     out.push(targetFrom(x, 'ai_draft', `ai_identity:${x.id}`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock));
+  }
+  const style = requestStyle(db, requestId);
+  const hasStyle = Object.keys(style).length > 0;
+  if (!out.length) {
+    // E · 정확한 식별이 없으면 낮은 신뢰도 후보의 브랜드만 내부 검색 단서로(상품명은 쓰지 않는다 — 틀린 상품명이 검색을 좁힌다). 사용자에게 공개하지 않는다
+    if (hasStyle) for (const x of hidden.filter(x => x.brand).slice(0, 1))
+      out.push(targetFrom({ brand: x.brand, name: '' }, 'ai_clue', `ai_identity:${x.id}:brand`, aliasesOf(x.brand), !!x.is_mock || !!r.is_mock));
+    // A · 사진만 있으면 사진에서 읽은 특징으로 바로 찾는다
+    if (hasStyle) out.push({ brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'style_only', ref: `request:${requestId}`, aliases: [], isMock: !!r.is_mock || !!job && !!(one(db, 'SELECT is_mock FROM ai_jobs WHERE id=?', job.id)?.is_mock) });
   }
   // 같은 상품을 여러 번 담지 않는다(앞의 근거가 우선)
   const seen = new Set<string>();
-  return out.filter(t => { const k = compact(`${t.brand}|${t.name}|${t.modelCode}`); if (seen.has(k)) return false; seen.add(k); return true; });
+  return out.filter(t => { const k = compact(`${t.brand}|${t.name}|${t.modelCode}`) || t.ref; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map(t => ({ ...t, style: hasStyle ? style : null, terms: parse(r.photo_terms ?? null, []) }));
 }
 /**
  * 이번 탐색에서 찾아볼 식별 후보 — 확정된 식별이 있으면 그것 하나. 확정 전(AI 제안·운영자 LIKELY)이면 첫 후보가 틀렸을 수 있으니 앞에서부터 많아야 max개를 함께 찾는다.
@@ -75,21 +95,18 @@ export const wantOf = (r: Row): Want => ({ size: r.size ? normSize(r.size) : nul
 // ── 2 · 검색 조건 ────────────────────────────────────────────
 /** 품번(가장 정확) → 브랜드+모델명 → 모델명만 → 한글 브랜드명+모델명 순. 같은 검색어는 한 번만 */
 export function buildQueries(t: SearchTarget): SearchQuery[] {
-  const out: SearchQuery[] = [];
-  const add = (text: string, kind: SearchQuery['kind']) => { const s = text.replace(/\s+/g, ' ').trim(); if (s && !out.some(q => compact(q.text) === compact(s))) out.push({ text: s, kind }); };
-  if (t.modelCode) { add(t.modelCode, 'code'); if (t.brand) add(`${t.brand} ${t.modelCode}`, 'brand_code'); }
-  if (t.brand) add(`${t.brand} ${t.name}`, 'brand_name');
-  if (nameTokens(t.name, t.brand).length >= 2) add(t.name, 'name');
-  if (t.aliases[0]) add(`${t.aliases[0]} ${t.name}`, 'alias_name');
-  return out.slice(0, 6);
+  // 다단계 검색어(queryplan.ts): 품번·브랜드 → 상품명·별칭 → 브랜드+특징 → 특징(한국어) → 영어·일본어. 특징은 사진에서 읽은 디자인
+  return planQueries(t, t.style);
 }
 
 // ── 3 · 소스 검색 ────────────────────────────────────────────
 export type SourceReport = { id: string; label: string; cost: string; status: string; outcome: 'ok' | 'empty' | 'not_run' | 'failed' | 'blocked'; reason: string;
-  queries: string[]; hits: number; ms: number; errors: string[] };
+  queries: string[]; hits: number; ms: number; errors: string[];
+  /** 지난 탐색에서 결과가 없어 이번에 보내지 않은 검색어(query_stats) */
+  skipped?: string[]; stages?: string[] };
 export const OUTCOME_LABEL: Record<SourceReport['outcome'], string> = { ok: '검색함 · 결과 있음', empty: '검색함 · 결과 없음', not_run: '검색하지 않음', failed: '검색 실패', blocked: '접근 막힘' };
 /** 소스마다 독립적으로 돈다 — 한 곳이 실패해도 다른 곳은 계속한다. 쓸 수 없는 곳은 이유만 남기고 열지 않는다 */
-export async function searchSources(sources: SearchSource[], t: SearchTarget, queries: SearchQuery[], ctx: SourceCtx) {
+export async function searchSources(sources: SearchSource[], t: SearchTarget, queries: SearchQuery[], ctx: SourceCtx, db?: DB | null) {
   const hits: RawHit[] = [], report: SourceReport[] = [];
   for (const s of sources) {
     const a = s.availability(t, ctx);
@@ -98,8 +115,11 @@ export async function searchSources(sources: SearchSource[], t: SearchTarget, qu
     if (!a.usable) continue;
     const t0 = Date.now();
     for (const q of s.pick(queries)) {
+      const skip = skipReason(db, s.id, q.text);
+      if (skip) { (rep.skipped ||= []).push(`${q.text}: ${skip}`); continue; }
       rep.queries.push(q.text);
-      try { const got = await s.search(q, t, ctx); hits.push(...got); rep.hits += got.length; }
+      if (!(rep.stages ||= []).includes(q.kind)) rep.stages.push(q.kind);
+      try { const got = await s.search(q, t, ctx); hits.push(...got); rep.hits += got.length; recordQuery(db, s.id, q, got.length); }
       catch (e: any) {
         const err = e instanceof SourceError ? e : new SourceError('network', String(e?.message || e).slice(0, 160));
         rep.errors.push(`${q.text}: ${err.message}`);
@@ -107,7 +127,8 @@ export async function searchSources(sources: SearchSource[], t: SearchTarget, qu
       }
     }
     rep.ms = Date.now() - t0;
-    if (rep.outcome !== 'blocked') rep.outcome = rep.hits ? 'ok' : rep.errors.length === rep.queries.length && rep.errors.length ? 'failed' : 'empty';
+    if (rep.outcome !== 'blocked') rep.outcome = rep.hits ? 'ok' : !rep.queries.length ? 'not_run' : rep.errors.length === rep.queries.length && rep.errors.length ? 'failed' : 'empty';
+    if (rep.outcome === 'not_run' && rep.skipped?.length) rep.reason = `${rep.reason} · 이번 검색어는 모두 지난번 결과가 없어 건너뜀`;
   }
   return { hits, report };
 }
@@ -216,6 +237,8 @@ export function mergeReports(rs: SourceReport[][]): SourceReport[] {
     const cur = out.get(r.id);
     if (!cur) { out.set(r.id, { ...r, queries: [...r.queries], errors: [...r.errors] }); continue; }
     cur.queries.push(...r.queries); cur.errors.push(...r.errors); cur.hits += r.hits; cur.ms += r.ms;
+    if (r.skipped?.length) (cur.skipped ||= []).push(...r.skipped);
+    for (const k of r.stages || []) if (!(cur.stages ||= []).includes(k)) cur.stages.push(k);
     if (RANK[r.outcome] < RANK[cur.outcome]) Object.assign(cur, { outcome: r.outcome, status: r.status, reason: r.reason });
   }
   return [...out.values()];
@@ -235,7 +258,9 @@ const FIT: Record<string, number> = { ok: 0, any: 1, unknown: 2, sold_out: 3, mi
 /** 같은 상품 확인 → 원하는 사이즈 재고 → 상세 확인 → 총액(배송비 모르면 뒤로) 순 */
 export function rankOffers(xs: ProductOffer[]) {
   const price = (o: ProductOffer) => totalPrice(o) ?? (itemPrice(o) != null ? itemPrice(o)! + 1e8 : 2e9);
-  return [...xs].sort((a, b) => V_ORDER[a.verdict] - V_ORDER[b.verdict] || FIT[a.wantSize] - FIT[b.wantSize] || (a.detail === 'fetched' ? 0 : 1) - (b.detail === 'fetched' ? 0 : 1) || price(a) - price(b));
+  // 사진 유사도는 같은 판정·같은 재고 조건 안에서만 순서를 바꾼다(판정을 올리지 않는다)
+  const img = (o: ProductOffer) => o.imageScore ?? -1;
+  return [...xs].sort((a, b) => V_ORDER[a.verdict] - V_ORDER[b.verdict] || FIT[a.wantSize] - FIT[b.wantSize] || img(b) - img(a) || (a.detail === 'fetched' ? 0 : 1) - (b.detail === 'fetched' ? 0 : 1) || price(a) - price(b));
 }
 export function assemble(t: SearchTarget, offers: ProductOffer[], report: SourceReport[], targets: SearchTarget[] = [t]): FindSearchResult {
   const xs = rankOffers(offers);
@@ -243,7 +268,8 @@ export function assemble(t: SearchTarget, offers: ProductOffer[], report: Source
   const same = by('same_code'), likely = by('likely'), unverified = by('unverified');
   const notRun = report.filter(r => r.outcome === 'not_run');
   const limits = [
-    '같은 옷인지 사진으로 비교하지 않았어요(사진 비교 연결 전) — 품번·브랜드·상품명으로만 판단했어요.',
+    offers.some(o => o.imageScore != null) ? '사진 유사도(로컬 이미지 모델)는 후보 순서에만 썼어요 — 같은 옷인지는 품번·브랜드·상품명과 왈프 팀 확인으로 정해요.'
+      : '같은 옷인지 사진으로 비교하지 않았어요 — 품번·브랜드·상품명으로만 판단했어요.',
     '판매 중·구매 가능 여부는 왈프 팀이 확인하기 전까지 확정하지 않아요.',
     ...(notRun.length ? [`검색하지 않은 곳 ${notRun.length}곳(연동 대기·지원 안 함·해당 없음) — “매물 없음”이 아니에요.`] : []),
     ...(offers.some(o => o.detail !== 'fetched') ? [`상품 페이지를 읽지 못한 후보 ${offers.filter(o => o.detail !== 'fetched').length}개는 사이즈·재고·배송비를 몰라요.`] : []),
@@ -263,12 +289,20 @@ export type SearchEnv = { sources: SearchSource[]; mockAllowed: boolean; env: Re
   fetcher?: SourceCtx['fetcher']; resolve?: SourceCtx['resolve']; pace: SourceCtx['pace']; maxDetails: number; reuseMs: number;
   /** 확정 전 식별 후보를 함께 찾을 최대 개수(1~3, 기본 3) */
   maxTargets?: number;
-  /** 대체 상품 추천 엔진(테스트 큐레이터 · 패션 브레인 자리) — 없으면 기본 목록 */
-  similar?: SimilarProductProvider[] };
-export function searchEnvFrom(opts: { mockAllowed: boolean; env?: Record<string, string | undefined> }): SearchEnv {
+  /** 대체 상품 추천 엔진(테스트 큐레이터 · 실제 검색 후보) — 없으면 기본 목록 */
+  similar?: SimilarProductProvider[];
+  /** 맡긴 사진이 있는 폴더와 로컬 이미지 모델(패션 브레인) — 없으면 사진 비교 없이 규칙만 */
+  uploads?: string; brain?: Brain | null;
+  /** 후보가 이만큼 모이면 다음 검색어 단계로 넘어가지 않는다(기본 40) */
+  enough?: number };
+export function searchEnvFrom(opts: { mockAllowed: boolean; env?: Record<string, string | undefined>; uploads?: string }): SearchEnv {
   const env = opts.env || process.env;
-  return { sources: SEARCH_SOURCES, mockAllowed: opts.mockAllowed, env, malls: loadMalls(), pace: pacer(Number(env.WALF_SEARCH_PACE_MS ?? 1000)),
-    maxDetails: Number(env.WALF_SEARCH_MAX_DETAILS || 6), reuseMs: 20 * 3600_000, similar: SIMILAR_PROVIDERS, maxTargets: Number(env.WALF_SEARCH_MAX_TARGETS || MAX_TARGETS) };
+  const e: SearchEnv = { sources: SEARCH_SOURCES, mockAllowed: opts.mockAllowed, env, malls: loadMalls(), pace: pacer(Number(env.WALF_SEARCH_PACE_MS ?? 1000)),
+    maxDetails: Number(env.WALF_SEARCH_MAX_DETAILS || 6), reuseMs: 20 * 3600_000, uploads: opts.uploads, brain: brainFromEnv(env), enough: Number(env.WALF_SEARCH_ENOUGH || 40),
+    maxTargets: Number(env.WALF_SEARCH_MAX_TARGETS || MAX_TARGETS) };
+  // 실제 검색 경로(중고나라·검색 API)로 비슷한 옷 후보를 모으는 추천 엔진을 앞에 붙인다(쓸 수 있는 경로가 없으면 이유만 남긴다)
+  e.similar = [webSimilarProvider(e), ...SIMILAR_PROVIDERS];
+  return e;
 }
 const ctxOf = (e: SearchEnv, isMock: boolean): SourceCtx => ({ isMock, mockAllowed: e.mockAllowed, env: e.env, malls: e.malls, fetcher: e.fetcher, resolve: e.resolve, pace: e.pace });
 export const usableSources = (e: SearchEnv, t: SearchTarget) => e.sources.filter(s => s.availability(t, ctxOf(e, t.isMock)).usable).map(s => s.id);
@@ -291,7 +325,7 @@ export function queueFindSearch(db: DB, e: SearchEnv, requestId: number, opts: {
   const t = ts[0];
   if (!t) return { skipped: '탐색할 식별 결과가 없어요(AI 식별 전이거나 모두 숨김)' };
   const ids = [...new Set(ts.flatMap(x => usableSources(e, x)))];
-  if (!ids.length) return { skipped: '지금 쓸 수 있는 판매처 소스가 없어요(공식몰 미등록 · 다른 소스는 연동 대기)' };
+  if (!ids.length) return { skipped: '지금 쓸 수 있는 판매처 소스가 없어요(공식몰 미등록 · 검색 API 키 없음 · 중고나라는 법무 확인 전이라 로컬 실험에서만)' };
   const key = searchKeyOf(ts, ids);
   const t0 = now();
   if (!opts.force) {
@@ -314,6 +348,36 @@ export function ensureFindSearches(db: DB, e: SearchEnv) {
   return n;
 }
 
+/** 사진 유사도를 후보에 붙인다 — 판정(verdict)은 바꾸지 않고 확인 항목에 근거로만 남긴다 */
+function withImage(o: ProductOffer, score: number | null, model: string): ProductOffer {
+  const checks = o.checks.filter(c => c.field !== 'image');
+  checks.push({ field: 'image', result: score == null ? 'not_checked' : 'unknown', text: score == null ? '이 후보는 사진을 받지 못해 비교하지 않았어요' : imageNote(score, model) });
+  return { ...o, imageScore: score, imageModel: score == null ? null : model, checks };
+}
+/** 찾는 옷의 성별과 다른 후보: 제목에 반대 성별이 적혀 있으면 확실히 다른 상품(different), 사진으로만 반대 성별로 보이면 다른 점에 적고 뒤로 보낸다 */
+async function genderCheck(e: SearchEnv, style: Style | null | undefined, offers0: ProductOffer[]): Promise<ProductOffer[]> {
+  // 아동복은 성인 옷을 찾을 때 확실히 다른 상품이다(제목 표기 기준)
+  const offers = offers0.map(o => isKids(o.name) ? { ...o, verdict: (o.verdict === 'same_code' ? o.verdict : 'different') as Verdict, diffPoints: ['제목에 아동복 표기가 있어요', ...o.diffPoints].slice(0, 6) } : o);
+  const want = style?.gender?.[0];
+  if (!want) return offers;
+  const KO = { men: '남성용', women: '여성용' } as const;
+  const byPhoto = await imageGender(e.brain ?? null, offers.filter(o => !styleFromText(o.name).gender?.length).map(o => ({ id: urlKey(o.url), imageUrl: o.imageUrl })));
+  return offers.map(o => {
+    const g = styleFromText(o.name).gender?.[0];
+    if (g && g !== want) return { ...o, verdict: o.verdict === 'same_code' ? o.verdict : 'different' as Verdict, diffPoints: [`제목에 ${KO[g as 'men']} 표기가 있어요(찾는 옷은 ${KO[want as 'men']})`, ...o.diffPoints].slice(0, 6) };
+    const p = byPhoto.get(urlKey(o.url));
+    if (p && p.gender !== want) return { ...o, imageScore: o.imageScore != null ? o.imageScore - 0.2 : o.imageScore, diffPoints: [`사진으로는 ${KO[p.gender]}으로 보여요(추정 ${Math.round(p.p * 100)}%)`, ...o.diffPoints].slice(0, 6) };
+    return o;
+  });
+}
+function brainReport(e: SearchEnv, sc: Awaited<ReturnType<typeof imageScores>>, photo: string | null): SourceReport {
+  const base = { id: 'fashion-brain', label: '패션 브레인(로컬 이미지 모델 · 사진 유사도)', cost: 'free', queries: [], hits: 0, ms: 0, errors: [] as string[] };
+  if (!e.brain) return { ...base, status: 'PENDING_INTEGRATION', outcome: 'not_run', reason: '이 서버에 로컬 이미지 모델이 연결되지 않아(WALF_BRAIN_URL 없음) 사진 비교 없이 규칙만 썼어요' };
+  if (!photo) return { ...base, status: 'SUPPORTED', outcome: 'not_run', reason: '맡긴 사진이 없어 사진 비교를 하지 않았어요' };
+  if (!sc) return { ...base, status: 'SUPPORTED', outcome: 'failed', reason: '이미지 모델 서비스가 응답하지 않았거나 비교할 후보 사진이 없어요 — 규칙만으로 계속했어요' };
+  return { ...base, status: 'SUPPORTED', outcome: 'ok', hits: sc.scores.size, ms: sc.ms, reason: `${sc.model} · 후보 사진 ${sc.scores.size}장 비교(실패 ${sc.failed}) — 순서에만 썼어요`, errors: [] };
+}
+
 /** 탐색 한 번을 끝까지 돈다(1→7). 하루 안에 같은 열쇠로 끝난 탐색이 있으면 다시 열지 않고 그 결과를 이 의뢰 조건으로 다시 검증해 쓴다 */
 export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
   const s = one(db, 'SELECT * FROM offer_searches WHERE id=?', searchId)!;
@@ -331,22 +395,55 @@ export async function runFindSearch(db: DB, e: SearchEnv, searchId: number) {
     report = parse(prev.report, []).map((x: SourceReport) => ({ ...x, reason: x.outcome === 'not_run' ? x.reason : `${x.reason} · ${Math.round((now() - prev.finished_at) / 3600_000)}시간 전 탐색 결과를 다시 씀` }));
     queries = parse(prev.queries, []);
   } else {
-    // 2·3 식별 후보마다 검색어를 만들고 소스를 검색한다(두 번째 후보부터는 검색어 3개까지). 막힌 소스는 다음 후보에서 다시 두드리지 않는다
+    // 2·3 식별 후보마다 검색어를 단계별로 만들고(queryplan.ts) 소스를 검색한다. 앞 단계에서 후보가 충분하면 뒤 단계(다른 언어·단서)는 보내지 않는다.
+    // 두 번째 후보부터는 식별 단계 검색어만(특징 검색어는 첫 후보와 같다). 막힌 소스는 다음 후보·단계에서 다시 두드리지 않는다
     queries = []; const hits: RawHit[] = [], reports: SourceReport[][] = [], blocked = new Set<string>();
-    for (const [i, ti] of targets.entries()) {
-      const qs = buildQueries(ti).slice(0, i === 0 ? 6 : 3);
+    const enough = e.enough ?? 40, distinct = () => new Set(hits.map(h => urlKey(h.url))).size;
+    const runQs = async (ti: SearchTarget, qs: SearchQuery[], i: number) => {
+      if (!qs.length) return;
       queries.push(...(targets.length > 1 ? qs.map(q => ({ ...q, target: i + 1 })) : qs));
-      const found = await searchSources(e.sources.filter(x => !blocked.has(x.id)), ti, qs, ctx);
+      const found = await searchSources(e.sources.filter(x => !blocked.has(x.id)), ti, qs, ctx, db);
       found.report.filter(x => x.outcome === 'blocked').forEach(x => blocked.add(x.id));
       hits.push(...found.hits); reports.push(found.report);
+    };
+    for (const [i, ti] of targets.entries()) {
+      const plan = buildQueries(ti).filter(q => i === 0 || STAGE_GROUPS[0].includes(q.kind) || q.kind === 'brand_feature');
+      let budget = i === 0 ? 12 : 3;   // 두 번째 후보부터는 검색어 3개까지(비용 한도)
+      for (const [g, group] of STAGE_GROUPS.entries()) {
+        if ((g > 0 && distinct() >= enough) || budget <= 0) break;
+        const qs = plan.filter(q => group.includes(q.kind)).slice(0, budget);
+        budget -= qs.length;
+        await runQs(ti, qs, i);
+      }
     }
-    const merged = mergeHits(hits);                                                        // 4
+    let merged = mergeHits(hits);                                                          // 4
+    // 6' 검색 결과에서 얻은 단서: 사진이 가장 닮은 후보들의 제목에 되풀이된 낱말로 한 번 더 찾는다(사진 비교가 될 때만)
+    const photo = r?.photo && e.uploads ? path.join(e.uploads, r.photo) : null;
+    let pre = await imageScores(e.brain ?? null, photo, merged.map(h => ({ id: urlKey(h.url), imageUrl: h.imageUrl })));
+    if (pre && targets[0]) {
+      const top = merged.filter(h => pre!.scores.has(urlKey(h.url))).sort((a, b) => pre!.scores.get(urlKey(b.url))! - pre!.scores.get(urlKey(a.url))!).slice(0, 6).map(h => h.title);
+      const clues = clueQueries(top, targets[0].style, queries.map(q => q.text));
+      if (clues.length) {
+        await runQs(targets[0], clues, 0);
+        merged = mergeHits(hits);
+        pre = await imageScores(e.brain ?? null, photo, merged.map(h => ({ id: urlKey(h.url), imageUrl: h.imageUrl }))) || pre;
+      }
+    }
+    // 상세 확인·저장할 후보: 사진이 닮은 순으로 앞에서(식별 단계 결과는 순서를 그대로 둔다)
+    if (pre) merged = [...merged].sort((a, b) => (pre!.scores.get(urlKey(b.url)) ?? -1) - (pre!.scores.get(urlKey(a.url)) ?? -1));
     const normalized = await normalizeHits(merged, targets, e.sources, ctx, e.maxDetails); // 5 상세 확인은 후보 합쳐 maxDetails개까지
     offers = normalized.map(o => verifyBest(targets, o, want));                            // 6 후보마다 검증해 가장 가까운 후보 기준
+    if (pre) offers = offers.map(o => withImage(o, pre!.scores.get(urlKey(o.url)) ?? null, pre!.model));
+    offers = await genderCheck(e, targets[0]?.style, offers);
     report = mergeReports(reports);
+    report.push(brainReport(e, pre, photo));
   }
   const result = assemble(t, offers, report, targets);                                     // 7
-  const ranked = [...result.sale.same, ...result.sale.likely, ...result.sale.unverified, ...result.sale.different];
+  // 확인 못 한 후보·다른 상품은 앞에서 30개까지만 저장한다(넓게 모은 특징 검색 결과로 검수 목록이 넘치지 않게).
+  // 사진이 없는 후보(검색 API의 글 결과 등)는 사진 유사도 순서에서 뒤로 밀려 다 잘리므로 따로 절반만큼 자리를 남긴다
+  const keep = Number(e.env.WALF_SEARCH_KEEP || 30), rest = [...result.sale.unverified, ...result.sale.different];
+  const kept = new Set([...rest.filter(o => o.imageScore != null).slice(0, keep), ...rest.filter(o => o.imageScore == null).slice(0, offers.some(o => o.imageScore != null) ? Math.ceil(keep / 2) : keep)]);
+  const ranked = [...result.sale.same, ...result.sale.likely, ...rest.filter(o => kept.has(o))];
   const st = result.sale;
   const summary = st.state === 'none' ? (report.some(x => x.outcome === 'ok' || x.outcome === 'empty') ? '검색한 곳에서 판매 페이지를 찾지 못했어요' : '검색할 수 있었던 곳이 없거나 모두 실패했어요')
     : `같은 상품(품번) ${st.same.length} · 가능성 높음 ${st.likely.length} · 확인 못 함 ${st.unverified.length} · 다른 상품 ${st.different.length}`
@@ -401,7 +498,9 @@ export function createOfferSearcher(db: DB, e: SearchEnv, more: (() => void)[] =
 // ── 사용자 화면: 어디서 찾아봤는지(실제 판매처 · 테스트 판매처 · 연결 준비 중) ──────
 // 지금 자동으로 찾는 실제 판매처는 등록한 브랜드 공식몰뿐이다(네이버 쇼핑 API는 2026-07-31 종료, 나머지는 약관·연동 대기). 결과 화면에서 이 한계를 숨기지 않는다.
 export type Coverage = { kind: 'real' | 'test' | 'none'; real: string[]; pending: string[]; searched: boolean; note: string };
-const SOURCE_NAME: Record<string, string> = { naver_shopping: '네이버 쇼핑' };
+const SOURCE_NAME: Record<string, string> = { naver_shopping: '네이버 쇼핑', joongna: '중고나라' };
+/** 판매처가 아니라 상품 페이지를 "발견"하는 검색 경로·정렬 엔진 — 사용자 화면의 판매처 목록에 넣지 않는다(쓰였으면 '웹 검색'으로만) */
+const DISCOVERY_ONLY = new Set(['tavily', 'brave_api', 'kakao_web', 'kakao_image', 'naver_web', 'shopify_catalog', 'searxng', 'fashion-brain']);
 /** 이 대상에 소스마다 지금 쓸 수 있는지 */
 export const sourceStates = (e: SearchEnv, t: SearchTarget) => e.sources.map(x => ({ id: x.id, label: x.label, cost: x.cost, ...x.availability(t, ctxOf(e, t.isMock)) }));
 export function coverageOf(db: DB, requestId: number, e?: SearchEnv): Coverage | null {
@@ -412,7 +511,9 @@ export function coverageOf(db: DB, requestId: number, e?: SearchEnv): Coverage |
   if (!last && e) { t = targetsToSearch(db, requestId, e)[0] || null; if (t) rows = sourceStates(e, t).map(x => ({ id: x.id, label: x.label, status: x.status, ran: x.usable, cost: x.cost })); }
   if (!rows.length) return null;
   const name = (x: { id: string; label: string }) => x.id === 'official' ? `${t?.brand || '브랜드'} 공식몰` : SOURCE_NAME[x.id] || x.label;
-  const real = rows.filter(x => x.ran && x.id !== 'mock').map(name);
+  const usedWeb = rows.some(x => x.ran && DISCOVERY_ONLY.has(x.id) && x.id !== 'fashion-brain');
+  rows = rows.filter(x => !DISCOVERY_ONLY.has(x.id));
+  const real = [...rows.filter(x => x.ran && x.id !== 'mock').map(name), ...(usedWeb ? ['웹 검색으로 찾은 쇼핑몰'] : [])];
   const test = rows.some(x => x.ran && x.id === 'mock');
   const pending = rows.filter(x => !x.ran && x.id !== 'mock' && x.cost !== 'paid' && ['PENDING_EXTERNAL_SETUP', 'PENDING_INTEGRATION'].includes(x.status)).map(name);
   const later = pending.length ? ` ${pending.slice(0, 3).join('·')}${pending.length > 3 ? ' 등' : ''} ${pending.length}곳은 이용 조건을 확인하고 있어 ${last ? '찾지 않았어요' : '아직 찾지 않아요'}.` : '';
@@ -436,6 +537,34 @@ export function similarTargetOf(db: DB, requestId: number, malls: SourceCtx['mal
   const job = one(db, `SELECT is_mock FROM ai_jobs WHERE request_id=? AND kind='identify' AND status='done' ORDER BY id DESC LIMIT 1`, requestId);
   return { brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'style_only', ref: `request:${requestId}`, aliases: [], isMock: !!job?.is_mock || !!r.is_mock, style, priority };
 }
+/**
+ * 실제 검색 경로(중고나라 자체 검색·검색 API·로컬 메타검색 중 지금 쓸 수 있는 곳)로 비슷한 옷 후보를 모은다.
+ * 검색어는 사진에서 읽은 특징(queryplan 특징 단계). 후보마다 제목에서 디자인 태그를 읽고, 사진 비교·정렬은 runSimilarSearch 가 한다.
+ */
+export function webSimilarProvider(e: SearchEnv): SimilarProductProvider {
+  const usable = (isMock: boolean) => WEB_SOURCES.filter(x => e.sources.some(y => y.id === x.id) && x.availability({ brand: null, name: '', modelCode: null }, ctxOf(e, isMock)).usable);
+  return {
+    id: 'walf-web-similar', label: '실제 검색 후보(중고나라·검색 API)', version: 'web-1', status: 'SUPPORTED',
+    availability: ctx => {
+      if (ctx.isMock) return { usable: false, reason: '테스트 의뢰에는 실제 판매처를 열지 않아요' };
+      const u = usable(false);
+      return u.length ? { usable: true, reason: `지금 쓸 수 있는 실제 검색 경로: ${u.map(x => x.label).join('·')}` }
+        : { usable: false, reason: '쓸 수 있는 실제 검색 경로가 없어요(검색 API 키 없음 · 중고나라는 법무 확인 전이라 로컬 실험에서만)' };
+    },
+    async find(input) {
+      const t: SearchTarget = { brand: input.brand, name: '', modelCode: null, season: null, color: null, category: null, basis: 'style_only', ref: 'similar', aliases: [], isMock: false, style: input.style };
+      const qs = planQueries(t, input.style).filter(q => q.kind === 'feature' || q.kind === 'brand_feature' || q.kind === 'feature_en');
+      const found = await searchSources(usable(false), t, qs, ctxOf(e, false));
+      const seen = new Set<string>(), out: any[] = [];
+      for (const h of found.hits) {
+        const k = urlKey(h.url); if (seen.has(k)) continue; seen.add(k);
+        out.push({ url: h.url, seller: h.seller, brand: h.brand || '', name: h.title, imageUrl: h.imageUrl, price: h.price, shipping: null, condition: h.condition === 'new' ? 'new' : h.condition === 'used' ? 'used' : 'unknown',
+          options: [], style: styleFromText(h.title), source: h.source, relation: 'similar', recommender: 'walf-web-similar', recommenderVersion: 'web-1', similarPoints: [], diffPoints: ['같은 상품인지는 확인하지 않았어요'] });
+      }
+      return Object.assign(out, { queries: found.report.flatMap(x => x.queries) });
+    },
+  };
+}
 const providersOf = (e: SearchEnv) => e.similar || SIMILAR_PROVIDERS;
 export function queueSimilarSearch(db: DB, e: SearchEnv, requestId: number, opts: { by?: string | null; force?: boolean } = {}): { id?: number; skipped?: string } {
   const r = one(db, 'SELECT * FROM requests WHERE id=?', requestId);
@@ -443,7 +572,7 @@ export function queueSimilarSearch(db: DB, e: SearchEnv, requestId: number, opts
   const t = similarTargetOf(db, requestId, e.malls);
   if (!t) return { skipped: '사진에서 읽은 디자인(스타일)이 없어 비슷한 옷을 고를 수 없어요' };
   const ids = providersOf(e).filter(p => p.availability({ isMock: t.isMock, mockAllowed: e.mockAllowed }).usable).map(p => `${p.id}@${p.version}`);
-  if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요(패션 브레인 연결 전)' };
+  if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요 — 실제 검색 경로 없음(검색 API 키 없음 · 중고나라는 법무 확인 전이라 로컬 실험에서만)' };
   const key = crypto.createHash('sha256').update(json(['similar', t.style, compact(t.brand), compact(t.name), compact(t.modelCode), ids.sort(), t.isMock, r.size || '', t.priority || ''])).digest('hex').slice(0, 32);
   const t0 = now();
   if (!opts.force) {
@@ -463,6 +592,8 @@ async function runSimilarSearch(db: DB, e: SearchEnv, s: Row) {
   const r = s.request_id ? one(db, 'SELECT * FROM requests WHERE id=?', s.request_id) : undefined;
   const w = s.watch_id ? one(db, 'SELECT * FROM watches WHERE id=?', s.watch_id) : undefined;
   const size = r?.size ? normSize(r.size) : w?.size ? normSize(w.size) : null;
+  const photoName = r?.photo || w?.photo || null;
+  const photo = photoName && e.uploads ? path.join(e.uploads, photoName) : null;
   const report: SourceReport[] = [];
   const raw: unknown[] = [];
   for (const p of providersOf(e)) {
@@ -471,16 +602,26 @@ async function runSimilarSearch(db: DB, e: SearchEnv, s: Row) {
     report.push(rep);
     if (!a.usable) continue;
     const t0 = Date.now();
-    try { const got = await p.find({ style: t.style, brand: t.brand, name: t.name || null, modelCode: t.modelCode, size, limit: 12 }); raw.push(...got); rep.hits = got.length; rep.outcome = got.length ? 'ok' : 'empty'; }
-    catch (err: any) { rep.outcome = 'failed'; rep.errors.push(String(err?.message || err).slice(0, 160)); }
+    try {
+      const got = await p.find({ style: t.style, brand: t.brand, name: t.name || null, modelCode: t.modelCode, size, limit: 12, photoPath: photo });
+      raw.push(...got); rep.hits = got.length; rep.outcome = got.length ? 'ok' : 'empty';
+      rep.queries = (got as any).queries || [`디자인: ${styleWords(t.style).join(' · ')}`];
+    } catch (err: any) { rep.outcome = 'failed'; rep.errors.push(String(err?.message || err).slice(0, 160)); rep.queries = [`디자인: ${styleWords(t.style).join(' · ')}`]; }
     rep.ms = Date.now() - t0;
-    rep.queries = [`디자인: ${styleWords(t.style).join(' · ')}`];
   }
-  const { offers, dropped } = curateOffers(raw, { style: t.style, brand: t.brand, name: t.name || null, modelCode: t.modelCode, size, limit: 6, mockAllowed: e.mockAllowed, priority: t.priority ?? null });
-  const ranker = rankerOf(t.priority);
-  const out = [`제외: 같은 상품 ${dropped.same} · 제품군 다름 ${dropped.category} · 디자인 점수 낮음 ${dropped.low} · 디자인 정보 없음 ${dropped.noStyle} · 형식 오류 ${dropped.invalid}`];
+  // 패션 브레인: 실제 검색 후보의 사진을 맡긴 사진과 비교해 정렬 근거로(같은 상품 판정 아님). 사진 성별 추정은 제목에 성별이 없을 때만
+  const urlOf = (x: any) => String(x?.url || '');
+  const sc = await imageScores(e.brain ?? null, photo, raw.map(x => ({ id: urlKey(urlOf(x)), imageUrl: (x as any)?.imageUrl ?? null })));
+  const gender = t.style.gender?.length ? await imageGender(e.brain ?? null, raw.filter((x: any) => !styleFromText(String(x?.name || '')).gender?.length).map(x => ({ id: urlKey(urlOf(x)), imageUrl: (x as any)?.imageUrl ?? null }))) : new Map();
+  report.push(brainReport(e, sc, photo));
+  const mode: RankMode = sc ? (t.priority ? 'pref' : 'image_dna') : 'design';
+  const { offers, dropped } = curateOffers(raw, { style: t.style, brand: t.brand, name: t.name || null, modelCode: t.modelCode, size, limit: 6, mockAllowed: e.mockAllowed, priority: t.priority ?? null,
+    mode, images: sc ? { scores: sc.scores, model: sc.model } : null, photoGender: gender });
+  const ranker = sc ? `${rankerOf(t.priority)}+${mode}` : rankerOf(t.priority);
+  const out = [`제외: 같은 상품 ${dropped.same} · 제품군 다름 ${dropped.category} · 성별 다름 ${dropped.gender} · 디자인 점수 낮음 ${dropped.low} · 디자인 정보 없음 ${dropped.noStyle} · 형식 오류 ${dropped.invalid}`];
   const summary = offers.length ? `비슷한 디자인 ${offers.length}개(정렬 ${ranker}) · ${out[0]}` : `고를 만한 비슷한 디자인이 없어요 · ${out[0]}`;
-  run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, ranker=?, finished_at=? WHERE id=?`, json([{ text: styleWords(t.style).join(' · '), kind: 'style' }]), json(report), summary, ranker, now(), s.id);
+  const qs = report.flatMap(x => x.queries.filter(q => !q.startsWith('디자인:')).map(q => ({ text: q, kind: 'feature', source: x.id })));
+  run(db, `UPDATE offer_searches SET status='done', queries=?, report=?, summary=?, ranker=?, finished_at=? WHERE id=?`, json([{ text: styleWords(t.style).join(' · '), kind: 'style' }, ...qs]), json(report), summary, ranker, now(), s.id);
   saveOffers(db, s.id, { requestId: s.request_id, watchId: s.watch_id }, offers);
   return { identification: { basis: t.basis, basisLabel: BASIS_LABEL[t.basis], brand: t.brand, name: t.name, modelCode: t.modelCode, season: t.season, color: t.color, note: '' }, candidates: [],
     sale: { state: 'none' as const, same: [], likely: [], unverified: [], different: [] }, sources: report, limits: [], isMock: t.isMock };
@@ -563,7 +704,7 @@ export function queueWatchSimilar(db: DB, e: SearchEnv, watchId: number, opts: {
   const t: SimilarTarget = { ...(base || { brand: null, name: '', modelCode: null, season: null, color: null, category: null, basis: 'watch' as const, ref: `watch:${w.id}`, aliases: [], isMock: !!w.is_mock }), style,
     priority: isPriority(w.priority) ? w.priority : null };
   const ids = providersOf(e).filter(p => p.availability({ isMock: t.isMock, mockAllowed: e.mockAllowed }).usable).map(p => `${p.id}@${p.version}`);
-  if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요(패션 브레인 연결 전)' };
+  if (!ids.length) return { skipped: '지금 쓸 수 있는 추천 엔진이 없어요 — 실제 검색 경로 없음(검색 API 키 없음 · 중고나라는 법무 확인 전이라 로컬 실험에서만)' };
   const key = crypto.createHash('sha256').update(json(['watch-similar', w.id, t.style, compact(t.name), ids.sort(), w.size || '', t.priority || ''])).digest('hex').slice(0, 32);
   const t0 = now();
   if (!opts.force && one(db, `SELECT id FROM offer_searches WHERE watch_id=? AND search_key=? AND (status IN ('queued','running') OR COALESCE(finished_at, created_at)>?)

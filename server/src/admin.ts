@@ -21,7 +21,7 @@ import * as R from './offerreview.ts';
 import * as FB from './feedback.ts';
 import { reviewLogOf } from './reviewlog.ts';
 import { uploadUrl } from './media.ts';
-import { requestStyle, STYLE_KINDS, type Style } from './catalog.ts';
+import { requestStyle, saveRequestStyle, styleFromText, STYLE_KINDS, TAG_KINDS, type Style } from './catalog.ts';
 import { styleLabel as sl } from './catalog.ts';
 
 type Cfg = { uploads: string; password: string; secret: string; qaTools: boolean; ai?: AiProvider | null; limits?: C.Limits; policy?: W.WatchPolicy; checker?: { step: (t?: number) => Promise<number | null> };
@@ -112,7 +112,9 @@ function offersHtml(db: DB, rq: any, cfg: Cfg, t: number) {
   if (!s) {
     const tg = S.targetsOf(db, rq.id, e.malls)[0];
     const why = !tg ? '탐색할 식별 결과가 없어요(AI 식별 전이거나 후보가 모두 숨김이에요).' : !S.usableSources(e, tg).length ? `지금 쓸 수 있는 소스가 없어요 — ${esc(tg.brand || '브랜드 미상')}의 공식몰이 등록되지 않았고, 다른 소스는 연동 대기예요.` : '곧 자동으로 탐색해요.';
-    return `<section class="ob" data-offers="none"><h2>판매처 탐색 <span class="sub">· 실제 판매 상품 후보(AI 식별과 별도)</span></h2><p class="sub">${why}</p>${tg ? button : ''}</section>`;
+    // 같은 상품을 못 찾아도(브랜드 미상 등) 대체 상품은 디자인만으로 고를 수 있으니 함께 보여 준다
+    return `<section class="ob" data-offers="none"><h2>판매처 탐색 <span class="sub">· 실제 판매 상품 후보(AI 식별과 별도)</span></h2><p class="sub">${why}</p>${tg ? button : ''}</section>
+    ${similarHtml(db, rq, cfg, t, card)}`;
   }
   const r = S.searchResultOf(db, s);
   const busy = ['queued', 'running'].includes(s.status);
@@ -137,9 +139,13 @@ function similarHtml(db: DB, rq: any, cfg: Cfg, t: number, card: (o: ProductOffe
   if (!e) return '';
   const s = S.latestSearches(db, rq.id, 1, 'similar')[0];
   const button = `<form method="post" action="/admin/requests/${rq.id}/offers/similar" style="display:inline"><button class="btn s sm">비슷한 디자인 ${s ? '다시 ' : ''}고르기</button></form>`;
+  // AI가 사진에서 잘못 읽었거나 빠뜨린 특징(색·실루엣·절개)을 운영자가 고친다 — 고친 기준은 AI가 다시 살펴봐도 덮어쓰지 않는다
+  const cur = requestStyle(db, rq.id);
+  const verified = !!db.prepare(`SELECT 1 FROM style_tags WHERE subject='request' AND subject_key=? AND status='verified'`).get(String(rq.id));
+  const styleForm = `<form method="post" action="/admin/requests/${rq.id}/style" class="row" style="gap:8px;margin:8px 0"><input name="style" style="flex:1;min-width:260px" placeholder="기준 디자인 고치기 · 예: 남자 네이비 베이지 코튼 부츠컷 커브드 바지" value="${esc(TAG_KINDS.flatMap(k => (cur[k] || []).map(sl)).join(' '))}"><button class="btn s sm">기준 디자인 고치기</button><span class="sub">${verified ? '운영자가 고친 기준' : 'AI가 사진에서 읽은 기준'}</span></form>`;
   if (!s) {
     const tg = S.similarTargetOf(db, rq.id, e.malls);
-    return `<section class="ob" data-similar="none"><h2>대체 상품 <span class="sub">· 비슷한 디자인의 실제 판매 상품(같은 상품 아님)</span></h2><p class="sub">${tg ? '곧 자동으로 골라요.' : '사진에서 읽은 디자인(스타일)이 없어 고를 수 없어요.'}</p>${tg ? button : ''}</section>`;
+    return `<section class="ob" data-similar="none"><h2>대체 상품 <span class="sub">· 비슷한 디자인의 실제 판매 상품(같은 상품 아님)</span></h2><p class="sub">${tg ? '곧 자동으로 골라요.' : '사진에서 읽은 디자인(스타일)이 없어 고를 수 없어요.'}</p>${styleForm}${tg ? button : ''}</section>`;
   }
   const target = JSON.parse(s.target || '{}');
   const offers = offersOf(db, s.id);
@@ -147,6 +153,7 @@ function similarHtml(db: DB, rq: any, cfg: Cfg, t: number, card: (o: ProductOffe
   const busy = ['queued', 'running'].includes(s.status);
   return `<section class="ob" data-similar="${esc(s.status)}:${offers.length}"><h2>대체 상품 <span class="sub">· 비슷한 디자인의 실제 판매 상품(같은 상품 아님) · 정렬: 제품군·실루엣 > 디테일·소재 > 색·무드(브랜드는 점수에 넣지 않음)</span>${s.is_mock ? MOCK : ''}</h2>
     <div class="aibar"><b>기준 디자인</b><span>${esc(Object.values(target.style || {}).flat().map((v: any) => sl(String(v))).join(' · '))}</span><span class="sub">${esc(S.BASIS_LABEL[target.basis as S.Basis] || '')}${target.name ? ` · 같은 상품(${esc([target.brand, target.name].filter(Boolean).join(' '))})은 뺌` : ''} · ${busy ? '고르는 중' : s.status === 'failed' ? `실패 · ${esc(s.error)}` : `${kWhen(s.finished_at, t)} 완료`}</span><span class="sp"></span>${busy ? '' : button}</div>
+    ${styleForm}
     ${s.summary ? `<p><b>${esc(s.summary)}</b></p>` : ''}
     <table><thead><tr><th>추천 엔진</th><th>상태</th><th>이번 실행</th><th>근거</th></tr></thead><tbody>${rep.map(x => `<tr><td><b>${esc(x.label)}</b></td><td><span class="st">${esc(x.status)}</span></td><td>${S.OUTCOME_LABEL[x.outcome]}${x.outcome === 'ok' || x.outcome === 'empty' ? ` · 후보 ${x.hits}개` : ''}</td><td class="sub">${esc(x.reason)}${x.errors.length ? `<br>오류: ${x.errors.map(esc).join(' / ')}` : ''}</td></tr>`).join('')}</tbody></table>
     ${offers.length ? offers.map(card).join('') : '<p class="empty">공개할 만한 비슷한 디자인이 없어요.</p>'}</section>`;
@@ -576,6 +583,15 @@ export function adminRouter(db: DB, cfg: Cfg) {
       next(e);
     }
   });
+  // 기준 디자인 고치기 — 운영자가 적은 낱말을 통제 어휘로 맞춰 의뢰의 디자인 태그를 바꾼다(대체 추천 기준)
+  r.post('/requests/:id/style', act(req => {
+    const id = Number(req.params.id);
+    D.getRequest(db, id);
+    const style = styleFromText(String(req.body.style || ''));
+    if (!Object.keys(style).length) throw new HttpError(400, 'empty_style', '알아볼 수 있는 디자인 낱말이 없어요. 예: 네이비 베이지 코튼 부츠컷 바지');
+    saveRequestStyle(db, id, style, 'verified', OP(req));
+    return [id, `기준 디자인을 고쳤어요: ${TAG_KINDS.flatMap(k => (style[k] || []).map(sl)).join(' · ')}. 기준이 바뀌어 비슷한 디자인을 곧 자동으로 다시 골라요(몇 분 걸려요).`];
+  }));
   r.post('/requests/:id/offers/similar', async (req, res, next) => {
     const id = Number(req.params.id);
     try {
