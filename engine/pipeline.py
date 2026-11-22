@@ -82,8 +82,25 @@ def is_product(url: str, kind: str, name: str, domain_key: str | None) -> bool:
     return bool(re.search(GENERIC_PRODUCT, path, re.I))
 
 
+def loose_judge(j: dict, brand: str, model: str, text: str, gender: str = "") -> dict:
+    """브랜드 미상 의뢰: 모델(색 뺀 무늬·옷 종류) 단어가 모두 보이면 비슷한 옷 후보로 남긴다. 같은 상품으로는 올리지 않는다.
+    찾는 옷의 성별(남성·여성)이 정해져 있으면 제목에 반대 성별 단서가 보이는 매물은 뺀다(페이지 확인 한도를 쓰지 않게)."""
+    if brand:
+        return j
+    g = rules.gender_of(text)
+    if gender and g and g != gender:
+        return {**j, "match": "different", "evidence": [f"{'여성' if g == 'women' else '남성'} 상품으로 보여요(찾는 옷은 {'남성' if gender == 'men' else '여성'}용)"]}
+    if j["match"] != "unknown":
+        return j
+    toks = rules.tokens(model)
+    t = rules.norm(text)
+    if toks and all(x in t for x in toks):
+        return {**j, "match": "similar", "model_hits": toks, "evidence": [f"브랜드 미상 의뢰 — 제목에 '{model}' 단어가 모두 있어요(같은 상품 아님, 비슷한 옷 후보)"]}
+    return j
+
+
 async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, brand_ko: list[str], name_ko: list[str], code: str | None, color: str, size: str,
-              known: set[str], max_crawl: int, log=print) -> dict:
+              known: set[str], max_crawl: int, log=print, gender: str = "") -> dict:
     """raw: 소스별 검색 결과 묶음 [{source, q, status, results:[{url,title,content}]}] → 단계별 수·탈락 목록·후보"""
     seller_dom = {s["name"]: s["domain"] for s in sellers}
     drops: list[dict] = []
@@ -123,7 +140,8 @@ async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, b
                 f(src)["out_of_scope"] += 1
                 drop(src, url, "범위", "해외 판매용 사이트")
                 continue
-            if kind == "other" and not h.endswith(".kr"):
+            # 브랜드 미상 의뢰(비슷한 옷)는 한글 상품명이 있는 .com 국내몰(보세몰 등)도 본다
+            if kind == "other" and not h.endswith(".kr") and not (not brand and re.search(r"[가-힣]", x.get("title") or "")):
                 f(src)["out_of_scope"] += 1
                 drop(src, url, "범위", "국내 판매처로 확인되지 않은 사이트")
                 continue
@@ -144,6 +162,7 @@ async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, b
         # 공식몰 주소에는 브랜드명이 없다(도메인이 곧 브랜드) — 판정할 때 브랜드를 붙인다
         pre = f"{brand} " if it["kind"] == "official" else ""
         it["judge0"] = rules.judge(brand=brand, name=model, brand_aliases=brand_ko, name_aliases=name_ko, code=code, text=f"{pre}{it['title']} {it['snippet']} {slug_text(it['url'])}", title=pre + it["title"])
+        it["judge0"] = loose_judge(it["judge0"], brand, model, f"{it['title']} {slug_text(it['url'])}", gender)
         tos = pages.tos_block(it["url"])
         it["robots"] = (False, tos) if tos else pages.robots_ok(it["url"])
         it["tos"] = bool(tos)
@@ -197,6 +216,7 @@ async def run(*, raw: list[dict], sellers: list[dict], brand: str, model: str, b
         pre = f"{brand} " if it["kind"] == "official" else ""
         text = " ".join([pre, it["title"], it["snippet"], page_title, slug, p.get("description") or "", p.get("sku") or "", p.get("brand") or ""])
         j = rules.judge(brand=brand, name=model, brand_aliases=brand_ko, name_aliases=name_ko, code=code, text=text, title=pre + title)
+        j = loose_judge(j, brand, model, f"{title} {slug}", gender)
         used = it["kind"] in ("seller",) and it["seller"] in ("번개장터", "중고나라", "후루츠패밀리") or it["kind"] == "cafe"
         head = (p.get("text_head") or "")[:800]
         ctext = " ".join([it["title"], page_title, slug, p.get("color") or ""] + ([it["snippet"], head] if used else []))

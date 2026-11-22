@@ -146,20 +146,28 @@ def fetch_image(url: str) -> bytes | None:
 MATERIALS = ["트위드", "부클", "울", "코듀로이", "나일론", "가죽", "레더", "스웨이드", "데님", "린넨", "코튼", "플리스", "니트"]
 
 
+# 옷 종류: 긴 말을 먼저 본다(“티셔츠”에 “셔츠”가 들어 있으므로)
+KINDS = ["블루종", "트렌치코트", "코트", "점퍼", "패딩", "바람막이", "자켓", "재킷", "티셔츠", "셔츠", "블라우스", "맨투맨", "후드", "니트", "스웨터",
+         "가디건", "베스트", "조끼", "청바지", "슬랙스", "바지", "팬츠", "스커트", "원피스", "트레이닝"]
+OUTER = {"블루종", "트렌치코트", "코트", "점퍼", "패딩", "바람막이", "자켓", "재킷"}
+PATTERNS = ["체크", "타탄", "깅엄", "스트라이프", "줄무늬", "도트", "플라워", "꽃무늬", "카모", "헤링본", "아가일", "페이즐리", "레터링", "그래픽"]
+
+
 def photo_queries(f: dict) -> list[str]:
-    """사진 특징을 쇼핑몰 검색어로 — 색 + 소재 + (집업) + 옷 종류 + 눈에 띄는 디테일. “지퍼 포켓”처럼 옷 종류 없는 검색어는 쓰지 않는다."""
+    """사진 특징을 쇼핑몰 검색어로 — 색 + (무늬) + (소재) + 옷 종류 (+ 외투면 집업·가슴 포켓). 옷 종류 없는 검색어는 쓰지 않는다."""
     col = next(iter(f.get("colors") or []), "")
     mat_text = " ".join([f.get("material") or "", f.get("texture") or ""])
     mat = next((m for m in MATERIALS if m in mat_text), "")
     g = f.get("garment") or ""
-    kind = "블루종" if "블루종" in g else "코트" if "코트" in g else "점퍼" if "점퍼" in g else "자켓"
     det = " ".join(f.get("details") or [])
-    zip_up = "집업" if re.search(r"여밈[^,]*지퍼|지퍼[^,]*여밈|중앙\s*지퍼|집업", det) else ""
-    pocket = "가슴 지퍼 포켓" if re.search(r"가슴[^,]*지퍼|지퍼[^,]*포켓", det) else "가슴 포켓" if "가슴" in det and "포켓" in det else ""
-    qs = [f"{col} {mat} {zip_up} {kind}", f"{col} {mat} {kind} {pocket}", f"{col} {zip_up} {kind} {pocket}"]
-    gw = set(rules.GARMENTS["jacket"] + rules.GARMENTS["coat"])
-    qs += [k for k in (f.get("keywords_ko") or []) if any(w in k for w in gw)][:1]
-    return [re.sub(r"\s+", " ", q).strip() for q in qs if len(q.split()) >= 2]
+    kind = next((k for k in KINDS if k in g), "") or next((k for k in KINDS if k in (f.get("category") or "")), "") or "자켓"
+    pat = next((p for p in PATTERNS if p in g or p in det or p in (f.get("texture") or "")), "")
+    zip_up = "집업" if kind in OUTER and re.search(r"여밈[^,]*지퍼|지퍼[^,]*여밈|중앙\s*지퍼|집업", det) else ""
+    pocket = ("가슴 지퍼 포켓" if re.search(r"가슴[^,]*지퍼|지퍼[^,]*포켓", det) else "가슴 포켓" if "가슴" in det and "포켓" in det else "") if kind in OUTER else ""
+    qs = [f"{col} {pat} {kind}", f"{col} {mat} {pat} {zip_up} {kind}", f"{col} {zip_up} {kind} {pocket}"]
+    qs += [k for k in (f.get("keywords_ko") or []) if kind in k][:2]  # 모델이 낸 검색어 중 같은 옷 종류만
+    out = [re.sub(r"\s+", " ", q).strip() for q in qs]
+    return [q for q in dict.fromkeys(out) if len(q.split()) >= 2]
 
 
 
@@ -175,7 +183,7 @@ async def identify(inp: dict) -> dict:
     if inp.get("photo"):
         log("사진 분석(로컬)", VLM)
         try:
-            features = v.analyze(inp["photo"])
+            features = v.analyze(inp["photo"], inp.get("note") or "")
             log("  특징", json.dumps({k: features[k] for k in ("garment", "colors", "material", "details", "brand_guess")}, ensure_ascii=False))
         except Exception as e:
             log("  사진 분석 실패", type(e).__name__, str(e)[:120])
@@ -314,7 +322,25 @@ async def search(inp: dict) -> dict:
     if "joongna" in enabled:
         bko = (al["brand_ko"] or [brand])[0]
         site_plan += [("joongna", "web.joongna.com", q) for q in dict.fromkeys([bko, f"{bko} {distinct_ko}".strip(), f"{bko} {name_ko}".strip()]) if q]
-    log(f"DAY {inp.get('day')} 탐색 · {brand} {model} · 색 {color or '-'} · 사이즈 {size or '-'} · 품번 {code or '-'} · 공식몰 {off_domains or '모름'} · 소스 {src.available()} · 보조 검색어 {queries}")
+    gender = ""
+    if not brand:
+        # 브랜드 미상 의뢰(사진에 로고·라벨이 없을 때): 같은 상품이 아니라 색·무늬·옷 종류가 비슷한 옷을 찾는다
+        words = [w for w in re.split(r"[\s·,/]+", name) if w]
+        # 남자·여자 낱말은 검색어에는 넣되(검색 엔진이 그 성별 상품을 앞에 보여 준다) 매물 제목에 꼭 있어야 하는 낱말로는 보지 않는다
+        gw = next((w for w in words if w in rules.GENDER_WORDS), "")
+        gender = rules.GENDER_WORDS.get(gw, "")
+        words = [w for w in words if w not in rules.GENDER_WORDS]
+        cols = [w for w in words if rules.colors_in(w)]
+        model = " ".join(w for w in words if not rules.colors_in(w))
+        c0 = cols[0] if cols else ""
+        en = {"red": "레드", "blue": "블루", "black": "블랙", "white": "화이트", "navy": "네이비", "beige": "베이지", "grey": "그레이", "green": "그린",
+              "brown": "브라운", "yellow": "옐로우", "pink": "핑크", "ivory": "아이보리", "purple": "퍼플", "orange": "오렌지"}.get(rules.color_of(c0) or "", "")
+        queries = [" ".join(q.split()) for q in dict.fromkeys([f"{gw} {c0} {model}", f"{gw} {en} {model}" if en and en != c0 else ""]) if q.strip()]
+        queries = [q for q in dict.fromkeys(queries) if len(q.split()) >= 2]
+        color = color or c0
+        if "joongna" in enabled:
+            site_plan += [("joongna", "web.joongna.com", q) for q in queries]
+    log(f"DAY {inp.get('day')} 탐색 · {brand} {model} · 성별 {gender or '-'} · 색 {color or '-'} · 사이즈 {size or '-'} · 품번 {code or '-'} · 공식몰 {off_domains or '모름'} · 소스 {src.available()} · 보조 검색어 {queries}")
     raw = await sitesearch.run(site_plan, log=log)
     for s_ in [e for e in enabled if e not in ("official", "joongna")]:
         for q in queries:
@@ -325,7 +351,7 @@ async def search(inp: dict) -> dict:
     learn_from_titles(brand, raw)
     known = {rules.url_key(u) for u in inp.get("known") or []}
     res = await pipeline.run(raw=raw, sellers=[x for x in sellers if x.get("domain")], brand=brand, model=model, brand_ko=al["brand_ko"], name_ko=al["name_ko"], code=code, color=color, size=size,
-                             known=known, max_crawl=MAX_CRAWL, log=log)
+                             known=known, max_crawl=MAX_CRAWL, log=log, gender=gender)
     sitesearch.learn_official(brand, {pipeline.host_of(c["url"]): {"kind": "official"} for c in res["candidates"] if c["kind"] == "official" and c["match"] == "same_likely"}, log)
     recheck_in = [r for r in inp.get("recheck") or [] if r.get("url")][:10]
     rechecked = await pages.crawl([r["url"] for r in recheck_in], log=log) if recheck_in else []

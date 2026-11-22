@@ -89,3 +89,13 @@ class Url(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GenderTest(unittest.TestCase):
+    def test_gender_of(self):
+        self.assertEqual(rules.gender_of("띠어리 여성 네이비 부츠컷 팬츠"), "women")
+        self.assertEqual(rules.gender_of("새것 스파오 부츠컷66 통바지66"), "women", "66 은 여성복 사이즈")
+        self.assertEqual(rules.gender_of("척도 플레어 커브드 절개 부츠컷 팬츠 남자"), "men")
+        self.assertEqual(rules.gender_of("부츠컷 루즈 카고 진 - 베이지 - Men"), "men")
+        self.assertEqual(rules.gender_of("Women bootcut"), "women", "women 안의 men 은 남성 단서가 아니다")
+        self.assertEqual(rules.gender_of("네이비 부츠컷 팬츠 32"), "")

@@ -22,10 +22,10 @@ COLORS: dict[str, list[str]] = {
     "beige": ["beige", "베이지", "sand", "샌드", "oatmeal", "오트밀"],
     "blue": ["blue", "블루", "파랑", "파란", "sky", "스카이", "light blue"],
     "green": ["green", "그린", "초록", "olive", "올리브", "khaki", "카키", "forest"],
-    "red": ["red", "레드", "빨강", "burgundy", "버건디", "wine", "와인"],
+    "red": ["red", "레드", "빨강", "빨간", "burgundy", "버건디", "wine", "와인"],
     "purple": ["purple", "퍼플", "보라", "violet"],
     "pink": ["pink", "핑크"],
-    "yellow": ["yellow", "옐로우", "노랑", "mustard", "머스타드"],
+    "yellow": ["yellow", "옐로우", "노랑", "노란", "mustard", "머스타드"],
     "orange": ["orange", "오렌지"],
 }
 # 'dark blue' 처럼 다른 색 이름을 품은 표현이 있으므로 긴 표현부터 찾고 지운다
@@ -306,3 +306,16 @@ def option_for(options: list[dict], color: str | None, size: str | None) -> dict
     else:
         st = "listed"
     return {"stock": st, "option": o["option"], "count": o.get("stock")}
+
+
+# ── 성별(브랜드 미상 의뢰의 비슷한 옷 찾기) ─────────────────────────────
+GENDER_WORDS = {"남자": "men", "남성": "men", "맨즈": "men", "여자": "women", "여성": "women"}
+# 매물 제목에 보이는 성별 단서. 44·55·66·77 은 국내 여성복 사이즈 표기다
+WOMEN_RE = re.compile(r"여성|여자|우먼|레이디|미시|women|ladies|lady|(?<!\d)(44|55|66|77)(?!\d)", re.I)
+MEN_RE = re.compile(r"남성|남자|맨즈|(?<![a-z])men'?s?(?![a-z])|homme|옴므", re.I)
+
+
+def gender_of(text: str) -> str:
+    """제목에서 읽은 성별 — men · women · 둘 다 보이거나 안 보이면 빈 값"""
+    w, m = bool(WOMEN_RE.search(text or "")), bool(MEN_RE.search(text or ""))
+    return "women" if w and not m else "men" if m and not w else ""
